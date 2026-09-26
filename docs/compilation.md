@@ -13,6 +13,8 @@ title: Compilation Guide
  - SDL ≥ 2.0.14
  - SDL_image ≥ 2.0.5
  - SDL_ttf ≥ 2.0.15
+ - inih
+ - getopt (Windows only; provided by vcpkg)
 
 ## Linux
 Flex Launcher on Linux builds with GCC. This guide assumes you already have the development tools Git, CMake, pkg-config, and GCC installed on your system. If not, consult your distro's documentation. 
