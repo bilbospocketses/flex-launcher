@@ -1,0 +1,64 @@
+# Contributing to Flex Launcher (bilbospocketses fork)
+
+This repository is a fork of [complexlogic/flex-launcher](https://github.com/complexlogic/flex-launcher), a customizable application launcher and desktop replacement for Windows and Linux written in C with SDL2.
+
+Changes that make sense for everyone are best sent to the upstream project too. This fork carries its own changes and follows the process below.
+
+## Building
+
+Build instructions for Windows (Visual Studio + vcpkg) and Linux (CMake + distro packages) are in [`docs/compilation.md`](docs/compilation.md). The CI workflow in [`.github/workflows/build.yml`](.github/workflows/build.yml) is the authoritative, always-exercised recipe for all three targets: Windows, Debian, and Raspberry Pi.
+
+## Project Structure
+
+```
+src/                 Launcher core (launcher.c, image.c, clock.c, util.c, debug.c)
+src/platform/        Windows and Linux platform layers
+src/external/        Vendored third-party sources
+config/              Default config and sample assets
+assets/              Icons, fonts, and packaging assets
+docs/                Documentation site (GitHub Pages / Jekyll)
+```
+
+## Branch Strategy
+
+`master` is **PR-gated**. Direct pushes are blocked by a branch ruleset; every change goes branch → PR → required checks green → squash-merge.
+
+**Required status checks:**
+- `build-and-test` — the gate job in `build.yml`; passes only when the Windows, Debian, and Raspberry Pi builds all succeed.
+
+**Merge method:** squash only. Rebase merges are disallowed because they skip GitHub's signature on the merged commit.
+
+**Signed commits required.** Commits to `master` and `v*` tags must be signed.
+
+**Workflow file edits:** every action in `.github/workflows/*.yml` must be pinned to a full commit SHA (not an annotated-tag object SHA) with a precise version comment such as `# v7.0.1`, never a bare `# v7`. The repository enforces SHA pinning and only allows an explicit list of third-party actions; a new third-party action has to be added to that allowlist before its workflow can run.
+
+## Syncing from Upstream
+
+Upstream changes are brought in through a pull request from a branch cut at `upstream/master`. Upstream's `CHANGELOG` file is left untouched so syncs stay conflict-free; this fork's own changes are recorded in `CHANGELOG.md`.
+
+## Commit Messages
+
+Use conventional-commit-style prefixes: `feat:`, `fix:`, `refactor:`, `docs:`, `style:`, `chore:`, `build:`, `ci:`, `test:`. Keep the subject short and imperative, wrap the body at 72 columns, and reference issue numbers when applicable.
+
+## Pull Requests
+
+- Keep PRs focused on one concern.
+- Update `CHANGELOG.md` under `[Unreleased]` for any user-visible change.
+- Update the relevant page in `docs/` when user-facing behaviour or configuration changes.
+
+## Reporting Bugs
+
+Open an issue with:
+
+- Expected vs actual behaviour
+- OS and version (Windows 10/11, Linux distro, Raspberry Pi OS)
+- Your `config.ini` (or the relevant section of it)
+- Output from running with debug logging enabled (see the README's Debugging section)
+
+## Reporting Security Issues
+
+Do **not** file a public issue. See [`SECURITY.md`](SECURITY.md) for the private reporting flow.
+
+## License
+
+The project is released under the [Unlicense](UNLICENSE). By contributing you agree to release your contributions under the same terms.
