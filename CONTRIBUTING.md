@@ -23,8 +23,10 @@ docs/                Documentation site (GitHub Pages / Jekyll)
 
 `master` is **PR-gated**. Direct pushes are blocked by a branch ruleset; every change goes branch → PR → required checks green → squash-merge.
 
-**Required status checks:**
+**Required status checks** (all must be green before merge, and the branch must be up to date with `master`):
 - `build-and-test` — the gate job in `build.yml`; passes only when the Windows, Debian, and Raspberry Pi builds all succeed.
+- `CodeQL` — code scanning via CodeQL default setup (C/C++ and GitHub Actions). It is required as the single `CodeQL` result rather than the per-language `Analyze (...)` jobs, so PRs where those jobs don't run are not blocked forever.
+- `Scorecard analysis` — OpenSSF supply-chain scoring from `scorecard.yml`.
 
 **Merge method:** squash only. Rebase merges are disallowed because they skip GitHub's signature on the merged commit.
 

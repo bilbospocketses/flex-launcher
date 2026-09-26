@@ -13,6 +13,7 @@ Release history of the upstream project up to v2.2 is in [`CHANGELOG`](CHANGELOG
 - OpenSSF Scorecard workflow (`scorecard.yml`).
 - Dependabot version updates for GitHub Actions, with an auto-merge workflow for patch, minor, security, and grouped action bumps.
 - `SECURITY.md`, `CONTRIBUTING.md`, `.github/CODEOWNERS`, and this changelog.
+- `CONTRIBUTING.md` lists all three required status checks: `build-and-test`, `CodeQL`, and `Scorecard analysis`.
 
 ### Changed
 - All workflow actions are pinned to commit SHAs and updated: `actions/checkout` v3 → v7.0.1, `actions/upload-artifact` v4 → v7.0.1, `friendlyanon/setup-vcpkg` v1 → v1.7.0, `softprops/action-gh-release` v1 → v3.0.3.
