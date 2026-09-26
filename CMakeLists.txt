@@ -150,7 +150,6 @@ if (UNIX)
   # Configure Debian packages
   if (PACKAGE STREQUAL "DEB")
     set(CPACK_DEBIAN_PACKAGE_NAME ${EXECUTABLE_TITLE})
-    set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
     set(CPACK_DEBIAN_PACKAGE_VERSION ${CMAKE_PROJECT_VERSION})
     # Epoch 1: versioning restarted at 0.1.0 after the original project's 2.2,
     # so without it apt would treat our packages as older than 2.2.
@@ -158,6 +157,10 @@ if (UNIX)
     if (NOT CPACK_DEBIAN_PACKAGE_ARCHITECTURE)
       set (CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
     endif ()
+    # Explicit name: DEB-DEFAULT puts the epoch in the file name
+    # (flex-launcher_1:0.1.0_amd64.deb), and a colon is not a valid artifact
+    # or Windows file name. Debian file names leave the epoch out.
+    set(CPACK_DEBIAN_FILE_NAME "${CPACK_DEBIAN_PACKAGE_NAME}_${CMAKE_PROJECT_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
     # dpkg-shlibdeps derives the real minimum versions (glibc included) from
     # the built binary; the explicit list keeps the package names readable.
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
