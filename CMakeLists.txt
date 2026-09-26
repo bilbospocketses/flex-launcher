@@ -2,9 +2,9 @@
 cmake_minimum_required(VERSION 3.18)
 project("Flex Launcher" 
   LANGUAGES C
-  VERSION 2.2
+  VERSION 0.1.0
   DESCRIPTION "Customizable HTPC Application Launcher"
-  HOMEPAGE_URL "https://github.com/complexlogic/flex-launcher"
+  HOMEPAGE_URL "https://github.com/bilbospocketses/flex-launcher"
 )
 set(EXECUTABLE_TITLE "flex-launcher")
 set(EXECUTABLE_OUTPUT_PATH "${PROJECT_BINARY_DIR}")
@@ -28,7 +28,6 @@ endif ()
 set(MIN_SDL_VERSION "2.0.14")
 set(MIN_SDL_IMAGE_VERSION "2.0.5")
 set(MIN_SDL_TTF_VERSION "2.0.15")
-set(MIN_GLIBC_VERSION "2.31") # Enforced for .deb packages only
 
 # Generate PKGBUILD script for Arch packages
 if (PACKAGE STREQUAL "ARCH")
@@ -146,17 +145,28 @@ if (UNIX)
   set(INSTALL_DIR_DESKTOP "${CMAKE_INSTALL_PREFIX}/share/applications")
   set(INSTALL_DIR_CONFIGFILE "${INSTALL_DIR_SHARE}")
   set(INSTALL_DIR_ASSETS "${INSTALL_DIR_SHARE}")
-  
+  install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" DESTINATION "${CMAKE_INSTALL_PREFIX}/share/licenses/${EXECUTABLE_TITLE}")
+
   # Configure Debian packages
   if (PACKAGE STREQUAL "DEB")
     set(CPACK_DEBIAN_PACKAGE_NAME ${EXECUTABLE_TITLE})
-    set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
     set(CPACK_DEBIAN_PACKAGE_VERSION ${CMAKE_PROJECT_VERSION})
+    # Epoch 1: versioning restarted at 0.1.0 after the original project's 2.2,
+    # so without it apt would treat our packages as older than 2.2.
+    set(CPACK_DEBIAN_PACKAGE_EPOCH 1)
     if (NOT CPACK_DEBIAN_PACKAGE_ARCHITECTURE)
       set (CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
     endif ()
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libsdl2-2.0-0 (>= ${MIN_SDL_VERSION}), libsdl2-image-2.0-0 (>= ${MIN_SDL_IMAGE_VERSION}), libsdl2-ttf-2.0-0 (>= ${MIN_SDL_TTF_VERSION}), libc6 (>= ${MIN_GLIBC_VERSION}), libinih1")
-    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "complexlogic")
+    # Explicit name: DEB-DEFAULT puts the epoch in the file name
+    # (flex-launcher_1:0.1.0_amd64.deb), and a colon is not a valid artifact
+    # or Windows file name. Debian file names leave the epoch out.
+    set(CPACK_DEBIAN_FILE_NAME "${CPACK_DEBIAN_PACKAGE_NAME}_${CMAKE_PROJECT_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
+    # dpkg-shlibdeps derives the real minimum versions (glibc included) from
+    # the built binary; the explicit list keeps the package names readable.
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libsdl2-2.0-0 (>= ${MIN_SDL_VERSION}), libsdl2-image-2.0-0 (>= ${MIN_SDL_IMAGE_VERSION}), libsdl2-ttf-2.0-0 (>= ${MIN_SDL_TTF_VERSION}), libinih1")
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "bilbospocketses <104535858+bilbospocketses@users.noreply.github.com>")
+    set(CPACK_DEBIAN_PACKAGE_HOMEPAGE ${CMAKE_PROJECT_HOMEPAGE_URL})
     set(CPACK_DEBIAN_PACKAGE_SECTION "video")
     set(CPACK_DEBIAN_ARCHIVE_TYPE "gnutar")
     set(CPACK_DEBIAN_COMPRESSION_TYPE "gzip")
@@ -170,8 +180,10 @@ if (WIN32)
   set(INSTALL_DIR_CONFIGFILE "./")
   set(INSTALL_DIR_ASSETS "./")
 
-  configure_file(${PROJECT_SOURCE_DIR}/CHANGELOG ${PROJECT_BINARY_DIR}/CHANGELOG.txt)
+  configure_file(${PROJECT_SOURCE_DIR}/CHANGELOG.md ${PROJECT_BINARY_DIR}/CHANGELOG.txt COPYONLY)
   install(FILES ${PROJECT_BINARY_DIR}/CHANGELOG.txt DESTINATION "${INSTALL_DIR_BIN}")
+  configure_file(${PROJECT_SOURCE_DIR}/LICENSE ${PROJECT_BINARY_DIR}/LICENSE.txt COPYONLY)
+  install(FILES ${PROJECT_BINARY_DIR}/LICENSE.txt DESTINATION "${INSTALL_DIR_BIN}")
   
   # Copy the VC Runtime DLL in case user doesn't have it installed
   set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)

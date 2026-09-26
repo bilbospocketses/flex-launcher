@@ -38,6 +38,20 @@ docs/                Documentation site (GitHub Pages / Jekyll)
 
 Record changes in `CHANGELOG.md`. The older `CHANGELOG` file holds the original project's release history up to v2.2 and is frozen; don't add to it.
 
+## Releasing
+
+Versions follow [Semantic Versioning](https://semver.org/) with three parts (`0.1.0`). The project stays below 1.0 until the major overhaul is in place.
+
+1. In one PR, set `VERSION` in `CMakeLists.txt` and `launcher_version` in `docs/_config.yml` to the new version, and rename `## [Unreleased]` in `CHANGELOG.md` to `## [x.y.z] - YYYY-MM-DD` with a fresh empty `## [Unreleased]` above it. The `Release` job's dry run on that PR checks that every package carries the new version and that the notes extract.
+2. After it merges, tag the merge commit with a signed annotated tag and push it:
+   ```bash
+   git tag -s vx.y.z -m "vx.y.z"
+   git push origin vx.y.z
+   ```
+3. The `Release` job builds all four packages, attests them, and publishes the GitHub release with the CHANGELOG section as its notes.
+
+`v*` tags can't be deleted or moved, so a failed release can't be retried under the same number: fix the problem and release the next patch version.
+
 ## Commit Messages
 
 Use conventional-commit-style prefixes: `feat:`, `fix:`, `refactor:`, `docs:`, `style:`, `chore:`, `build:`, `ci:`, `test:`. Keep the subject short and imperative, wrap the body at 72 columns, and reference issue numbers when applicable.
@@ -63,4 +77,4 @@ Do **not** file a public issue. See [`SECURITY.md`](SECURITY.md) for the private
 
 ## License
 
-The project is released under the [Unlicense](UNLICENSE). By contributing you agree to release your contributions under the same terms.
+The project is released under the [GNU General Public License v3.0](LICENSE). By contributing you agree to license your contributions under the same terms.

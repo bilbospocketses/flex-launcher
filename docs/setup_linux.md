@@ -221,7 +221,7 @@ sudo pacman -S xorg xorg-xinit openbox unclutter pulseaudio wget
 ```bash
 sudo apt install xorg openbox unclutter-xfixes pulseaudio wget
 ```
-Then, install Flex Launcher according to the instructions on the [README](https://github.com/complexlogic/flex-launcher#linux). Also, make sure to [copy the assets to your home directory](https://github.com/complexlogic/flex-launcher#copying-assets-to-home-directory).
+Then, install Flex Launcher according to the instructions on the [README](https://github.com/bilbospocketses/flex-launcher#linux). Also, make sure to [copy the assets to your home directory](https://github.com/bilbospocketses/flex-launcher#copying-assets-to-home-directory).
 
 ### Configure Xorg
 Configure X to start after user login with `.bash_profile` and `startx`:
@@ -309,7 +309,7 @@ In the `<keyboard>` section, paste the following:
 This assumes that you have a key on your TV remote that maps to F10.
 
 ### Install Applications
-The last step is to install your desired applications. Edit your Flex Launcher configuration file to add menu entries for each of the applications. See the [configuration file documentation](https://complexlogic.github.io/flex-launcher/configuration) for more details.
+The last step is to install your desired applications. Edit your Flex Launcher configuration file to add menu entries for each of the applications. See the [configuration file documentation](https://bilbospocketses.github.io/flex-launcher/configuration) for more details.
 
 ## HTPC as Audio Receiver
 You can use your HTPC as a smart audio receiver for listening to music or podcasts on your living room speakers.
