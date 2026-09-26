@@ -14,13 +14,16 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 - Dependabot version updates for GitHub Actions, with an auto-merge workflow for patch, minor, security, and grouped action bumps.
 - `SECURITY.md`, `CONTRIBUTING.md`, `.github/CODEOWNERS`, and this changelog.
 - `CONTRIBUTING.md` lists all three required status checks: `build-and-test`, `CodeQL`, and `Scorecard analysis`.
+- Arch Linux package (`.pkg.tar.zst`), built in CI with makepkg from the existing PKGBUILD template.
+- A single `Release` job that publishes all four packages to a GitHub release when a `v*` tag is pushed, with Sigstore build provenance attestations for each package. On every other run it performs a dry run of the release.
+- Documentation site workflow (`pages.yml`) that builds `docs/` with Jekyll and deploys it to GitHub Pages; pull requests that touch `docs/` build it without deploying.
 
 ### Changed
 - The repository is now a standalone project, detached from complexlogic/flex-launcher's fork network. `CONTRIBUTING.md`, `SECURITY.md`, and this changelog no longer describe an upstream to sync with or report to, and the original `CHANGELOG` is frozen.
 - All workflow actions are pinned to commit SHAs and updated: `actions/checkout` v3 → v7.0.1, `actions/upload-artifact` v4 → v7.0.1, `friendlyanon/setup-vcpkg` v1 → v1.7.0, `softprops/action-gh-release` v1 → v3.0.3.
 - Linux packages are built on Debian 12 (bookworm) instead of Debian 11 (bullseye), so the `.deb` files now need Debian 12, Ubuntu 22.04, or newer.
 - The Raspberry Pi package is built in a Debian bookworm container on a native arm64 runner, replacing the QEMU chroot into a 2022 Raspberry Pi OS image.
-- The workflow token is read-only by default; only the Windows job, which publishes releases on tag pushes, gets `contents: write`.
+- The workflow token is read-only by default; only the release job can write, and releases use the repository's own token instead of a separate `ACTIONS_SECRET`.
 - Pull requests to `master` run the build even when they only touch Markdown, so the required check always reports.
 
 ### Fixed
