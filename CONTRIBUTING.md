@@ -1,8 +1,8 @@
-# Contributing to Flex Launcher (bilbospocketses fork)
+# Contributing to Flex Launcher
 
-This repository is a fork of [complexlogic/flex-launcher](https://github.com/complexlogic/flex-launcher), a customizable application launcher and desktop replacement for Windows and Linux written in C with SDL2.
+Flex Launcher is a customizable application launcher and desktop replacement for Windows and Linux, written in C with SDL2.
 
-Changes that make sense for everyone are best sent to the upstream project too. This fork carries its own changes and follows the process below.
+This repository is an independent project. It started from complexlogic's Flex Launcher at v2.2 and has been developed separately since; it does not track, sync with, or send changes back to that project. Changes land here through the process below.
 
 ## Building
 
@@ -34,9 +34,9 @@ docs/                Documentation site (GitHub Pages / Jekyll)
 
 **Workflow file edits:** every action in `.github/workflows/*.yml` must be pinned to a full commit SHA (not an annotated-tag object SHA) with a precise version comment such as `# v7.0.1`, never a bare `# v7`. The repository enforces SHA pinning and only allows an explicit list of third-party actions; a new third-party action has to be added to that allowlist before its workflow can run.
 
-## Syncing from Upstream
+## Changelog
 
-Upstream changes are brought in through a pull request from a branch cut at `upstream/master`. Upstream's `CHANGELOG` file is left untouched so syncs stay conflict-free; this fork's own changes are recorded in `CHANGELOG.md`.
+Record changes in `CHANGELOG.md`. The older `CHANGELOG` file holds the original project's release history up to v2.2 and is frozen; don't add to it.
 
 ## Commit Messages
 
