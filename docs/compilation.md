@@ -37,7 +37,7 @@ sudo dnf install SDL2-devel SDL2_image-devel SDL2_ttf-devel inih-devel
 ### Building
 Clone the master repo and create a build directory:
 ```bash
-git clone https://github.com/complexlogic/flex-launcher.git
+git clone https://github.com/bilbospocketses/flex-launcher.git
 cd flex-launcher
 mkdir build && cd build
 ```
@@ -71,7 +71,7 @@ Flex Launcher on Windows builds with Visual Studio, and uses [vcpkg](https://vcp
 ### Building
 Clone the master repo and create a build directory:
 ```
-git clone https://github.com/complexlogic/flex-launcher.git
+git clone https://github.com/bilbospocketses/flex-launcher.git
 cd flex-launcher
 mkdir build
 cd build

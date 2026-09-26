@@ -30,6 +30,7 @@
     <li><a href="#development-status">Development Status</a></li>
     <li><a href="#documentation">Documentation</a></li>
     <li><a href="#credits">Credits</a></li>
+    <li><a href="#license">License</a></li>
   </ol>
 </details>
 
@@ -47,27 +48,27 @@ https://user-images.githubusercontent.com/95071366/208355237-11f00cbb-9cc3-436b-
 Executables are available for Windows 64 bit, Linux x86-64, and Raspberry Pi. You can also compile the program yourself using the [compilation guide](docs/compilation.md).
 
 ### Windows
-Download the win64 .zip file from the [latest release](https://github.com/complexlogic/flex-launcher/releases/latest) and extract the contents to a directory of your choice. Flex Launcher should be run on an up-to-date Windows 10 system, or Windows 11.
+Download the win64 .zip file from the [latest release](https://github.com/bilbospocketses/flex-launcher/releases/latest) and extract the contents to a directory of your choice. Flex Launcher should be run on an up-to-date Windows 10 system, or Windows 11.
 
 ### Linux
-Binary packages are available on the [release page](https://github.com/complexlogic/flex-launcher/releases) for APT and pacman based distributions. You may use the commands below to install.
+Binary packages are available on the [release page](https://github.com/bilbospocketses/flex-launcher/releases) for APT and pacman based distributions. You may use the commands below to install.
 
 #### APT-based x86-64 Distributions (Debian, Ubuntu, etc.)
-This package is compatible with Debian Bullseye and later, Ubuntu 21.04 and later.
+This package is compatible with Debian 12 (Bookworm) and later, Ubuntu 22.04 and later.
 ```bash
-wget https://github.com/complexlogic/flex-launcher/releases/download/v2.2/flex-launcher_2.2_amd64.deb
-sudo apt install ./flex-launcher_2.2_amd64.deb
+wget https://github.com/bilbospocketses/flex-launcher/releases/download/v0.1.0/flex-launcher_0.1.0_amd64.deb
+sudo apt install ./flex-launcher_0.1.0_amd64.deb
 ```
 #### Pacman-based x86-64 Distributions (Arch, Manjaro, etc.)
 ```bash
-wget https://github.com/complexlogic/flex-launcher/releases/download/v2.2/flex-launcher-2.2-1-x86_64.pkg.tar.zst
-sudo pacman -U flex-launcher-2.2-1-x86_64.pkg.tar.zst
+wget https://github.com/bilbospocketses/flex-launcher/releases/download/v0.1.0/flex-launcher-0.1.0-1-x86_64.pkg.tar.zst
+sudo pacman -U flex-launcher-0.1.0-1-x86_64.pkg.tar.zst
 ```
 #### Raspberry Pi
-This package is compatible with Raspbian Bullseye and later, 64 bit only.
+This package is compatible with Raspberry Pi OS 12 (Bookworm) and later, 64 bit only.
 ```bash
-wget https://github.com/complexlogic/flex-launcher/releases/download/v2.2/flex-launcher_2.2_arm64.deb
-sudo apt install ./flex-launcher_2.2_arm64.deb
+wget https://github.com/bilbospocketses/flex-launcher/releases/download/v0.1.0/flex-launcher_0.1.0_arm64.deb
+sudo apt install ./flex-launcher_0.1.0_arm64.deb
 ```
 #### Copying Assets to Home Directory
 The Linux packages install a default config file and assets to `/usr/share/flex-launcher`. It is strongly recommended to *not* edit this config file directly, as it will be overwritten if you upgrade to a later version of Flex Launcher. Instead, copy these files to your home directory and edit it there.
@@ -106,7 +107,7 @@ flex-launcher -d
 This will output a logfile named `flex-launcher.log` in the same directory as `flex-launcher.exe` on Windows, and in `~/.local/share/flex-launcher` on Linux. 
 
 ## Development Status
-Flex Launcher has reached a mature state, and there are currently no feature releases planned for the future. I've started a [new HTPC launcher project](https://github.com/complexlogic/big-launcher) which is similar in nature to Flex Launcher, but aims to provide a more advanced, Smart TV-like user interface. My future development effort will be focused on that new project, but I will still maintain Flex Launcher for bugfixes and dependency updates.
+This project started from complexlogic's original Flex Launcher at v2.2 and is developed independently; it does not sync with or contribute back to that project. Versioning restarted at 0.1.0. A major overhaul is under way, and the project stays below 1.0 until it is in place and working, so expect changes between 0.x releases. See [CHANGELOG.md](CHANGELOG.md) for what has changed.
 
 ## Documentation
 Here is a list of available documentation:
@@ -117,6 +118,8 @@ Here is a list of available documentation:
 - [Compilation Guide](docs/compilation.md#compilation-guide)
 
 ## Credits
+Flex Launcher was originally created by [complexlogic](https://github.com/complexlogic), who released it into the public domain under the Unlicense. This project is built on that work.
+
 Flex Launcher is made possible by the following projects:
 - [SDL](https://github.com/libsdl-org/SDL), including the subprojects:
   - [SDL_image](https://github.com/libsdl-org/SDL_image)
@@ -126,3 +129,6 @@ Flex Launcher is made possible by the following projects:
 - [Numix icons](https://github.com/numixproject)
 
 The design of Flex Launcher was strongly influenced by the excellent desktop application launcher [xlunch](https://github.com/Tomas-M/xlunch).
+
+## License
+Flex Launcher is released under the [GNU General Public License v3.0](LICENSE).

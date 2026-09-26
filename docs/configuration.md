@@ -615,7 +615,7 @@ The following axis and buttons are available for control in Flex Launcher:
 - ButtonDPadRight
 
 ## Transparent Backgrounds
-*Note for Linux users only: this feature requires compositor implementation. See the [Linux Setup Guide](https://complexlogic.github.io/flex-launcher/setup_linux#transparent-backgrounds) for details.*
+*Note for Linux users only: this feature requires compositor implementation. See the [Linux Setup Guide](https://bilbospocketses.github.io/flex-launcher/setup_linux#transparent-backgrounds) for details.*
 
 Flex Launcher supports transparent backgrounds using the chroma key technique. This method works by setting a strategically chosen color to the background, which is removed later. In film production, this technique is often refered to as "blue screening" or "green screening".
 
@@ -630,7 +630,7 @@ Some icons have shadows which are intended to provide a textured look. The shado
 Another common issue is the highlight. The default highlight is semi-transparent, which will not render properly when blended with the chroma key background. There are a few ways to address with this:
 - Set the `FillOpacity` setting to 0%, and use an outline-only highlight instead
 - Use custom [Selected Icons](#selected-icon-overrides) in place of Flex Launcher's highlight
-- Linux only: use a shader to recover the highlight's transparency. See the [Linux Setup Guide](https://complexlogic.github.io/flex-launcher/setup_linux#transparent-backgrounds) for details.
+- Linux only: use a shader to recover the highlight's transparency. See the [Linux Setup Guide](https://bilbospocketses.github.io/flex-launcher/setup_linux#transparent-backgrounds) for details.
 
 Transparent backgrounds will require some effort to obtain a setup that looks good and works well. Be prepared to do a significant amount of tinkering if you wish to use this feature.
 
@@ -638,7 +638,7 @@ Transparent backgrounds will require some effort to obtain a setup that looks go
 The Windows implementation of transparency is not hardware accelerated. If your refresh rate is very high, this can result in a signficant load on the CPU. If you find that the trasparent background is causing a high load on your system, consider changing the `VSync` setting to false and setting `FPSLimit` to 30 or lower, which will reduce the amount of computation required.
 
 ### Animated Backgrounds
-Transparent backgrounds can be used to implement animated backgrounds in combination with another program. On Windows, [Wallpaper Engine](https://www.wallpaperengine.io) and [Lively](https://github.com/rocksdanister/lively) are popular choices. For Linux, I recommend [anipaper](https://github.com/Theldus/anipaper); see the [Linux Setup Guide](https://complexlogic.github.io/flex-launcher/setup_linux#animated-backgrounds) for details.
+Transparent backgrounds can be used to implement animated backgrounds in combination with another program. On Windows, [Wallpaper Engine](https://www.wallpaperengine.io) and [Lively](https://github.com/rocksdanister/lively) are popular choices. For Linux, I recommend [anipaper](https://github.com/Theldus/anipaper); see the [Linux Setup Guide](https://bilbospocketses.github.io/flex-launcher/setup_linux#animated-backgrounds) for details.
 
 ### Custom Widgets
 Flex Launcher offers a simple clock widget which can show the current time and date. For more advanced functionality, you can combine a transparent background with a third party widget program. For example, you can have a widget that displays weather, news, etc. in addition to the time. [Rainmeter](https://www.rainmeter.net/) is a popular option on Windows, and [Conky](https://github.com/brndnmtthws/conky) for Linux.

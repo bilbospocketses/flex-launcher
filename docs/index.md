@@ -1,4 +1,4 @@
-﻿---
+---
 layout: default
 ---
 
@@ -17,7 +17,9 @@ Flex Launcher was initially released in late 2021. Its creation was motivated by
 - **Portability:** Many of the other existing solutions only support a single platform. Flex Launcher aims to be portable and cross-platform, running on ARM-based SBCs such as Raspberry Pi, to high-end Windows PCs, and everything in between.
 - **Ease of Navigation:** Flex Launcher should be completely navigable using only directional keys, enter, and back. The launcher should include built-in support for gamepad devices.
 
-Flex Launcher is completely free and open source. Accordingly, you are entitled to modify or redsitribute it as you wish. The source code is available on [GitHub](https://github.com/complexlogic/flex-launcher).
+Flex Launcher is free and open source software, released under the GNU General Public License v3.0. You may modify and redistribute it under the terms of that licence. The source code is available on [GitHub](https://github.com/bilbospocketses/flex-launcher).
+
+This project started from complexlogic's original Flex Launcher (v2.2) and is developed independently.
 
 ## Features
 The following is a list of features supported by Flex Launcher:
@@ -55,4 +57,4 @@ Flex Launcher includes a screensaver mode that will dim the screen after it has 
 There is an available clock widget that displays the current time and, optionally, the current date. The user is able to adjust the size, font, placement, and time/date format.
 
 ## Support
-If you believe you have found a bug in Flex Launcher, open an issue on the [GitHub issue tracker](https://github.com/complexlogic/flex-launcher/issues). For general technical support or feature requests, please use the [Discussions page](https://github.com/complexlogic/flex-launcher/discussions) instead.
+If you believe you have found a bug in Flex Launcher, or you have a feature request, open an issue on the [GitHub issue tracker](https://github.com/bilbospocketses/flex-launcher/issues).

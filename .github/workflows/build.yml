@@ -244,27 +244,37 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # The project version in CMakeLists.txt is what the packages are named
+      # after. On a tag it must equal the tag; on a dry run it is the version
+      # the next tag will carry.
       - name: Check packages
         run: |
+          version=$(grep -m1 -oE '^[[:space:]]*VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | awk '{print $2}')
+          if [ -z "$version" ]; then echo "::error::No project VERSION found in CMakeLists.txt"; exit 1; fi
+          echo "PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+          if [ "$IS_RELEASE" = "true" ] && [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match project version $version in CMakeLists.txt"
+            exit 1
+          fi
           ls -l dist
           count=$(find dist -maxdepth 1 -type f | wc -l)
           if [ "$count" -ne 4 ]; then
             echo "::error::Expected 4 packages (Windows, Debian, Raspberry Pi, Arch), found $count"
             exit 1
           fi
-          if [ "$IS_RELEASE" = "true" ]; then
-            version="${GITHUB_REF_NAME#v}"
-            for f in dist/*; do
-              case "$(basename "$f")" in
-                *"$version"*) ;;
-                *) echo "::error::$f does not carry version $version from tag $GITHUB_REF_NAME"; exit 1 ;;
-              esac
-            done
-          fi
+          for f in dist/*; do
+            case "$(basename "$f")" in
+              *"$version"*) ;;
+              *) echo "::error::$f does not carry project version $version"; exit 1 ;;
+            esac
+          done
 
+      # Release notes are the CHANGELOG.md section for the project version. A
+      # dry run before that section exists falls back to [Unreleased].
       - name: Extract release notes from CHANGELOG.md
         run: |
-          if [ "$IS_RELEASE" = "true" ]; then section="${GITHUB_REF_NAME#v}"; else section="Unreleased"; fi
+          section="$PROJECT_VERSION"
+          if [ "$IS_RELEASE" != "true" ] && ! grep -qF "## [$section]" CHANGELOG.md; then section="Unreleased"; fi
           awk -v s="$section" '
             index($0, "## [" s "]") == 1 { found = 1; next }
             found && /^## \[/ { exit }
