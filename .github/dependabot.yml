@@ -1,0 +1,27 @@
+# Dependabot version updates for flex-launcher.
+#
+# Security updates are handled separately by Dependabot security alerts
+# (enabled in repo settings). This file covers routine version bumps.
+#
+# github-actions maintains the SHA-pinned action refs in .github/workflows/.
+# Without it Dependabot would never bump our pins and we would drift on
+# security fixes shipped in the actions themselves.
+#
+# The C dependencies (SDL2, SDL2_image, SDL2_ttf, inih, getopt) come from
+# vcpkg on Windows via the VCPKG_COMMITTISH pin in build.yml, and from distro
+# packages on Linux. Neither is a manifest Dependabot can bump, so the vcpkg
+# pin is updated by hand.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # Batch all action bumps into one PR: keeps the codeql-action refs in
+    # lockstep and avoids weekly action-PR pile-ups.
+    groups:
+      actions:
+        patterns:
+          - "*"

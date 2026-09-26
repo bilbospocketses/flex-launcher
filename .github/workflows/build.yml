@@ -6,13 +6,12 @@ on:
         "**/**.md"
       ]
 
+  # No paths-ignore on pull_request: `build-and-test` is a required status
+  # check on master, and a docs-only PR that skipped this workflow would never
+  # report it and could never merge.
   pull_request:
     branches:
       - master
-    paths-ignore:
-      [
-        "**/**.md"
-      ]
 
   workflow_dispatch:
 
@@ -20,12 +19,17 @@ defaults:
   run:
     shell: bash
 env:
-  VCPKG_COMMITTISH: 10b7a178346f3f0abef60cecd5130e295afd8da4
+  # vcpkg 2026.07.29. The previous pin (10b7a17) fetched getopt-win32 from a
+  # GitHub archive that now 404s, which broke the Windows build.
+  VCPKG_COMMITTISH: 9e593bb18ea69cc5095e012465dcd675a822ed0d
 
+# Read-only by default; jobs that publish releases widen their own token.
+# All actions are pinned to commit SHAs (repo-level sha_pinning_required) with
+# precise `# vX.Y.Z` comments so Dependabot can track them.
 permissions:
   actions: none
   checks: none
-  contents: write
+  contents: read
   deployments: none
   issues: none
   packages: read
@@ -38,6 +42,8 @@ jobs:
   build_windows:
     name: Windows
     runs-on: windows-2022
+    permissions:
+      contents: write   # the Release step publishes to GitHub Releases on tag pushes
     strategy:
       fail-fast: false
 
@@ -48,11 +54,11 @@ jobs:
 
     steps:
       - name: Checkout Git repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
-      - uses: friendlyanon/setup-vcpkg@v1
+      - uses: friendlyanon/setup-vcpkg@508a6e6b59a3c9d8dac926e1281d4471160d624b # v1.7.0
         with:
           committish: ${{env.VCPKG_COMMITTISH}}
 
@@ -62,14 +68,14 @@ jobs:
       - name: Build
         run: cmake --build build --target package --config ${{ env.CMAKE_BUILD_TYPE }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         name: Upload package
         with:
           name: Windows build
           path: build/*.zip
 
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: build/*.zip
@@ -83,8 +89,10 @@ jobs:
       fail-fast: false
       matrix:
         config:
+          # bookworm: bullseye is past end of life and its security mirror
+          # now 404s on package downloads.
           - name: Debian
-            docker_image: debian:bullseye
+            docker_image: debian:bookworm
             package_ext: .deb
 
     container:
@@ -95,7 +103,7 @@ jobs:
 
     steps:
       - name: Checkout Git repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: "Install dependencies"
         run: |
@@ -110,84 +118,77 @@ jobs:
             cmake --build build --target package --config ${{env.CMAKE_BUILD_TYPE}}
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         name: Upload Package
         with:
           name: Debian build
           path: build/*.deb
 
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: build/*${{matrix.config.package_ext}}
           token: ${{secrets.ACTIONS_SECRET}}
 
+  # Native arm64 runner with a Debian bookworm container. This replaces the
+  # QEMU chroot into a 2022 Raspberry Pi OS (bullseye) image, which can no
+  # longer install packages now that bullseye is past end of life. Raspberry
+  # Pi OS is Debian-based and -DRPI=1 only changes the default config, so a
+  # bookworm arm64 build is the equivalent package.
   build_rpi:
     name: Raspberry Pi
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
 
+    container:
+      image: debian:bookworm
+
     env:
       CMAKE_BUILD_TYPE: Release
-      IMAGE_VERSION: "2022-10-30"
 
     steps:
-      - name: Setup
-        run: |
-          REPO=${{github.repository}}
-          echo "REPO_TITLE=${REPO#*/}" >> ${GITHUB_ENV}
-          sudo apt update && sudo apt-get install -y qemu-system-aarch64 qemu-user-static binfmt-support wget tar
-          mkdir root
-
-      - name: Cache Image
-        id: image-cache
-        uses: actions/cache@v3
-        with:
-          path: image.tar.xz
-          key: ${{env.IMAGE_VERSION}}
-
-      - name: Download Image
-        if: steps.image-cache.outputs.cache-hit != 'true'   
-        run: wget -q https://github.com/complexlogic/rpi_image/releases/download/${{env.IMAGE_VERSION}}/image.tar.xz
-
-      - name: Extract Image
-        run: tar -xf image.tar.xz
-
       - name: Checkout Git repository
-        uses: actions/checkout@v3
-        with:
-          path: ${{env.REPO_TITLE}}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Generate Build Script
-        run: |
-          echo '#!/bin/bash' >> rpi
-          echo "sudo apt update &&" >> rpi
-          echo "sudo apt install -y libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libinih-dev &&" >> rpi
-          echo "cd ${{env.REPO_TITLE}} &&" >> rpi
-          echo "cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DCMAKE_INSTALL_PREFIX=/usr -DPACKAGE=DEB -DCPACK_DEBIAN_PACKAGE_ARCHITECTURE=arm64 -DRPI=1 &&" >> rpi
-          echo "cmake --build build --target package --config ${{env.CMAKE_BUILD_TYPE}}" >> rpi
-          sudo chmod +x rpi
+      - name: Install dependencies
+        run: apt update && apt install -y build-essential git cmake pkg-config libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libinih-dev
 
       - name: Build
         run: |
-          LOOPBACK=$(sudo losetup -f -P --show rpi.img)
-          sudo mount ${LOOPBACK}p2 -o rw root
-          sudo cp /usr/bin/qemu-aarch64-static root/usr/bin
-          sudo cp -r ${{env.REPO_TITLE}} root
-          sudo cp rpi root/usr/bin
-          sudo chroot root rpi
+          cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DCMAKE_INSTALL_PREFIX=/usr -DPACKAGE=DEB -DCPACK_DEBIAN_PACKAGE_ARCHITECTURE=arm64 -DRPI=1
+          cmake --build build --target package --config ${{env.CMAKE_BUILD_TYPE}}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         name: Upload package
         with:
           name: Raspberry Pi build
-          path: root/${{env.REPO_TITLE}}/build/*.deb
+          path: build/*.deb
 
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: root/${{env.REPO_TITLE}}/build/*.deb
+          files: build/*.deb
           token: ${{secrets.ACTIONS_SECRET}}
+
+  # Single required status check for the master branch ruleset. It passes only
+  # when every platform build succeeded; `if: always()` makes it report a
+  # failure (rather than being skipped) when a build fails or is cancelled.
+  build-and-test:
+    runs-on: ubuntu-latest
+    needs: [build_windows, build_linux, build_rpi]
+    if: always()
+    steps:
+      - name: Check platform builds
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Build results: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then
+              echo "::error::A platform build did not succeed ($r)"
+              exit 1
+            fi
+          done
