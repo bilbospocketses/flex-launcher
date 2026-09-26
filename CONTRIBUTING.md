@@ -6,7 +6,7 @@ This repository is an independent project. It started from complexlogic's Flex L
 
 ## Building
 
-Build instructions for Windows (Visual Studio + vcpkg) and Linux (CMake + distro packages) are in [`docs/compilation.md`](docs/compilation.md). The CI workflow in [`.github/workflows/build.yml`](.github/workflows/build.yml) is the authoritative, always-exercised recipe for all three targets: Windows, Debian, and Raspberry Pi.
+Build instructions for Windows (Visual Studio + vcpkg) and Linux (CMake + distro packages) are in [`docs/compilation.md`](docs/compilation.md). The CI workflow in [`.github/workflows/build.yml`](.github/workflows/build.yml) is the authoritative, always-exercised recipe for all four targets: Windows, Debian, Raspberry Pi, and Arch Linux.
 
 ## Project Structure
 
@@ -14,8 +14,8 @@ Build instructions for Windows (Visual Studio + vcpkg) and Linux (CMake + distro
 src/                 Launcher core (launcher.c, image.c, clock.c, util.c, debug.c)
 src/platform/        Windows and Linux platform layers
 src/external/        Vendored third-party sources
-config/              Default config and sample assets
-assets/              Icons, fonts, and packaging assets
+config/              Default config template, packaging and platform templates (PKGBUILD, .desktop, manifest, icon)
+assets/              Icons and fonts
 docs/                Documentation site (GitHub Pages / Jekyll)
 ```
 
@@ -24,7 +24,7 @@ docs/                Documentation site (GitHub Pages / Jekyll)
 `master` is **PR-gated**. Direct pushes are blocked by a branch ruleset; every change goes branch → PR → required checks green → squash-merge.
 
 **Required status checks** (all must be green before merge, and the branch must be up to date with `master`):
-- `build-and-test` — the gate job in `build.yml`; passes only when the Windows, Debian, and Raspberry Pi builds all succeed.
+- `build-and-test` — the gate job in `build.yml`; passes only when the Windows, Debian, Raspberry Pi, and Arch Linux builds all succeed.
 - `CodeQL` — code scanning via CodeQL default setup (C/C++ and GitHub Actions). It is required as the single `CodeQL` result rather than the per-language `Analyze (...)` jobs, so PRs where those jobs don't run are not blocked forever.
 - `Scorecard analysis` — OpenSSF supply-chain scoring from `scorecard.yml`.
 

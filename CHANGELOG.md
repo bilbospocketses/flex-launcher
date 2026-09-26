@@ -8,6 +8,11 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+### Fixed
+- The documentation site no longer reports visits to the original author's Google Analytics property. A `docs/_includes/head-custom-google-analytics.html` override inherited from the original project hardcoded its measurement ID; it is removed, so the theme's default include applies and stays inactive unless `google_analytics` is set in `docs/_config.yml`.
+- `CONTRIBUTING.md` described three build targets where there are four (Arch Linux was missing from the build-and-test gate description) and misdescribed the `config/` and `assets/` directories.
+- The compilation guide's dependency list now includes inih, and getopt on Windows.
+
 ## [0.1.0] - 2026-09-26
 
 First release of the independent project. Versioning restarts at 0.1.0; the project stays below 1.0 until its major overhaul is in place. There are no changes to the launcher's behaviour or configuration compared with the original v2.2 — this release is about licensing, packaging, and the build.
