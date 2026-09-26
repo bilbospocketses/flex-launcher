@@ -1,10 +1,10 @@
 # Changelog
 
-All notable changes to this fork (`bilbospocketses/flex-launcher`) are documented in this file.
+All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Release history of the upstream project up to v2.2 is in [`CHANGELOG`](CHANGELOG), which is kept exactly as upstream ships it.
+This project started from complexlogic's Flex Launcher at v2.2 and is developed independently. The original release history up to v2.2 is in [`CHANGELOG`](CHANGELOG), which is frozen.
 
 ## [Unreleased]
 
@@ -16,6 +16,7 @@ Release history of the upstream project up to v2.2 is in [`CHANGELOG`](CHANGELOG
 - `CONTRIBUTING.md` lists all three required status checks: `build-and-test`, `CodeQL`, and `Scorecard analysis`.
 
 ### Changed
+- The repository is now a standalone project, detached from complexlogic/flex-launcher's fork network. `CONTRIBUTING.md`, `SECURITY.md`, and this changelog no longer describe an upstream to sync with or report to, and the original `CHANGELOG` is frozen.
 - All workflow actions are pinned to commit SHAs and updated: `actions/checkout` v3 → v7.0.1, `actions/upload-artifact` v4 → v7.0.1, `friendlyanon/setup-vcpkg` v1 → v1.7.0, `softprops/action-gh-release` v1 → v3.0.3.
 - Linux packages are built on Debian 12 (bookworm) instead of Debian 11 (bullseye), so the `.deb` files now need Debian 12, Ubuntu 22.04, or newer.
 - The Raspberry Pi package is built in a Debian bookworm container on a native arm64 runner, replacing the QEMU chroot into a 2022 Raspberry Pi OS image.

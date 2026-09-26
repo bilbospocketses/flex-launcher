@@ -1,6 +1,6 @@
 # Security Policy
 
-This repository is a fork of [complexlogic/flex-launcher](https://github.com/complexlogic/flex-launcher). This policy covers the fork, `bilbospocketses/flex-launcher`.
+This policy covers `bilbospocketses/flex-launcher`, an independent project that started from complexlogic's Flex Launcher at v2.2.
 
 ## Reporting a Vulnerability
 
@@ -37,7 +37,6 @@ In scope: the launcher itself — config file parsing, application launching, im
 
 Out of scope:
 - Vulnerabilities in third-party libraries (SDL2, SDL2_image, SDL2_ttf, inih, getopt) that are not specific to how flex-launcher uses them — report those to the library's maintainers.
-- Issues present in the upstream project and not introduced by this fork — please also report those to [complexlogic/flex-launcher](https://github.com/complexlogic/flex-launcher).
 - Behaviour that follows from a user deliberately configuring the launcher to run a given command. The config file is trusted input written by the machine's owner.
 
 Thanks for helping keep the project safe.
