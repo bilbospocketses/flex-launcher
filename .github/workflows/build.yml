@@ -209,12 +209,29 @@ jobs:
           path: build/*.pkg.tar.zst
           if-no-files-found: error
 
+  # Generated library files are current, every file is listed, and brand art fits the shared outline
+  library_check:
+    name: Icon library
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Git repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the icon library
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet --require-hashes -r branding/library/requirements.txt
+          .venv/bin/python -m unittest discover -s branding/library -p "test_*.py" -v
+          .venv/bin/python branding/library/check-library.py
+
   # Single required status check for the master branch ruleset. It passes only
-  # when every platform build succeeded; `if: always()` makes it report a
-  # failure (rather than being skipped) when a build fails or is cancelled.
+  # when every platform build and the icon library check succeeded; `if: always()`
+  # makes it report a failure (rather than being skipped) when a job fails or is cancelled.
   build-and-test:
     runs-on: ubuntu-latest
-    needs: [build_windows, build_linux, build_rpi, build_arch]
+    needs: [build_windows, build_linux, build_rpi, build_arch, library_check]
     if: always()
     steps:
       - name: Check platform builds

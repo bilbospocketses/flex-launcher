@@ -1,0 +1,2 @@
+# Pillow for check-library.py in CI (ubuntu-latest, CPython 3.12, x86-64). Installed with --require-hashes.
+pillow==11.0.0 --hash=sha256:00177a63030d612148e659b55ba99527803288cea7c75fb05766ab7981a8c1b7
