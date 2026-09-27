@@ -42,6 +42,7 @@ void clean_path(char *path);
 void validate_settings(Geometry *geo);
 void parse_config_file(const char *config_file_path);
 void build_menu_items(void);
+void resolve_library_icons(void);
 void add_default_gamepad_controls(void);
 void read_file(const char *path, char **buffer);
 void sprintf_alloc(char **buffer, const char *format, ...);

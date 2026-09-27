@@ -27,6 +27,11 @@ if (WIN32)
   set_property(TARGET ${EXECUTABLE_TITLE} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_BINARY_DIR}")
 endif()
 
+# The icon library is found next to the executable, so keep a copy beside it in the build tree as well
+add_custom_command(TARGET ${EXECUTABLE_TITLE} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/assets/icons/library"
+          "$<TARGET_FILE_DIR:${EXECUTABLE_TITLE}>/assets/icons/library")
+
 # Build libraries
 add_subdirectory("platform")
 

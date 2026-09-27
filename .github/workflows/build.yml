@@ -76,6 +76,22 @@ jobs:
       - name: Unit tests
         run: ctest --test-dir build -C ${{ env.CMAKE_BUILD_TYPE }} --output-on-failure
 
+      - name: Check the icon library is beside the executable in the zip
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = Get-ChildItem build/*.zip | Select-Object -First 1
+          $archive = [IO.Compression.ZipFile]::OpenRead($zip.FullName)
+          $names = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
+          $archive.Dispose()
+          $exe = $names | Where-Object { $_ -match '(^|/)streamflex\.exe$' } | Select-Object -First 1
+          if (-not $exe) { Write-Error "streamflex.exe is not in $($zip.Name)"; exit 1 }
+          $prefix = $exe.Substring(0, $exe.Length - 'streamflex.exe'.Length)
+          foreach ($want in 'assets/icons/library/icons.ini', 'assets/icons/library/brands/NOTICE.md', 'assets/icons/library/generic/apps.svg') {
+            if ($names -notcontains ($prefix + $want)) { Write-Error "$prefix$want is not in $($zip.Name)"; exit 1 }
+          }
+          "icon library found beside streamflex.exe in $($zip.Name)"
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         name: Upload package
         with:
@@ -123,6 +139,13 @@ jobs:
       - name: Show package metadata
         run: dpkg-deb -f build/*.deb Package Version Architecture Maintainer Depends Homepage
 
+      - name: Check the icon library is in the package
+        run: |
+          contents=$(dpkg-deb -c build/*.deb)
+          for want in usr/share/streamflex/assets/icons/library/icons.ini usr/share/streamflex/assets/icons/library/brands/NOTICE.md usr/share/streamflex/assets/icons/library/generic/apps.svg; do
+            grep -q "\./$want\$" <<< "$contents" || { echo "::error::$want is not in the package"; exit 1; }
+          done
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         name: Upload Package
         with:
@@ -162,6 +185,13 @@ jobs:
 
       - name: Show package metadata
         run: dpkg-deb -f build/*.deb Package Version Architecture Maintainer Depends Homepage
+
+      - name: Check the icon library is in the package
+        run: |
+          contents=$(dpkg-deb -c build/*.deb)
+          for want in usr/share/streamflex/assets/icons/library/icons.ini usr/share/streamflex/assets/icons/library/brands/NOTICE.md usr/share/streamflex/assets/icons/library/generic/apps.svg; do
+            grep -q "\./$want\$" <<< "$contents" || { echo "::error::$want is not in the package"; exit 1; }
+          done
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         name: Upload package

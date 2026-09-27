@@ -16,10 +16,14 @@
 #define PATH_CONFIG_SYSTEM "@CMAKE_INSTALL_PREFIX@/share/@EXECUTABLE_TITLE@/"
 #define PATH_ASSETS_SYSTEM "@CMAKE_INSTALL_PREFIX@/share/@EXECUTABLE_TITLE@/assets/"
 #define PATH_FONTS_SYSTEM "@CMAKE_INSTALL_PREFIX@/share/@EXECUTABLE_TITLE@/assets/fonts"
+#define PATH_ICONS_EXE "icons"
+#define PATH_LIBRARY_EXE "library"
+#define PATH_LIBRARY_SYSTEM "@CMAKE_INSTALL_PREFIX@/share/@EXECUTABLE_TITLE@/assets/icons/library"
 #ifdef _WIN32
 #define CURRENT_DIRECTORY ".\\"
 #define PATH_FONTS_RELATIVE ".\\assets\\fonts"
 #define PATH_ASSETS_RELATIVE ".\\assets"
+#define PATH_LIBRARY_RELATIVE ".\\assets\\icons\\library"
 #else
 #define CURRENT_DIRECTORY "./"
 #endif

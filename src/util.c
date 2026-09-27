@@ -4,12 +4,14 @@
 #include <string.h>
 #include <stdbool.h>
 #include <time.h>
+#include <ctype.h>
 #include <getopt.h>
 #include <SDL.h>
 #include <SDL_syswm.h>
 #include "launcher.h"
 #include <launcher_config.h>
 #include "util.h"
+#include "library.h"
 #include "debug.h"
 #include "platform/platform.h"
 #include <ini.h>
@@ -1057,6 +1059,79 @@ void build_menu_items()
         for (unsigned int i = 0; i < m->num_entries; i++) {
             m->items[i] = e;
             e = e->next;
+        }
+    }
+}
+
+// A function to pass the icon library's warnings to the log
+static void library_warning(const char *message)
+{
+    log_error("%s", message);
+}
+
+// A function to point every entry that names a library icon at its file. It also rescues two mistakes:
+// a path to one of the seven icons older versions shipped (their files are gone), and a name typed in
+// the wrong case. Both use the library icon and log a note.
+void resolve_library_icons(void)
+{
+    library_set_warn(library_warning);
+    char exe_library[MAX_PATH_CHARS + 1];
+    const char *roots[2];
+    roots[0] = config.exe_path != NULL
+               ? join_paths(exe_library, sizeof(exe_library), 4, config.exe_path, PATH_ASSETS_EXE, PATH_ICONS_EXE, PATH_LIBRARY_EXE)
+               : NULL;
+#ifdef __unix__
+    roots[1] = PATH_LIBRARY_SYSTEM;
+#else
+    roots[1] = PATH_LIBRARY_RELATIVE;
+#endif
+    const char *root = NULL;
+    char manifest[MAX_PATH_CHARS + 1];
+    for (int i = 0; i < 2 && root == NULL; i++) {
+        if (roots[i] != NULL && file_exists(join_paths(manifest, sizeof(manifest), 2, roots[i], LIBRARY_MANIFEST)))
+            root = roots[i];
+    }
+    if (root == NULL)
+        log_error("Icon library not found; entries that name a library icon will have no image");
+    else {
+        int count = library_load(root);
+        log_debug("Icon library: %s (%i icons)", root, count);
+    }
+
+    for (Menu *m = config.first_menu; m != NULL; m = m->next) {
+        for (Entry *e = m->first_entry; e != NULL; e = e->next) {
+            const char *path = NULL;
+            if (e->icon_path == NULL)
+                continue;
+            if (library_is_name(e->icon_path)) {
+                path = library_lookup(e->icon_path);
+                if (path == NULL) {
+                    log_error("Entry '%s' in menu '%s': no library icon named '%s'", e->title, m->name, e->icon_path);
+                    path = library_lookup(LIBRARY_FALLBACK_ICON);
+                }
+            }
+            else if (!file_exists(e->icon_path)) {
+                const char *name = library_legacy_name(e->icon_path);
+                if (name != NULL && (path = library_lookup(name)) != NULL) {
+                    log_error("Entry '%s' in menu '%s': %s no longer exists, using the library icon '%s' "
+                        "(write '%s' in the config to use it directly)", e->title, m->name, e->icon_path, name, name);
+                }
+                else {
+                    char lower[LIBRARY_NAME_MAX + 1];
+                    size_t length = strlen(e->icon_path);
+                    if (length <= LIBRARY_NAME_MAX) {
+                        for (size_t k = 0; k <= length; k++)
+                            lower[k] = (char) tolower((unsigned char) e->icon_path[k]);
+                        if (library_is_name(lower) && (path = library_lookup(lower)) != NULL)
+                            log_error("Entry '%s' in menu '%s': %s is not a file; using the library icon '%s' "
+                                "(icon names are lowercase)", e->title, m->name, e->icon_path, lower);
+                    }
+                }
+            }
+            if (path != NULL) {
+                free(e->icon_path);
+                e->icon_path = strdup(path);
+            }
         }
     }
 }
