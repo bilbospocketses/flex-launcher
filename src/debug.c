@@ -199,6 +199,15 @@ void debug_menu_entries(Menu *first_menu, size_t num_menus)
             SETTING_ROWS, menu->overrides.rows,
             SETTING_COLUMNS, menu->overrides.columns,
             SETTING_ICON_SIZE, menu->overrides.icon_cap);
+        LayoutGeometry geometry;
+        char why[256];
+        if (compute_menu_layout(menu, &geometry, why, sizeof(why)))
+            log_debug("Layout: cannot be shown: %s", why);
+        else {
+            log_debug("Layout: %i x %i grid, %i px buttons", geometry.columns, geometry.rows, geometry.button);
+            if (why[0] != '\0')
+                log_debug("Layout note: %s", why);
+        }
         entry = menu->first_entry;
         for (size_t j = 0; j < menu->num_entries; j++) {
             log_debug("Entry %i Title: %s",j,entry->title);

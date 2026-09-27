@@ -30,6 +30,16 @@ bool layout_parse_count(const char *value, int *count)
     return true;
 }
 
+// A function to read an IconSize: a whole number of px from LAYOUT_MIN_BUTTON to LAYOUT_MAX_BUTTON
+bool layout_parse_icon_size(const char *value, int *size)
+{
+    int number;
+    if (!layout_parse_count(value, &number) || number < LAYOUT_MIN_BUTTON || number > LAYOUT_MAX_BUTTON)
+        return false;
+    *size = number;
+    return true;
+}
+
 // A function to return the smaller of two ints
 static int min_int(int a, int b)
 {
@@ -54,19 +64,24 @@ int layout_compute(const LayoutParams *params, const LayoutArea *area, int entry
                    LayoutGeometry *geometry, char *why, size_t why_size)
 {
     LayoutGeometry g;
-    int spacing = max_int(params->spacing, 0);
     int cap = params->icon_cap > 0 ? min_int(params->icon_cap, LAYOUT_MAX_BUTTON) : LAYOUT_MAX_BUTTON;
     int width_fit, height_fit;
     if (why_size > 0)
         why[0] = '\0';
 
+    // Keep the arithmetic inside int however large the settings are: no gap or padding is
+    // wider than the area, and no more rows or columns are tried than the smallest button fills
+    int spacing = min_int(max_int(params->spacing, 0), max_int(area->w, area->h));
+    int max_columns = max_int(area->w / LAYOUT_MIN_BUTTON, 1);
+    int max_rows = max_int(area->h / LAYOUT_MIN_BUTTON, 1);
+
     // Shrink only the axis that overflows until the smallest button fits. Highlight padding
     // is capped at half the gap between buttons; rows only have a gap between them in a grid.
-    g.rows = max_int(params->rows, 1);
-    g.columns = max_int(params->columns, 1);
+    g.rows = min_int(max_int(params->rows, 1), max_rows);
+    g.columns = min_int(max_int(params->columns, 1), max_columns);
     g.hpad = min_int(max_int(params->hpad, 0), spacing / 2);
     for (;;) {
-        g.vpad = max_int(params->vpad, 0);
+        g.vpad = min_int(max_int(params->vpad, 0), max_int(area->h, 0));
         if (g.rows > 1)
             g.vpad = min_int(g.vpad, spacing / 2);
         width_fit = fit(area->w, g.columns, spacing, g.hpad, 0);

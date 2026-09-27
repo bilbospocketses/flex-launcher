@@ -64,6 +64,7 @@ typedef struct {
 
 LayoutOverrides layout_resolve(LayoutOverrides menu, LayoutOverrides global, LayoutOverrides builtin);
 bool layout_parse_count(const char *value, int *count);
+bool layout_parse_icon_size(const char *value, int *size);
 int layout_compute(const LayoutParams *params, const LayoutArea *area, int entry_count,
                    LayoutGeometry *geometry, char *why, size_t why_size);
 LayoutPosition layout_move(const LayoutGeometry *geometry, int entry_count, LayoutPosition position,

@@ -170,9 +170,10 @@ int config_handler(void *user, const char *section, const char *name, const char
     else if (MATCH(section, "Layout")) {
         int count;
         if (MATCH(name, SETTING_MAX_BUTTONS)) {
-            int max_buttons = atoi(value);
-            if (max_buttons > 0 && !columns_set)
-                config.max_buttons = (unsigned int) max_buttons;
+            if (!layout_parse_count(value, &count))
+                log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_MAX_BUTTONS, value);
+            else if (!columns_set)
+                config.max_buttons = (unsigned int) count;
         }
         else if (MATCH(name, SETTING_COLUMNS)) {
             if (layout_parse_count(value, &count)) {
@@ -189,9 +190,11 @@ int config_handler(void *user, const char *section, const char *name, const char
                 log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_ROWS, value);
         }
         else if (MATCH(name, SETTING_ICON_SIZE)) {
-            Uint16 icon_size = (Uint16) atoi(value);
-            if (icon_size >= MIN_ICON_SIZE && icon_size <= MAX_ICON_SIZE)
-                config.icon_size = icon_size;
+            if (layout_parse_icon_size(value, &count))
+                config.icon_size = (Uint16) count;
+            else
+                log_error("Invalid %s value '%s' in [Layout] (use a whole number from %i to %i), ignoring it",
+                    SETTING_ICON_SIZE, value, MIN_ICON_SIZE, MAX_ICON_SIZE);
         }
         else if (MATCH(name, SETTING_ICON_SPACING)) {
             if (is_percent(value))
@@ -443,9 +446,8 @@ int config_handler(void *user, const char *section, const char *name, const char
                           MATCH(name, SETTING_ICON_SIZE);
         if (layout_key && strchr(value, ';') == NULL) {
             int count = 0;
-            bool valid = layout_parse_count(value, &count);
-            if (valid && MATCH(name, SETTING_ICON_SIZE))
-                valid = count >= MIN_ICON_SIZE && count <= MAX_ICON_SIZE;
+            bool valid = MATCH(name, SETTING_ICON_SIZE) ? layout_parse_icon_size(value, &count)
+                                                        : layout_parse_count(value, &count);
             if (!valid)
                 log_error("Invalid %s value '%s' in menu '%s', ignoring it", name, value, section);
             else if (MATCH(name, SETTING_ROWS))
@@ -955,7 +957,14 @@ void validate_settings(Geometry *geo)
             convert_percent_to_int(DEFAULT_ICON_SPACING, &icon_spacing, geo->screen_width);
         config.icon_spacing = icon_spacing;
     }
-    
+
+    // A gap wider than the screen leaves no room for a single button
+    if (config.icon_spacing > geo->screen_width) {
+        log_error("%s %i px is wider than the screen, using %i px",
+            SETTING_ICON_SPACING, config.icon_spacing, geo->screen_width);
+        config.icon_spacing = geo->screen_width;
+    }
+
     // Convert clock margin setting and check limits
     if (config.clock_margin < 0) {
         int clock_margin = INVALID_PERCENT_VALUE;

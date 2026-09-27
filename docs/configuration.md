@@ -197,12 +197,12 @@ The number of buttons in each row. The buttons are sized so that `Columns` of th
 Default: 4
 
 ##### IconSize
-The largest size of a button, in pixels. Buttons are sized to fill the grid but never grow past this. Leave it out to let them grow as large as the grid allows. An icon image that is not square is stretched to fit. SVG icons are drawn at the button's size, so they stay sharp at any size.
+The largest size of a button, in pixels: a whole number from 32 to 1024. Buttons are sized to fill the grid but never grow past this. Leave it out to let them grow as large as the grid allows. Any other value, such as `200px`, is ignored and noted in the log. An icon image that is not square is stretched to fit. SVG icons are drawn at the button's size, so they stay sharp at any size.
 
 Default: none (the sample config sets 256)
 
 ##### IconSpacing
-The gap between buttons, across and down, in pixels or percent of the screen width. The gap is kept as set: if it is too large for the grid to fit at `IconSize`, the buttons shrink instead.
+The gap between buttons, across and down, in pixels or percent of the screen width. The gap is kept as set, up to the width of the screen: if it is too large for the grid to fit at `IconSize`, the buttons shrink instead.
 
 Default: 5%
 

@@ -318,3 +318,4 @@ void quit_slideshow(void);
 void set_draw_color(void);
 void quit(int status);
 void print_version(FILE *stream);
+int compute_menu_layout(const Menu *menu, LayoutGeometry *geometry, char *why, size_t why_size);

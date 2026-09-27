@@ -56,6 +56,26 @@ static void test_parse_count(void)
     CHECK_INT(n, 12); // A rejected value leaves the output alone
 }
 
+// A function to test that IconSize takes only a whole number from LAYOUT_MIN_BUTTON to
+// LAYOUT_MAX_BUTTON, so "200px" or "2000" is refused instead of half-read
+static void test_parse_icon_size(void)
+{
+    int n = -7;
+    CHECK(layout_parse_icon_size("256", &n));
+    CHECK_INT(n, 256);
+    CHECK(layout_parse_icon_size("32", &n));
+    CHECK_INT(n, 32);
+    CHECK(layout_parse_icon_size("1024", &n));
+    CHECK_INT(n, 1024);
+    CHECK(!layout_parse_icon_size("31", &n));
+    CHECK(!layout_parse_icon_size("1025", &n));
+    CHECK(!layout_parse_icon_size("200px", &n));
+    CHECK(!layout_parse_icon_size("abc", &n));
+    CHECK(!layout_parse_icon_size("", &n));
+    CHECK(!layout_parse_icon_size(NULL, &n));
+    CHECK_INT(n, 1024); // A rejected value leaves the output alone
+}
+
 static const LayoutArea SCREEN_1080 = { 0, 54, 1920, 972, 540 };
 
 static LayoutParams params(int rows, int columns, int icon_cap)
@@ -152,6 +172,28 @@ static void test_compute_fails_when_nothing_fits(void)
     CHECK(layout_compute(&p, &tiny, 1, &g, why, sizeof(why)) != 0);
     CHECK(why[0] != '\0');
     CHECK_INT(g.button, 0);      // Untouched on failure
+}
+
+// A function to test that huge Rows, Columns, IconSpacing and VPadding keep the arithmetic inside
+// int: the gap is capped at the area, and no more slots are tried than 32 px buttons could fill
+static void test_compute_limits(void)
+{
+    LayoutParams p = params(999999, 999999, 0);
+    LayoutGeometry g = { 0 };
+    char why[128];
+    p.spacing = 2000000000;
+    CHECK_INT(layout_compute(&p, &SCREEN_1080, 3, &g, why, sizeof(why)), 0);
+    CHECK_INT(g.columns, 1);     // A 1920 px gap leaves room for one column
+    CHECK_INT(g.rows, 1);
+    CHECK_INT(g.button, 852);    // 972 - 2*30 - 60, from the height
+    CHECK(strstr(why, "for 999999 x 999999 buttons, reducing to 1 x 1") != NULL);
+
+    // A strip's vertical padding is not capped by the gap, so it is capped by the area: a
+    // padding taller than the screen leaves no room, as VPadding=2000 already does
+    p = params(1, 4, 0);
+    p.vpad = 2000000000;
+    CHECK(layout_compute(&p, &SCREEN_1080, 3, &g, why, sizeof(why)) != 0);
+    CHECK(strstr(why, "not even one") != NULL);
 }
 
 // A function to test centring: a partial single row on its own buttons, a partial last row on the columns
@@ -317,12 +359,14 @@ int main(void)
 {
     test_resolve();
     test_parse_count();
+    test_parse_icon_size();
     test_compute_strip_matches_today();
     test_compute_no_cap_fills();
     test_compute_grid_height_limited();
     test_compute_padding_caps();
     test_compute_reduces_overflowing_axis();
     test_compute_fails_when_nothing_fits();
+    test_compute_limits();
     test_compute_centring();
     test_compute_vcenter_clamp();
     test_compute_clock_band();
