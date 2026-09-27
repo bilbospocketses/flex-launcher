@@ -8,6 +8,12 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+### Changed
+- **New app icon**, drawn from the StreamFlex logo. It shows the logo's teal ring and rising ribbon arrow around an app-window glyph, on a dark-teal rounded plate. The icon is platform-neutral, so unlike the banner it has no penguin. It replaces the icon inherited from the original project everywhere:
+  - The Windows executable (`config/streamflex.ico`): ten sizes from 16 to 256 px, all with alpha. The small sizes use a simplified, bolder drawing so they stay legible.
+  - The Linux desktop entry: `streamflex.svg` for the scalable icon and a 48×48 `streamflex.png`, installed into the hicolor theme.
+  - The documentation site's favicon.
+
 ## [0.1.1] - 2026-09-27
 
 First release under the name StreamFlex. The launcher behaves exactly as in 0.1.0; what changes is its name, and with it the executable, package and directory names listed below. The new app icon follows in 0.1.2.
