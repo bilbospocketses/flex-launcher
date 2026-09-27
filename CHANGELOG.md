@@ -8,6 +8,9 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+### Changed
+- CI runs on `ubuntu-24.04` instead of `ubuntu-latest`, which GitHub moves to Ubuntu 26 from October 19, 2026. Every job now names its runner image (Windows was already `windows-2022` and Raspberry Pi `ubuntu-24.04-arm`), so a new image arrives in its own deliberate change rather than under a build that had not changed.
+
 ### Fixed
 - The docs caught up with the icon library and the font fix. The configuration guide lists SVG among the supported image formats, says a relative `Font` path is also looked for next to the executable and that library icons don't depend on the working directory, and names the entry's middle field `icon` throughout. The README, the docs home page and the default config's comments point to the library; `CONTRIBUTING.md` counts the Icon library check in the required gate and points to the library's own tests; `SECURITY.md` includes the library manifest in scope. The setup guide's contents also named a section "Maintaining Controls" instead of "Maintaining Contrast".
 
