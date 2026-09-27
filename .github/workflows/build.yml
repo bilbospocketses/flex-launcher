@@ -73,6 +73,9 @@ jobs:
       - name: Build
         run: cmake --build build --target package --config ${{ env.CMAKE_BUILD_TYPE }}
 
+      - name: Unit tests
+        run: ctest --test-dir build -C ${{ env.CMAKE_BUILD_TYPE }} --output-on-failure
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         name: Upload package
         with:
@@ -114,6 +117,7 @@ jobs:
           if [[ "${{matrix.config.name}}" == "Debian" ]]; then
             cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DCMAKE_INSTALL_PREFIX=/usr -DPACKAGE=DEB -DCPACK_DEBIAN_PACKAGE_ARCHITECTURE=amd64
             cmake --build build --target package --config ${{env.CMAKE_BUILD_TYPE}}
+            ctest --test-dir build --output-on-failure
           fi
 
       - name: Show package metadata
@@ -154,6 +158,7 @@ jobs:
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} -DCMAKE_INSTALL_PREFIX=/usr -DPACKAGE=DEB -DCPACK_DEBIAN_PACKAGE_ARCHITECTURE=arm64 -DRPI=1
           cmake --build build --target package --config ${{env.CMAKE_BUILD_TYPE}}
+          ctest --test-dir build --output-on-failure
 
       - name: Show package metadata
         run: dpkg-deb -f build/*.deb Package Version Architecture Maintainer Depends Homepage
