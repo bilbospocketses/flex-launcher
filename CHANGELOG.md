@@ -11,7 +11,7 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 ### Changed
 - The Debian and Raspberry Pi packages list each dependency once. The `Depends` field combined a hand-written list with the one `dpkg-shlibdeps` computes from the binary, so every library appeared twice; it is now the computed list alone.
 - CI builds a pull request once per commit instead of twice. The build workflow's `push` trigger now fires only for `master` and `v*` tags, leaving PR branches to the `pull_request` trigger.
-- The `Release` job fails when `launcher_version` in `docs/_config.yml` differs from the project version, so a release can no longer ship while the docs site's download links point at the previous one.
+- The docs site's download page takes its version and file links from the latest published release, read at build time, and the `Release` job rebuilds the site once a release is published. Previously the version was bumped by hand in the release PR and deployed when that PR merged, so the download links pointed at a release that did not exist yet until the tag was pushed and published. `launcher_version` in `docs/_config.yml` is gone.
 
 ### Fixed
 - The documentation site no longer reports visits to the original author's Google Analytics property. A `docs/_includes/head-custom-google-analytics.html` override inherited from the original project hardcoded its measurement ID; it is removed, so the theme's default include applies and stays inactive unless `google_analytics` is set in `docs/_config.yml`.

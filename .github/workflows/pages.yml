@@ -7,6 +7,11 @@
 #
 # Pull requests that touch docs/ build the site without deploying it, so a
 # broken page is caught before it merges. This is not a required check.
+#
+# The download page links to the files of the latest published release, read
+# from the API at build time. The Release job in build.yml dispatches this
+# workflow with the new tag once a release is published, so the site never
+# links to a release that does not exist yet.
 
 name: Docs site
 
@@ -22,6 +27,11 @@ on:
       - "docs/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release to link the download page to (default: the latest release)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -43,6 +53,41 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      # Writes docs/_data/release.json, which download.md reads. The release
+      # object's own assets array can lag behind the upload, so the files are
+      # read from the release's assets collection instead.
+      - name: Read release for the download page
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [ -n "$RELEASE_TAG" ]; then
+            if ! [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::release_tag '$RELEASE_TAG' is not vX.Y.Z"; exit 1
+            fi
+            release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
+          else
+            release=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest")
+          fi
+          tag=$(jq -r .tag_name <<< "$release")
+          id=$(jq -r .id <<< "$release")
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release tag '$tag' is not vX.Y.Z"; exit 1
+          fi
+          assets=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$id/assets" \
+            --jq '.[] | select(.state == "uploaded") | {name, url: .browser_download_url}' | jq -s .)
+          jq -n --arg tag "$tag" --argjson assets "$assets" '
+            def pick($re): [$assets[] | select(.name | test($re))]
+              | if length == 1 then .[0]
+                else error("release \($tag) needs exactly one asset matching \($re), found \(length)") end;
+            { tag: $tag,
+              version: ($tag | ltrimstr("v")),
+              windows: pick("-win64\\.zip$"),
+              deb_amd64: pick("_amd64\\.deb$"),
+              arch: pick("-x86_64\\.pkg\\.tar\\.zst$"),
+              deb_arm64: pick("_arm64\\.deb$") }' > docs/_data/release.json
+          cat docs/_data/release.json
 
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697 # v1.0.13
