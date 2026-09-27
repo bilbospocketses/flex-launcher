@@ -220,6 +220,13 @@ if (UNIX)
   set(INSTALL_DIR_ICONS "${CMAKE_INSTALL_PREFIX}/share/icons")
   install(FILES "${PROJECT_SOURCE_DIR}/docs/streamflex.png" DESTINATION "${INSTALL_DIR_ICONS}/hicolor/48x48/apps")
   install(FILES "${PROJECT_SOURCE_DIR}/docs/streamflex.svg" DESTINATION "${INSTALL_DIR_ICONS}/hicolor/scalable/apps")
+  # Small sizes are drawn from the simplified icon master (branding/icon); desktops
+  # prefer an exact-size PNG over scaling the detailed 48 px or scalable artwork down.
+  foreach (ICON_SIZE 16 24 32)
+    install(FILES "${PROJECT_SOURCE_DIR}/docs/streamflex-${ICON_SIZE}.png"
+      DESTINATION "${INSTALL_DIR_ICONS}/hicolor/${ICON_SIZE}x${ICON_SIZE}/apps"
+      RENAME "${EXECUTABLE_TITLE}.png")
+  endforeach ()
 endif ()
   
 # Set paths for config files

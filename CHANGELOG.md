@@ -10,6 +10,11 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ### Added
 - The app icon's source is in the repository under `branding/icon/`. `build-svg.py` holds its geometry and colours and writes the two vector masters, and `build-icon.ps1` renders, packs, installs and verifies all four icon files. Run on the committed source, it reproduces the 0.1.2 icon byte for byte, so a later icon change can be regenerated rather than redrawn.
+- Two icon tools sit beside it. `render-check.py` renders the icon in Chromium and Inkscape and measures the difference, a portability check for design changes. `palette.py` re-derives the icon's colours from the logo banner.
+- The Windows build instructions in the compilation guide now reproduce the CI build: Visual Studio 2022, vcpkg pinned to the version CI uses, and CI's generator and library settings. The `build` directory is ignored by git.
+
+### Fixed
+- **Linux: the app icon now comes in 16, 24 and 32 px sizes**, drawn from the icon's simplified small-size design. Until now only the 48 px and scalable icons were installed, so menus, panels and taskbars at small sizes shrank the detailed artwork, and the design made for small sizes only reached Windows.
 
 ## [0.1.2] - 2026-09-27
 
