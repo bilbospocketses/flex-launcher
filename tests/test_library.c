@@ -53,7 +53,7 @@ static void test_load_good(void)
 {
     const char *root = LIBRARY_FIXTURES "/good";
     warnings = 0;
-    CHECK_INT(library_load(root), 3);
+    CHECK_INT(library_load(root), 4);
     CHECK_INT(warnings, 0);
     const char *path = library_lookup("netflix");
     CHECK(ends_with(path, "brands/netflix.png"));
@@ -93,7 +93,7 @@ static void test_load_none(void)
 static void test_reload_and_free(void)
 {
     library_load(LIBRARY_FIXTURES "/bad");
-    CHECK_INT(library_load(LIBRARY_FIXTURES "/good"), 3);
+    CHECK_INT(library_load(LIBRARY_FIXTURES "/good"), 4);
     CHECK(library_lookup("dup") == NULL);   // nothing survives from the previous load
     library_free();
     CHECK(library_lookup("netflix") == NULL);
@@ -116,6 +116,40 @@ static void test_legacy(void)
     CHECK(legacy_is(NULL, NULL));
 }
 
+// A function to check that library_rescue finds the expected icon (by name and file) for a field, or nothing
+static bool rescues_to(const char *field, const char *expected_name, const char *expected_file)
+{
+    const char *name = "untouched";
+    const char *path = library_rescue(field, &name);
+    if (expected_name == NULL)
+        return path == NULL;
+    return path != NULL && ends_with(path, expected_file) && !strcmp(name, expected_name);
+}
+
+static void test_rescue(void)
+{
+    library_load(LIBRARY_FIXTURES "/good");
+    // A path to one of the seven icons older versions shipped
+    CHECK(rescues_to("C:\\StreamFlex\\assets\\icons\\kodi.png", "kodi", "brands/kodi.png"));
+    CHECK(rescues_to("/usr/share/streamflex/assets/icons/KODI.PNG", "kodi", "brands/kodi.png"));
+    CHECK(rescues_to("/x/system.png", NULL, NULL));          // maps to settings, which this library lacks
+    // A name typed with capitals or stray spaces
+    CHECK(rescues_to("Netflix", "netflix", "brands/netflix.png"));
+    CHECK(rescues_to(" movies", "movies", "generic/movies.svg"));
+    CHECK(rescues_to("MOVIES \t", "movies", "generic/movies.svg"));
+    // Nothing to rescue
+    CHECK(rescues_to("Nope", NULL, NULL));
+    CHECK(rescues_to("netflix.png", NULL, NULL));
+    CHECK(rescues_to("net flix", NULL, NULL));
+    CHECK(rescues_to("   ", NULL, NULL));
+    CHECK(rescues_to("", NULL, NULL));
+    CHECK(rescues_to(NULL, NULL, NULL));
+    CHECK(rescues_to("abcdefghijklmnopqrstuvwxyz0123456789", NULL, NULL));
+    CHECK(library_rescue("Netflix", NULL) != NULL);          // the name out-parameter is optional
+    library_free();
+    CHECK(library_rescue("Netflix", NULL) == NULL);          // nothing loaded, nothing rescued
+}
+
 int main(void)
 {
     library_set_warn(count_warning);
@@ -125,5 +159,6 @@ int main(void)
     test_load_none();
     test_reload_and_free();
     test_legacy();
+    test_rescue();
     return check_report();
 }

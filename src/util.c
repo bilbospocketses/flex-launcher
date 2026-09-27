@@ -4,7 +4,6 @@
 #include <string.h>
 #include <stdbool.h>
 #include <time.h>
-#include <ctype.h>
 #include <getopt.h>
 #include <SDL.h>
 #include <SDL_syswm.h>
@@ -1069,9 +1068,9 @@ static void library_warning(const char *message)
     log_error("%s", message);
 }
 
-// A function to point every entry that names a library icon at its file. It also rescues two mistakes:
-// a path to one of the seven icons older versions shipped (their files are gone), and a name typed in
-// the wrong case. Both use the library icon and log a note.
+// A function to point every entry that names a library icon at its file. It also rescues a missing
+// file that the library can stand in for (see library_rescue): a path to one of the seven icons older
+// versions shipped, or a name typed with capitals or stray spaces. Both use the library icon and log a note.
 void resolve_library_icons(void)
 {
     library_set_warn(library_warning);
@@ -1111,22 +1110,11 @@ void resolve_library_icons(void)
                 }
             }
             else if (!file_exists(e->icon_path)) {
-                const char *name = library_legacy_name(e->icon_path);
-                if (name != NULL && (path = library_lookup(name)) != NULL) {
-                    log_error("Entry '%s' in menu '%s': %s no longer exists, using the library icon '%s' "
+                const char *name = NULL;
+                path = library_rescue(e->icon_path, &name);
+                if (path != NULL)
+                    log_error("Entry '%s' in menu '%s': '%s' is not a file; using the library icon '%s' "
                         "(write '%s' in the config to use it directly)", e->title, m->name, e->icon_path, name, name);
-                }
-                else {
-                    char lower[LIBRARY_NAME_MAX + 1];
-                    size_t length = strlen(e->icon_path);
-                    if (length <= LIBRARY_NAME_MAX) {
-                        for (size_t k = 0; k <= length; k++)
-                            lower[k] = (char) tolower((unsigned char) e->icon_path[k]);
-                        if (library_is_name(lower) && (path = library_lookup(lower)) != NULL)
-                            log_error("Entry '%s' in menu '%s': %s is not a file; using the library icon '%s' "
-                                "(icon names are lowercase)", e->title, m->name, e->icon_path, lower);
-                    }
-                }
             }
             if (path != NULL) {
                 free(e->icon_path);

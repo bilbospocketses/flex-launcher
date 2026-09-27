@@ -18,6 +18,7 @@ bool        library_is_name(const char *field);
 int         library_load(const char *root);
 const char *library_lookup(const char *name);
 const char *library_legacy_name(const char *path);
+const char *library_rescue(const char *field, const char **name);
 void        library_free(void);
 
 #endif

@@ -182,15 +182,52 @@ int library_load(const char *root)
     return count;
 }
 
-const char *library_lookup(const char *name)
+// A function to find a loaded (not rejected) icon by name
+static const LibraryIcon *loaded_icon(const char *name)
 {
     if (name == NULL)
         return NULL;
     for (int i = 0; i < icon_count; i++) {
         if (icons[i].path != NULL && !strcmp(icons[i].name, name))
-            return icons[i].path;
+            return &icons[i];
     }
     return NULL;
+}
+
+const char *library_lookup(const char *name)
+{
+    const LibraryIcon *icon = loaded_icon(name);
+    return icon != NULL ? icon->path : NULL;
+}
+
+// A function to find the library icon a broken icon field most likely meant: one of the seven icons older
+// versions shipped (by file name), or a library name typed with capitals or stray spaces. Returns the
+// icon's path and, if name is not NULL, points it at the icon's name; returns NULL if nothing fits.
+const char *library_rescue(const char *field, const char **name)
+{
+    if (field == NULL)
+        return NULL;
+    const LibraryIcon *icon = loaded_icon(library_legacy_name(field));
+    if (icon == NULL) {
+        while (isspace((unsigned char) *field))
+            field++;
+        size_t length = strlen(field);
+        while (length > 0 && isspace((unsigned char) field[length - 1]))
+            length--;
+        if (length == 0 || length > LIBRARY_NAME_MAX)
+            return NULL;
+        char folded[LIBRARY_NAME_MAX + 1];
+        for (size_t i = 0; i < length; i++)
+            folded[i] = (char) tolower((unsigned char) field[i]);
+        folded[length] = '\0';
+        if (library_is_name(folded))
+            icon = loaded_icon(folded);
+    }
+    if (icon == NULL)
+        return NULL;
+    if (name != NULL)
+        *name = icon->name;
+    return icon->path;
 }
 
 // A function to map the file name of one of the seven icons older versions shipped to its library name
