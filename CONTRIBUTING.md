@@ -18,6 +18,7 @@ config/              Default config template, packaging and platform templates (
 assets/              Icons and fonts
 branding/icon/       Source for the app icon; regenerate with build-icon.ps1 (see its README)
 branding/logo/       The full-resolution logo original; the docs banner is a downscale of it
+design/              Design specs and implementation plans (not published; docs/ is the site)
 docs/                Documentation site (GitHub Pages / Jekyll)
 ```
 
