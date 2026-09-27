@@ -25,6 +25,7 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 - SVG icons are drawn at the button's size, so they stay sharp at any size.
 
 ### Fixed
+- The README, the setup guide and the `OversizeMode` and Scroll Indicators docs still described the single-row layout, and the setup guide said SVG menu icons were not supported. They now describe grids, and recommend SVG icons.
 - Titles on very small buttons no longer write outside their memory. When fewer than three characters of a title fitted, truncating it walked back past the start of the text, which could crash the launcher or corrupt memory. It becomes `...` instead, and a one- or two-character title is left as it is. Small buttons were rare before grids; a dense grid on a small screen makes them ordinary.
 
 ## [0.1.3] - 2026-09-27

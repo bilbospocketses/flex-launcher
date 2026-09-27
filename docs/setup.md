@@ -21,20 +21,7 @@ Make that you are generally familiar with the [configuration options](https://bi
 ## Selecting Menu Icons
 Transparency is essential for menu icons. Therefore, you should not use JPEG images for icons, since the JPEG format does not support transparency. Use PNG or WebP instead. PNG icons for most popular applications are easily found online in common sizes up to 256x256.
 
-Any icon that is not the same resolution as the `IconSize` setting in your config file will be stretched. If your `IconSize` setting is not a common icon resolution (e.g. 256), then it is advisable to find SVG icons instead. However, StreamFlex does not currently support SVGs for menu icons, so you will need to rasterize them into PNG or WebP using a tool such as [Inkscape](https://inkscape.org/). An example command can quickly rasterize an SVG into your desired resolution:
-```bash
-inkscape --export-width=<width> --export-type=png /path/to/file.svg
-```
-You can easily write a script to rasterize all SVGs in a directory to PNG at a given resolution. Here is an example in Python:
-```python
-import glob
-import subprocess
-WIDTH=300 # Width of the PNG in pixels
-
-svg_files = glob.glob("*.svg")
-for file in svg_files:
-    subprocess.run(['inkscape', f'--export-width={WIDTH}', '--export-type=png', file])
-```
+Icons are scaled to the size of their button, which the menu's grid decides (see [Layout](configuration.md#layout)), so the same icon may be drawn at different sizes in different menus. A PNG or WebP icon scales down best from a large original, 256x256 or more. An SVG icon is drawn at the button's exact size, so it stays sharp at any size; where an SVG version of an icon exists, it is the best choice.
 
 ## Maintaining Contrast
 When using an image as the background, it is often difficult to read the text that is displayed on top. This is particularly true if the image is a photograph and the text is white. StreamFlex has several features that will improve the contrast between the background and the objects on top.
