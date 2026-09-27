@@ -2,7 +2,7 @@
 layout: default
 title: Configuration
 ---
-# Configuring Flex Launcher
+# Configuring StreamFlex
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -23,14 +23,14 @@ title: Configuration
 8. [Transparent Backgrounds](#transparent-backgrounds)
 
 ## Overview
-Flex Launcher uses an [INI file](https://en.wikipedia.org/wiki/INI_file) to configure settings and menus. The INI file consists of sections enclosed in square brackets, and in each section there are entries which consist of a key and a value. Example:
+StreamFlex uses an [INI file](https://en.wikipedia.org/wiki/INI_file) to configure settings and menus. The INI file consists of sections enclosed in square brackets, and in each section there are entries which consist of a key and a value. Example:
 ```ini
 [Section]
 Key1=value
 Key2=value
 ...
 ```
-A line can be commented out by using the # character at the beginning of the line, which will cause the line to be ignored by the program. In-line comments are not allowable. Here are a few things to note about the configuration settings for Flex Launcher:
+A line can be commented out by using the # character at the beginning of the line, which will cause the line to be ignored by the program. In-line comments are not allowable. Here are a few things to note about the configuration settings for StreamFlex:
 - All keys and values are case sensitive.
 - Full UTF-8 character set is supported for titles.
 - The following image formats are supported: JPEG, PNG, and WebP
@@ -62,7 +62,7 @@ The settings in this section control the general behavior of the launcher.
 - [QuitCmd](#quitcmd)
 
 ##### DefaultMenu
-This is the title of the main menu that shows when Flex Launcher is started. The value *must* match the name of one of your menu sections, or there will be an error and Flex Launcher will refuse to start. See the [Creating Menus](#creating-menus) section for more information.
+This is the title of the main menu that shows when StreamFlex is started. The value *must* match the name of one of your menu sections, or there will be an error and StreamFlex will refuse to start. See the [Creating Menus](#creating-menus) section for more information.
 
 ##### VSync
 Defines whether VSync will be used to synchronize the frame rate with the refresh rate of your monitor. This setting is a boolean "true" or "false"
@@ -70,7 +70,7 @@ Defines whether VSync will be used to synchronize the frame rate with the refres
 Default: true
 
 ##### FPSLimit
-When `VSync` is set to false, this setting defines the maximum number of frames per second that Flex Launcher will render. The minimum is 10, and the maximum is the same as the refresh rate of your monitor.
+When `VSync` is set to false, this setting defines the maximum number of frames per second that StreamFlex will render. The minimum is 10, and the maximum is the same as the refresh rate of your monitor.
 
 ##### ApplicationTimeout
 Defines the time in seconds that the launcher will wait for an application to launch. If the launcher does not lose the window focus before the timeout occurs, it assumes there was an error with the launched application.
@@ -78,10 +78,10 @@ Defines the time in seconds that the launcher will wait for an application to la
 Default: 15
 
 ##### OnLaunch
-Defines the action that Flex Launcher will take upon the launch of an application. Possible values: "None", "Blank", and "Quit"
-- None: Flex Launcher will maintain its window while waiting for the launched application to initialize.
-- Blank: Flex Launcher will change to a blank, black screen while waiting for the launched application to initialize.
-- Quit: Flex Launcher will quit immediately after the successful launch of an application.
+Defines the action that StreamFlex will take upon the launch of an application. Possible values: "None", "Blank", and "Quit"
+- None: StreamFlex will maintain its window while waiting for the launched application to initialize.
+- Blank: StreamFlex will change to a blank, black screen while waiting for the launched application to initialize.
+- Quit: StreamFlex will quit immediately after the successful launch of an application.
 
 Default: Blank
 
@@ -91,7 +91,7 @@ Defines whether the highlight will wrap to the other side of the screen after re
 Default: false
 
 ##### ResetOnBack
-Defines whether Flex Launcher will remember the previous entry position when going back to a previous menu. If set to true, the highlight will be reset to the first entry in the menu when going back. This setting is a boolean "true" or "false".
+Defines whether StreamFlex will remember the previous entry position when going back to a previous menu. If set to true, the highlight will be reset to the first entry in the menu when going back. This setting is a boolean "true" or "false".
 
 Default: false
 
@@ -101,18 +101,18 @@ Defines whether the left mouse button can be used to select the highlighted entr
 Default: false
 
 ##### InhibitOSScreensaver
-Defines whether Flex Launcher will prevent your default OS screensaver from activating while it is running. On Windows, this will also inhibit any power saving features as well (e.g. autosleep). This setting is a boolean "true" or "false".
+Defines whether StreamFlex will prevent your default OS screensaver from activating while it is running. On Windows, this will also inhibit any power saving features as well (e.g. autosleep). This setting is a boolean "true" or "false".
 
 Default: true
 
 ##### StartupCmd
-Defines a command that Flex Launcher will execute immediately upon startup. This can be used to autostart your favorite application.
+Defines a command that StreamFlex will execute immediately upon startup. This can be used to autostart your favorite application.
 
 ##### QuitCmd
-Defines a command that Flex Launcher will execute immediately before quitting. This can be used to do any mode switching or appplication starting to prepare your desktop, e.g. for maintenance.
+Defines a command that StreamFlex will execute immediately before quitting. This can be used to do any mode switching or appplication starting to prepare your desktop, e.g. for maintenance.
 
 #### Background
-The settings in this section control what Flex Launcher will display in the background.
+The settings in this section control what StreamFlex will display in the background.
 
 - [Mode](#mode)
 - [Color](#color)
@@ -222,7 +222,7 @@ Defines whether or not application titles are enabled. This setting is a boolean
 Default: true
 
 ##### Font
-Defines the font to use for the titles of the menu entries. The value should be the path to a TrueType (TTF) font file. Non-TTF font formats are not supported. Flex Launcher ships with a handful of libre fonts.
+Defines the font to use for the titles of the menu entries. The value should be the path to a TrueType (TTF) font file. Non-TTF font formats are not supported. StreamFlex ships with a handful of libre fonts.
 
 Default: OpenSans
 
@@ -385,7 +385,7 @@ The Selected Icon Override feature allows the user to define a different icon fo
 For example, if the icon path for an entry is defined as `C:\icons\kodi.png`, then the program will check for the existence of `C:\icons\kodi_selected.png` and, if it exists, this icon will be shown when the entry is selected instead of the default. This feature allows the user to implement custom highlight effects such as glowing, color changes, etc.
 
 ### Special Commands
-Special commands are commands that are internal to Flex Launcher and begin with a colon. The following is a list of special commands:
+Special commands are commands that are internal to StreamFlex and begin with a colon. The following is a list of special commands:
 
 #### :submenu
 Change to a different menu. Requires a menu title as an argument. For example, the command `:submenu Games` will change to the menu `Games`. The argument must be a valid menu title that is defined elsewhere in the config file.
@@ -410,7 +410,7 @@ Go back to the previous menu.
 Change to the menu defined in the `DefaultMenu` setting.
 
 #### :quit
-Quit Flex Launcher.
+Quit StreamFlex.
 
 #### :left
 Move the highlight cursor left.
@@ -433,7 +433,7 @@ Put the computer to sleep.<sup>1</sup>
 <sup>1</sup> *Linux: Works in systemd-based distros only. Non-systemd distro users need to implement the command manually for their init system.*
 
 ### Desktop Files (Linux Only)
-If the application you want to launch was installed via your distro's package manager, a .desktop file was most likely provided. The command to launch a Linux application can simply be the path to its .desktop file, and Flex Launcher will run the Exec command that the developers have specified in the file. Desktop files are located in /usr/share/applications.
+If the application you want to launch was installed via your distro's package manager, a .desktop file was most likely provided. The command to launch a Linux application can simply be the path to its .desktop file, and StreamFlex will run the Exec command that the developers have specified in the file. Desktop files are located in /usr/share/applications.
 
 #### Desktop Actions
 Some .desktop files contain "Actions", which affect how the program is launched. An action may be specified by delimiting it from the path to the .desktop file with a semicolon. For example, Steam has a mode called "Big Picture Mode", which provides an interface similar to a game console and is ideal for a living room PC. The action in the .desktop file is called "BigPicture". A sample menu entry to launch Steam in Big Picture mode is shown below:
@@ -442,7 +442,7 @@ Entry1=Steam;/path/to/steamicon.png;/usr/share/applications/steam.desktop;BigPic
 ```
 
 ## Clock
-Flex Launcher contains a clock widget, which displays the current time, and, optionally, the current date. The following settings may be used to control the behavior of the clock.
+StreamFlex contains a clock widget, which displays the current time, and, optionally, the current date. The following settings may be used to control the behavior of the clock.
 
 #### Enabled
 Defines whether or not the clock is enabled. This setting is a boolean "true" or "false".
@@ -514,7 +514,7 @@ Defines whether the date format should include the abbreviated weekday in your s
 Default: true
 
 ## Screensaver
-Flex Launcher contains a screensaver feature, which will dim the screen after the input has been idle for the specified amount of time. Here are the settings that control the behavior of the screensaver
+StreamFlex contains a screensaver feature, which will dim the screen after the input has been idle for the specified amount of time. Here are the settings that control the behavior of the screensaver
 
 #### Enabled
 Defines whether or not the screensaver is enabled. This setting is a boolean "true" or "false".
@@ -537,13 +537,13 @@ When `BackgroundMode` is set to "Slideshow", this setting defines whether or not
 Default: true
 
 ## Hotkeys
-Flex Launcher supports configurable hotkeys, which executes a command when a specified key is pressed. Each hotkey consists of a key=value pair, where the key is an arbitrary name, and the value contains the SDL keycode of the hotkey and the command to run when it is pressed, delimited by a semicolon:
+StreamFlex supports configurable hotkeys, which executes a command when a specified key is pressed. Each hotkey consists of a key=value pair, where the key is an arbitrary name, and the value contains the SDL keycode of the hotkey and the command to run when it is pressed, delimited by a semicolon:
 ```ini
 Hotkey=keycode;command
 ```
-The keycode is a HEX prefixed with the # character. There are two ways to find a keycode for a given key. The first is to use the [lookup table provided by SDL](https://wiki.libsdl.org/SDLKeycodeLookup). The name of each key is in the right column of the table, and the corresponding HEX keycode is in the center column. The second is to run Flex Launcher in debug mode, press the key, then check the log. For each keystroke, the name of the key will be printed and the HEX value will be in parenthesis next to it.
+The keycode is a HEX prefixed with the # character. There are two ways to find a keycode for a given key. The first is to use the [lookup table provided by SDL](https://wiki.libsdl.org/SDLKeycodeLookup). The name of each key is in the right column of the table, and the corresponding HEX keycode is in the center column. The second is to run StreamFlex in debug mode, press the key, then check the log. For each keystroke, the name of the key will be printed and the HEX value will be in parenthesis next to it.
 
-Any key can be set as a hotkey, except keys that are reserved for the default controls: the left and right arrow keys, enter/return, and backspace. Hotkeys may be used to "speed dial" your favorite applications, or to add controls via [special commands](#special-commands). As an example configuration below, the first hotkey is mapped to F1 and will launch Kodi when it is pressed, and the second hotkey is mapped to F12 and will cause Flex Launcher to quit when it is pressed:
+Any key can be set as a hotkey, except keys that are reserved for the default controls: the left and right arrow keys, enter/return, and backspace. Hotkeys may be used to "speed dial" your favorite applications, or to add controls via [special commands](#special-commands). As an example configuration below, the first hotkey is mapped to F1 and will launch Kodi when it is pressed, and the second hotkey is mapped to F12 and will cause StreamFlex to quit when it is pressed:
 ```ini
 [Hotkeys]
 Hotkey1=#4000003A;"C:\Program Shortcuts\kodi.lnk"
@@ -562,7 +562,7 @@ Hotkey=#40000043;:exit
 Linux users that desire similar functionality should check the documentation of their desktop environment and/or window manager. Most support global hotkeys that can be configured to close the active window.
 
 ## Gamepad Controls
-Flex Launcher has built-in support for gamepad controls through SDL. All settings for gamepads will be in a section titled `Gamepad`. Within the section, there are key=value pairs which define the gamepad settings and the commands to be run when a button or axis is pressed.
+StreamFlex has built-in support for gamepad controls through SDL. All settings for gamepads will be in a section titled `Gamepad`. Within the section, there are key=value pairs which define the gamepad settings and the commands to be run when a button or axis is pressed.
 
 ### Settings
 The following settings are available in the `Gamepad` section to define the behavior of gamepads
@@ -585,9 +585,9 @@ The controls are defined in key=value pairs, where the key is the name of the ax
 
 The [SDL GameController](https://wiki.libsdl.org/CategoryGameController) interface is an abstraction which conceptualizes a controller as having an Xbox-style layout. The mapping names in SDL are based on the *location* of the buttons on an Xbox controller, and may not correspond to the actual labelling of the buttons on your controller. For example, `ButtonA` is for the "bottom" button, `ButtonB` is for the "right" button of the 4 main control buttons. If you have a Playstation-style controller, those mapping names will correspond to the X button and the Circle button, respectively. 
 
-The default controls in Flex Launcher allow the user to move the highlight cursor left and right by using the left stick or the DPad, select an entry by pressing A, and go back to the previous menu by pressing B. These controls are simple and will suffice for the vast majority of use cases.
+The default controls in StreamFlex allow the user to move the highlight cursor left and right by using the left stick or the DPad, select an entry by pressing A, and go back to the previous menu by pressing B. These controls are simple and will suffice for the vast majority of use cases.
 
-The following axis and buttons are available for control in Flex Launcher:
+The following axis and buttons are available for control in StreamFlex:
 - LStickX-
 - LStickX+
 - LStickY-
@@ -615,22 +615,22 @@ The following axis and buttons are available for control in Flex Launcher:
 - ButtonDPadRight
 
 ## Transparent Backgrounds
-*Note for Linux users only: this feature requires compositor implementation. See the [Linux Setup Guide](https://bilbospocketses.github.io/flex-launcher/setup_linux#transparent-backgrounds) for details.*
+*Note for Linux users only: this feature requires compositor implementation. See the [Linux Setup Guide](https://bilbospocketses.github.io/streamflex/setup_linux#transparent-backgrounds) for details.*
 
-Flex Launcher supports transparent backgrounds using the chroma key technique. This method works by setting a strategically chosen color to the background, which is removed later. In film production, this technique is often refered to as "blue screening" or "green screening".
+StreamFlex supports transparent backgrounds using the chroma key technique. This method works by setting a strategically chosen color to the background, which is removed later. In film production, this technique is often refered to as "blue screening" or "green screening".
 
 The chosen chroma key color should be one that is not found in your icons/text, as this would cause them to become transparent. The color is set with the `ChromaKeyColor` setting in the Background section. The default is `#010101`, a slight off-shade of black. 
 
 A limitation of this method is that your icons and text must be fully opqaue or fully transparent. Any semi-transparent pixels will blend with the chroma key background so that it does not produce a color match, and consequently will not be removed from the background.
 
-Flex Launcher's text rendering is anti-aliased, which gives the text a "feathered" look with semi-transparent pixels on the edges. Normally, this is desirable, but in the case of chroma keying, semi-transparent pixels will cause your chroma key background color to "bleed through" on the edges of the text. If bright blue or bright green is chosen as the chroma key, this will result in a blue or green glowing effect around the text, which is usually undesirable. This is the reason why a dark color is chosen as the default chroma key. The bleed though appears as a dark outline rather than as a bright glowing.
+StreamFlex's text rendering is anti-aliased, which gives the text a "feathered" look with semi-transparent pixels on the edges. Normally, this is desirable, but in the case of chroma keying, semi-transparent pixels will cause your chroma key background color to "bleed through" on the edges of the text. If bright blue or bright green is chosen as the chroma key, this will result in a blue or green glowing effect around the text, which is usually undesirable. This is the reason why a dark color is chosen as the default chroma key. The bleed though appears as a dark outline rather than as a bright glowing.
 
 Some icons have shadows which are intended to provide a textured look. The shadows are usually semi-transparent, which will cause them to not render properly with the chroma key technique. You should choose icons without shadows, or manually erase the shadows from an icon if there are no other icons available for the given application. Some icons are also heavily anti-aliased, which can give a glowing or outline effect similar to the text rendering described above.
 
 Another common issue is the highlight. The default highlight is semi-transparent, which will not render properly when blended with the chroma key background. There are a few ways to address with this:
 - Set the `FillOpacity` setting to 0%, and use an outline-only highlight instead
-- Use custom [Selected Icons](#selected-icon-overrides) in place of Flex Launcher's highlight
-- Linux only: use a shader to recover the highlight's transparency. See the [Linux Setup Guide](https://bilbospocketses.github.io/flex-launcher/setup_linux#transparent-backgrounds) for details.
+- Use custom [Selected Icons](#selected-icon-overrides) in place of StreamFlex's highlight
+- Linux only: use a shader to recover the highlight's transparency. See the [Linux Setup Guide](https://bilbospocketses.github.io/streamflex/setup_linux#transparent-backgrounds) for details.
 
 Transparent backgrounds will require some effort to obtain a setup that looks good and works well. Be prepared to do a significant amount of tinkering if you wish to use this feature.
 
@@ -638,7 +638,7 @@ Transparent backgrounds will require some effort to obtain a setup that looks go
 The Windows implementation of transparency is not hardware accelerated. If your refresh rate is very high, this can result in a signficant load on the CPU. If you find that the trasparent background is causing a high load on your system, consider changing the `VSync` setting to false and setting `FPSLimit` to 30 or lower, which will reduce the amount of computation required.
 
 ### Animated Backgrounds
-Transparent backgrounds can be used to implement animated backgrounds in combination with another program. On Windows, [Wallpaper Engine](https://www.wallpaperengine.io) and [Lively](https://github.com/rocksdanister/lively) are popular choices. For Linux, I recommend [anipaper](https://github.com/Theldus/anipaper); see the [Linux Setup Guide](https://bilbospocketses.github.io/flex-launcher/setup_linux#animated-backgrounds) for details.
+Transparent backgrounds can be used to implement animated backgrounds in combination with another program. On Windows, [Wallpaper Engine](https://www.wallpaperengine.io) and [Lively](https://github.com/rocksdanister/lively) are popular choices. For Linux, I recommend [anipaper](https://github.com/Theldus/anipaper); see the [Linux Setup Guide](https://bilbospocketses.github.io/streamflex/setup_linux#animated-backgrounds) for details.
 
 ### Custom Widgets
-Flex Launcher offers a simple clock widget which can show the current time and date. For more advanced functionality, you can combine a transparent background with a third party widget program. For example, you can have a widget that displays weather, news, etc. in addition to the time. [Rainmeter](https://www.rainmeter.net/) is a popular option on Windows, and [Conky](https://github.com/brndnmtthws/conky) for Linux.
+StreamFlex offers a simple clock widget which can show the current time and date. For more advanced functionality, you can combine a transparent background with a third party widget program. For example, you can have a widget that displays weather, news, etc. in addition to the time. [Rainmeter](https://www.rainmeter.net/) is a popular option on Windows, and [Conky](https://github.com/brndnmtthws/conky) for Linux.

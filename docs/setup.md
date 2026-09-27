@@ -12,16 +12,16 @@ title: Setup Guide
 6. [Directly Launching Steam Games](#directly-launching-steam-games)
 
 ## Overview
-This page contains tips for setting up Flex Launcher, and HTPCs in general. The recommendations herein are broadly applicable to all platforms supported by Flex Launcher. Additionally, see the platform setup guides for platform-specfic advice:
-- [Windows Setup Guide](https://bilbospocketses.github.io/flex-launcher/setup_windows)
-- [Linux Setup Guide](https://bilbospocketses.github.io/flex-launcher/setup_linux)
+This page contains tips for setting up StreamFlex, and HTPCs in general. The recommendations herein are broadly applicable to all platforms supported by StreamFlex. Additionally, see the platform setup guides for platform-specfic advice:
+- [Windows Setup Guide](https://bilbospocketses.github.io/streamflex/setup_windows)
+- [Linux Setup Guide](https://bilbospocketses.github.io/streamflex/setup_linux)
 
-Make that you are generally familiar with the [configuration options](https://bilbospocketses.github.io/flex-launcher/configuration) as well.
+Make that you are generally familiar with the [configuration options](https://bilbospocketses.github.io/streamflex/configuration) as well.
 
 ## Selecting Menu Icons
 Transparency is essential for menu icons. Therefore, you should not use JPEG images for icons, since the JPEG format does not support transparency. Use PNG or WebP instead. PNG icons for most popular applications are easily found online in common sizes up to 256x256.
 
-Any icon that is not the same resolution as the `IconSize` setting in your config file will be stretched. If your `IconSize` setting is not a common icon resolution (e.g. 256), then it is advisable to find SVG icons instead. However, Flex Launcher does not currently support SVGs for menu icons, so you will need to rasterize them into PNG or WebP using a tool such as [Inkscape](https://inkscape.org/). An example command can quickly rasterize an SVG into your desired resolution:
+Any icon that is not the same resolution as the `IconSize` setting in your config file will be stretched. If your `IconSize` setting is not a common icon resolution (e.g. 256), then it is advisable to find SVG icons instead. However, StreamFlex does not currently support SVGs for menu icons, so you will need to rasterize them into PNG or WebP using a tool such as [Inkscape](https://inkscape.org/). An example command can quickly rasterize an SVG into your desired resolution:
 ```bash
 inkscape --export-width=<width> --export-type=png /path/to/file.svg
 ```
@@ -37,7 +37,7 @@ for file in svg_files:
 ```
 
 ## Maintaining Contrast
-When using an image as the background, it is often difficult to read the text that is displayed on top. This is particularly true if the image is a photograph and the text is white. Flex Launcher has several features that will improve the contrast between the background and the objects on top.
+When using an image as the background, it is often difficult to read the text that is displayed on top. This is particularly true if the image is a photograph and the text is white. StreamFlex has several features that will improve the contrast between the background and the objects on top.
 
 The background overlay feature draws a solid color, typically black, over the background. This will darken the background to improve the contrast ratio. The user can adjust how much to darken the background with the `OverlayOpacity` setting.
 
@@ -69,10 +69,10 @@ This method is far superior to other HTPC YouTube options, such as Kodi's YouTub
 The web interface also supports casting videos from the YouTube app on your smartphone to your TV. You can pair your phone in the settings. You can also sign into your YouTube account in the settings if you wish.
 
 ### Exiting
-The one caveat to this method is that the exit button in the menu doesn't work. As such, you will need to provide an alternative method to close the web browser after you've finished watching so you can return back to the launcher. For Windows users, the most straightforward solution is to configure an [exit hotkey](https://bilbospocketses.github.io/flex-launcher/configuration#exit-hotkey-windows-only) on your remote. Linux users should set up a hotkey with their DE/WM to close the active window.
+The one caveat to this method is that the exit button in the menu doesn't work. As such, you will need to provide an alternative method to close the web browser after you've finished watching so you can return back to the launcher. For Windows users, the most straightforward solution is to configure an [exit hotkey](https://bilbospocketses.github.io/streamflex/configuration#exit-hotkey-windows-only) on your remote. Linux users should set up a hotkey with their DE/WM to close the active window.
 
 ## Directly Launching Steam Games
-Steam users may desire to launch their most frequently played games directly from Flex Launcher to avoid having to navigate through the Steam client UI first. Valve provides a [protocol](https://developer.valvesoftware.com/wiki/Steam_browser_protocol) to directly launch games, among other actions. To do so, pass `steam://run/<id>` as an argument to Steam, where `<id>` is replaced by the id of the game you want to watch. You can find the id of a game by searching [steamdb](https://steamdb.info/). For example, the id of Portal 2 is 620. You would structure your menu entry to launch Portal 2 like so:
+Steam users may desire to launch their most frequently played games directly from StreamFlex to avoid having to navigate through the Steam client UI first. Valve provides a [protocol](https://developer.valvesoftware.com/wiki/Steam_browser_protocol) to directly launch games, among other actions. To do so, pass `steam://run/<id>` as an argument to Steam, where `<id>` is replaced by the id of the game you want to watch. You can find the id of a game by searching [steamdb](https://steamdb.info/). For example, the id of Portal 2 is 620. You would structure your menu entry to launch Portal 2 like so:
 
 **Windows:**
 ```ini
