@@ -30,7 +30,7 @@ The following is a list of features supported by StreamFlex:
 The background of StreamFlex is customizable. There are three supported modes for the background: a solid color, an image, or a slideshow of images. In the case of the slideshow, the user is able to specify how long to show the images, and how quickly to fade between them.
 
 #### Application Icons
-The user is able to pick the application icons, specify how large they should be, and how far apart they should be. The user is also able to control the vertical centering of the application icons.
+The user is able to pick the application icons, specify how large they should be, and how far apart they should be. StreamFlex has a built-in [icon library](icons) of streaming services, media apps and generic icons, each named in the config by a short name such as `netflix`, or you can use image files of your own. The user is also able to control the vertical centering of the application icons.
 
 #### Submenus
 StreamFlex supports submenus, which allows you to group your various applications in an organized fashion. For example, you can have separate menus for media and gaming applications.

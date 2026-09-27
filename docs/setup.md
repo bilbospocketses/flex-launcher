@@ -6,7 +6,7 @@ title: Setup Guide
 ## Table of Contents
 1. [Overview](#overview)
 2. [Selecting Menu Icons](#selecting-menu-icons)
-3. [Maintaining Controls](#maintaining-contrast)
+3. [Maintaining Contrast](#maintaining-contrast)
 4. [Launching a Web Browser](#launching-a-web-browser)
 5. [Watching YouTube](#watching-youtube)
 6. [Directly Launching Steam Games](#directly-launching-steam-games)

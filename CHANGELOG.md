@@ -8,6 +8,9 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+### Fixed
+- The docs caught up with the icon library and the font fix. The configuration guide lists SVG among the supported image formats, says a relative `Font` path is also looked for next to the executable and that library icons don't depend on the working directory, and names the entry's middle field `icon` throughout. The README, the docs home page and the default config's comments point to the library; `CONTRIBUTING.md` counts the Icon library check in the required gate and points to the library's own tests; `SECURITY.md` includes the library manifest in scope. The setup guide's contents also named a section "Maintaining Controls" instead of "Maintaining Contrast".
+
 ## [0.2.0] - 2026-09-27
 
 The first part of the overhaul. Menus can be grids of several rows, buttons grow to fill the screen, and an entry can name an icon from a built-in library instead of giving a file path. A config written for 0.1.3 still works. One visible difference: a menu that doesn't set `IconSize` now gets buttons that grow to fill the screen, where it used to get 256 px.

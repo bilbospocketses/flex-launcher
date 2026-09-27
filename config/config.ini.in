@@ -117,6 +117,8 @@ Hotkey1=#1B;:quit
 @SETTING_GAMEPAD_BUTTON_DPAD_RIGHT@=:right
 
 # Menu configurations
+# Each entry is title;icon;command. The icon is a name from the built-in icon library
+# (the docs site lists them all), or the path to an image file of your own.
 [@DEFAULT_MENU@]
 Entry1=Kodi;kodi;@CMD_KODI@
 Entry2=Plex;plex;@CMD_PLEX@

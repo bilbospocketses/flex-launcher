@@ -107,6 +107,7 @@ This project started from complexlogic's original Flex Launcher at v2.2 and is d
 ## Documentation
 Here is a list of available documentation:
 - [Configuration](docs/configuration.md#configuring-streamflex)
+- [Icon Library](https://bilbospocketses.github.io/streamflex/icons): every built-in icon and the name to use in your config
 - [General Setup Guide](docs/setup.md#setup-guide)
   - [Windows-specific Setup Guide](docs/setup_windows.md#windows-setup-guide)
   - [Linux-specific Setup Guide](docs/setup_linux.md#linux-setup-guide)
