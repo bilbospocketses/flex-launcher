@@ -8,6 +8,10 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
+The first part of the overhaul. Menus can be grids of several rows, buttons grow to fill the screen, and an entry can name an icon from a built-in library instead of giving a file path. A config written for 0.1.3 still works. One visible difference: a menu that doesn't set `IconSize` now gets buttons that grow to fill the screen, where it used to get 256 px.
+
 ### Added
 - **A built-in icon library.** The app icons of 33 streaming and media services, and 36 generic icons for system actions, kinds of media, general use and devices, all on one rounded-square outline. An entry names one instead of a path: `Entry1=Netflix;netflix;...`. The docs site has a gallery of every icon and its name.
 - **Menus can show several rows of buttons.** `Rows` sets how many rows are visible at once. With two or more, a menu is a grid: Left and Right stop at the end of a row, Up and Down move between rows, and the grid scrolls one row at a time. A single row still scrolls sideways.
