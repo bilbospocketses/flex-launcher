@@ -1,3 +1,5 @@
 docs/Gemfile.lock
 docs/_site
 docs/.jekyll-cache
+# Written by pages.yml from the latest release at build time
+docs/_data/release.json

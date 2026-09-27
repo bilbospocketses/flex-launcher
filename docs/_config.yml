@@ -3,7 +3,8 @@ description: A customizable HTPC application launcher and front-end interface
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
 github_username: bilbospocketses
 repository: bilbospocketses/flex-launcher
-launcher_version: 0.1.0
+# The release version and download links are not set here: pages.yml writes
+# _data/release.json from the latest published release at build time.
 
 # Build settings
 remote_theme: pages-themes/slate@v0.2.0
