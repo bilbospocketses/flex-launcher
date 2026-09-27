@@ -799,12 +799,6 @@ void random_array(int *array, int array_size)
     }
 }
 
-// A function to calculate the total width of all screen objects
-unsigned int calculate_width(int buttons, int icon_spacing, int icon_size, int highlight_hpadding)
-{
-    return (unsigned int) ((buttons - 1)*icon_spacing + buttons*icon_size + 2*highlight_hpadding);
-}
-
 // A function to add a hotkey to the linked list
 void add_hotkey(const char *keycode, const char *cmd)
 {
@@ -921,18 +915,6 @@ void convert_percent_to_int(char *string, int *result, int max_value)
 // A function to make sure all settings are in their correct range
 void validate_settings(Geometry *geo)
 {
-    // Reduce number of buttons if they can't all fit on screen
-    if (config.icon_size * config.max_buttons > (unsigned int) geo->screen_width) {
-        unsigned int i;
-        for (i = config.max_buttons; i * config.icon_size > (unsigned int) geo->screen_width && i > 0; i--);
-        log_error(
-            "Not enough screen space for %i buttons, reducing to %i", 
-            config.max_buttons, 
-            i
-        );
-        config.max_buttons = i; 
-    }
-
     if (!config.titles_enabled)
         config.title_padding = 0;
 
@@ -1004,39 +986,11 @@ void validate_settings(Geometry *geo)
     if (config.highlight_hpadding > (config.icon_spacing / 2))
         config.highlight_hpadding = config.icon_spacing / 2;
 
-    // Reduce icon spacing and highlight padding if too large to fit onscreen
-    unsigned int required_length = calculate_width((int) config.max_buttons,
-                                       config.icon_spacing,
-                                       config.icon_size,
-                                       config.highlight_hpadding
-                                   );
-    int highlight_hpadding = config.highlight_hpadding;
-    int icon_spacing = config.icon_spacing;
-    for (int i = 0; i < 100 && required_length > (unsigned int) geo->screen_width; i++) {
-        if (highlight_hpadding > 0)
-            highlight_hpadding = (highlight_hpadding * 9) / 10;
-        if (icon_spacing > 0)
-            icon_spacing = (icon_spacing * 9) / 10;
-        required_length = calculate_width((int) config.max_buttons,icon_spacing,config.icon_size,highlight_hpadding);
-    }
-    if (config.highlight_hpadding != highlight_hpadding) {
-        log_error("Highlight padding value %i too large to fit screen, shrinking to %i",
-            config.highlight_hpadding, 
-            highlight_hpadding
-        );
-        config.highlight_hpadding = highlight_hpadding;
-    }
-    if (config.icon_spacing != icon_spacing) {
-        log_error("Icon spacing value %i too large to fit screen, shrinking to %i",
-            config.icon_spacing, 
-            icon_spacing
-        );
-        config.icon_spacing = icon_spacing;
-    }
-
-    // Make sure title padding is in valid range
-    if (config.title_padding < 0 || config.title_padding > config.icon_size / 2) {
-        int title_padding = config.icon_size / 10;
+    // Make sure title padding is in valid range. IconSize is an optional cap now, so the range
+    // is measured against it when set, and against the old fixed default when not.
+    int reference_size = config.icon_size ? (int) config.icon_size : DEFAULT_ICON_SIZE;
+    if (config.title_padding < 0 || config.title_padding > reference_size / 2) {
+        int title_padding = reference_size / 10;
         log_error("Text padding value %i invalid, changing to %i",
             config.title_padding, 
             title_padding
@@ -1044,25 +998,20 @@ void validate_settings(Geometry *geo)
         config.title_padding = title_padding;
     }
 
-    // Calculate y margin for buttons from centerline setting string, check limits
+    // Convert the vertical centre setting to px and check its limits
     int vcenter = INVALID_PERCENT_VALUE;
-    int button_height = config.icon_size + config.title_padding + geo->font_height;
     float f_screen_height = (float) geo->screen_height;
     int lower_limit = (int) (MIN_VCENTER*f_screen_height);
     int upper_limit = (int) (MAX_VCENTER*f_screen_height);
-
-    // Convert percent to int
     if (config.vcenter[0] != '\0')
         convert_percent_to_int(config.vcenter, &vcenter, geo->screen_height);
     if (vcenter == INVALID_PERCENT_VALUE)
         convert_percent_to_int(DEFAULT_VCENTER, &vcenter, geo->screen_height);
-
-    // Check limits, calculate margin
     if (vcenter < lower_limit)
         vcenter = lower_limit;
     else if (vcenter > upper_limit)
         vcenter = upper_limit;
-    geo->y_margin = vcenter - button_height / 2;
+    geo->vcenter = vcenter;
 
     // Max highlight outline
     int max_highlight_outline_size = (config.highlight_hpadding < config.highlight_vpadding) 
@@ -1097,14 +1046,10 @@ Menu *create_menu(const char *menu_name, size_t *num_menus)
     Menu *menu = malloc(sizeof(Menu));
     *menu = (Menu) {
         .first_entry = NULL,
+        .items = NULL,
         .next = NULL,
         .back = NULL,
-        .root_entry = NULL,
         .num_entries = 0,
-        .page = 0,
-        .highlight_position = 0,
-        .rendered = false,
-        .items = NULL,
         .overrides = { 0, 0, 0 },
         .position = { 0, 0 },
         .rendered_size = 0
@@ -1128,20 +1073,6 @@ void build_menu_items()
             e = e->next;
         }
     }
-}
-
-// A function to advance X spaces in the entry linked list (left or right)
-Entry *advance_entries(Entry *entry, int spaces, Direction direction)
-{
-    if (direction == DIRECTION_LEFT) {
-        for (int i = 0; i < spaces; i++)
-            entry = entry->previous;
-    }
-    else if (direction == DIRECTION_RIGHT) {
-        for (int i = 0; i < spaces; i++)
-            entry = entry->next;
-    }
-    return entry;
 }
 
 // A function to dynamically allocate a buffer for and copy a formatted string

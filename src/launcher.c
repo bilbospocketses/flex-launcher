@@ -28,10 +28,11 @@ static void update_screensaver(void);
 static void update_clock(bool block);
 static void init_slideshow(void);
 static void init_screensaver(void);
-static void calculate_button_geometry(Entry *entry, int buttons);
-static void render_buttons(Menu *menu);
-static void move_left(void);
-static void move_right(void);
+static void calculate_layout_area(void);
+static int apply_layout(Menu *menu);
+static void render_buttons(Menu *menu, int size);
+static void place_entries(void);
+static void move_selection(LayoutDirection direction);
 static void load_submenu(const char *submenu);
 static void load_back_menu(Menu *menu);
 static void draw_screen(void);
@@ -80,7 +81,7 @@ Config config = {
     .background_overlay_color.a       = DEFAULT_BACKGROUND_OVERLAY_COLOR_A,
     .background_overlay_opacity[0]    = '\0',
     .highlight                        = true,
-    .icon_size                        = DEFAULT_ICON_SIZE,
+    .icon_size                        = 0, // IconSize is an optional cap on button size; 0 = none
     .highlight_fill_color.r           = DEFAULT_HIGHLIGHT_FILL_COLOR_R,
     .highlight_fill_color.g           = DEFAULT_HIGHLIGHT_FILL_COLOR_G,
     .highlight_fill_color.b           = DEFAULT_HIGHLIGHT_FILL_COLOR_B,
@@ -185,6 +186,8 @@ SDL_DisplayMode display_mode;
 TextInfo title_info;
 Ticks ticks;
 Geometry geo;
+LayoutGeometry layout;                     // The current menu's layout
+LayoutArea layout_area;                    // The part of the screen the buttons may use
 Uint32 refresh_period;
 Uint32 delay_period;
 Uint32 repeat_period;
@@ -303,7 +306,7 @@ static void init_sdl_ttf()
         .font_size = (int) config.title_font_size,
         .shadow = config.title_shadows,
         .font_path = &config.title_font_path,
-        .max_width = config.icon_size,
+        .max_width = 0, // Set per menu to its button size, in render_buttons
         .oversize_mode = config.title_oversize_mode,
         .color = &config.title_font_color
     };
@@ -417,9 +420,9 @@ static void handle_keypress(SDL_Keysym *key)
 
     // Check default keys
     if (key->sym == SDLK_LEFT)
-        move_left();
+        move_selection(LAYOUT_LEFT);
     else if (key->sym == SDLK_RIGHT)
-        move_right();
+        move_selection(LAYOUT_RIGHT);
     else if (key->sym == SDLK_RETURN) {
         log_debug("Selected Entry:\n"
             "Title: %s\n"
@@ -570,47 +573,24 @@ static int load_menu(Menu *menu, bool set_back_menu, bool reset_position)
 {
     if (menu == NULL)
         return 1;
+    log_debug("Loading menu '%s'", menu->name);
 
-    unsigned int buttons;
-    Menu *previous_menu = current_menu;
-
-    current_menu = menu;
-    log_debug("Loading menu '%s'", current_menu->name);
-
-    // Return error if the menu doesn't contain entires
-    if (current_menu->num_entries == 0) {
-        log_error("No valid entries found for Menu '%s'", current_menu->name);
-        current_menu = previous_menu;
+    // Return error if the menu doesn't contain entries
+    if (menu->num_entries == 0) {
+        log_error("No valid entries found for Menu '%s'", menu->name);
         return 1;
     }
 
-    // Render the menu if not already rendered
-    if (current_menu->rendered == false)
-        render_buttons(current_menu);
-
-    // Set menu properties
+    Menu *previous_menu = current_menu;
+    current_menu = menu;
+    if (reset_position)
+        current_menu->position = (LayoutPosition) { 0, 0 };
+    if (apply_layout(current_menu)) {
+        current_menu = previous_menu;
+        return 1;
+    }
     if (set_back_menu)
         current_menu->back = previous_menu;
-
-    if (reset_position) {
-        current_entry = current_menu->first_entry;
-        current_menu->root_entry = current_entry;
-        current_menu->highlight_position = 0;
-        current_menu->page = 0;
-    }
-    else
-        current_entry = current_menu->last_selected_entry;
-
-    buttons = current_menu->num_entries - (current_menu->page)*config.max_buttons;
-    if (buttons > config.max_buttons)
-        buttons = config.max_buttons;
-    
-    // Recalculate the screen geometry
-    calculate_button_geometry(current_menu->root_entry, (int) buttons);
-    if (config.highlight) {
-        highlight->rect.x = current_entry->icon_rect.x - config.highlight_hpadding;
-        highlight->rect.y = current_entry->icon_rect.y - config.highlight_vpadding;
-    }
     return 0;
 }
 
@@ -621,130 +601,128 @@ static int load_menu_by_name(const char *menu_name, bool set_back_menu, bool res
     return load_menu(menu, set_back_menu, reset_position);
 }
 
-// A function to calculate the layout of the buttons
-static void calculate_button_geometry(Entry *entry, int buttons)
+// A function to work out the screen area the buttons may use: the full width, and the height
+// between the top and bottom margins, starting below the clock when it is shown
+static void calculate_layout_area()
 {
-    // Calculate proper spacing
-    geo.x_margin = (geo.screen_width - config.icon_size*buttons -
-                   buttons*config.icon_spacing + config.icon_spacing) / 2;
-    geo.x_advance = config.icon_size + config.icon_spacing;
-    geo.num_buttons = buttons;
-
-    // Assign values to entries
-    for (int i = 0; i < geo.num_buttons; i++) {
-            entry->icon_rect.x = geo.x_margin + i*geo.x_advance;
-            entry->icon_rect.y = geo.y_margin;
-            entry->icon_rect.w = config.icon_size;
-            entry->icon_rect.h = config.icon_size;
-            entry->text_rect.x = entry->icon_rect.x +
-                                 (entry->icon_rect.w - entry->text_rect.w) / 2;
-            entry->text_rect.y = entry->icon_rect.y + config.icon_size + entry->title_offset + 
-                                 config.title_padding;
-            entry = entry->next;
+    int top = geo.screen_margin;
+    if (config.clock_enabled && clk != NULL) {
+        SDL_Rect *lowest = config.clock_show_date ? &clk->date_rect : &clk->time_rect;
+        if (lowest->y + lowest->h > top)
+            top = lowest->y + lowest->h;
     }
+    layout_area = (LayoutArea) {
+        .x = 0,
+        .y = top,
+        .w = geo.screen_width,
+        .h = geo.screen_height - geo.screen_margin - top,
+        .vcenter = geo.vcenter
+    };
 }
 
-// A function to render all buttons (icon and text) for a menu
-static void render_buttons(Menu *menu)
+// A function to lay out the current menu: size its buttons for its grid, re-render its
+// textures if that size changed, and place the visible entries
+static int apply_layout(Menu *menu)
 {
-    Entry *entry;
-    int h;
-    for (entry = menu->first_entry; entry != NULL; entry = entry->next) {
-        entry->icon = load_texture_from_file(entry->icon_path);
-        entry->icon_selected = (entry->icon_selected_path != NULL) ? load_texture_from_file(entry->icon_selected_path) : NULL;
+    LayoutOverrides global = { (int) config.rows, (int) config.max_buttons, (int) config.icon_size };
+    LayoutOverrides builtin = { DEFAULT_ROWS, DEFAULT_MAX_BUTTONS, 0 };
+    LayoutOverrides effective = layout_resolve(menu->overrides, global, builtin);
+    LayoutParams params = {
+        .rows        = effective.rows,
+        .columns     = effective.columns,
+        .icon_cap    = effective.icon_cap,
+        .spacing     = config.icon_spacing,
+        .title_block = config.title_padding + geo.font_height,
+        .hpad        = config.highlight_hpadding,
+        .vpad        = config.highlight_vpadding
+    };
+    char why[256];
+    if (layout_compute(&params, &layout_area, (int) menu->num_entries, &layout, why, sizeof(why))) {
+        log_error("Menu '%s' cannot be shown: %s", menu->name, why);
+        return 1;
+    }
+    if (why[0] != '\0')
+        log_error("Menu '%s': %s", menu->name, why);
+    log_debug("Menu '%s': %i x %i grid, %i px buttons", menu->name, layout.columns, layout.rows, layout.button);
+
+    if (menu->rendered_size != layout.button) {
+        render_buttons(menu, layout.button);
+        menu->rendered_size = layout.button;
+    }
+    if (config.highlight && (highlight->button != layout.button ||
+    highlight->hpad != layout.hpad || highlight->vpad != layout.vpad)) {
+        if (highlight->texture != NULL)
+            SDL_DestroyTexture(highlight->texture);
+        int button_height = layout.button + config.title_padding + geo.font_height;
+        highlight->texture = render_highlight(layout.button + 2*layout.hpad,
+                                 button_height + 2*layout.vpad,
+                                 &highlight->rect
+                             );
+        highlight->button = layout.button;
+        highlight->hpad = layout.hpad;
+        highlight->vpad = layout.vpad;
+    }
+    menu->position = layout_clamp(&layout, (int) menu->num_entries, menu->position);
+    place_entries();
+    return 0;
+}
+
+// A function to render all buttons (icon and title) of a menu at a button size
+static void render_buttons(Menu *menu, int size)
+{
+    title_info.max_width = size;
+    for (unsigned int i = 0; i < menu->num_entries; i++) {
+        Entry *entry = menu->items[i];
+        if (entry->icon != NULL)
+            SDL_DestroyTexture(entry->icon);
+        if (entry->icon_selected != NULL)
+            SDL_DestroyTexture(entry->icon_selected);
+        entry->icon = load_icon(entry->icon_path, size);
+        entry->icon_selected = entry->icon_selected_path != NULL ? load_icon(entry->icon_selected_path, size) : NULL;
         if (config.titles_enabled) {
+            int h;
+            if (entry->title_texture != NULL)
+                SDL_DestroyTexture(entry->title_texture);
             entry->title_texture = render_text_texture(entry->title, &title_info, &entry->text_rect, &h);
-            if (config.title_oversize_mode == OVERSIZE_SHRINK && h != geo.font_height)
-                entry->title_offset = (geo.font_height - h) / 2;
+            entry->title_offset = (config.title_oversize_mode == OVERSIZE_SHRINK && h != geo.font_height)
+                                  ? (geo.font_height - h) / 2 : 0;
         }
-    }
-    menu->rendered = true;
-}
-
-// A function to move the selection left when clicked by user
-static void move_left()
-{
-    // If we are not in leftmost position, move highlight left
-    if (current_menu->highlight_position > 0) {
-        if (config.highlight)
-            highlight->rect.x -= geo.x_advance;
-        current_menu->highlight_position--;
-        current_entry = current_entry->previous;
-    }
-
-    // If we are in leftmost position...
-    else if (current_menu->highlight_position == 0 && (current_menu->page > 0 || config.wrap_entries)) {
-        unsigned int buttons;
-        current_entry = current_entry->previous;
-
-        // Load the previous page if there is a valid previous entry
-        if (current_entry) {
-            buttons = config.max_buttons;
-            current_menu->root_entry = advance_entries(current_menu->root_entry, (int) buttons, DIRECTION_LEFT);
-            current_menu->page--;
-        }
-
-        // If the user has the wrap entries setting, select the last entry in the menu
-        else {
-            current_entry = advance_entries(current_menu->first_entry, (int) current_menu->num_entries - 1, DIRECTION_RIGHT);
-            unsigned int num_pages = DIV_ROUND_UP(current_menu->num_entries, config.max_buttons);
-            current_menu->root_entry = advance_entries(current_menu->root_entry,
-                (int) ((num_pages - 1 - current_menu->page) * config.max_buttons),
-                DIRECTION_RIGHT
-            );
-            current_menu->page = num_pages - 1;
-            buttons = current_menu->num_entries - current_menu->page * config.max_buttons;
-        }
-
-        calculate_button_geometry(current_menu->root_entry, (int) buttons);
-        if (config.highlight)
-            highlight->rect.x = current_entry->icon_rect.x - config.highlight_hpadding;
-        current_menu->highlight_position = buttons - 1;
     }
 }
 
-// A function to move the selection right when clicked by the user
-static void move_right()
+// A function to position the visible buttons and the highlight for the current menu
+static void place_entries()
 {
-    // If we are not in the rightmost position, move highlight right
-    if ((int) current_menu->highlight_position < (geo.num_buttons - 1)) {
-        if (config.highlight)
-            highlight->rect.x += geo.x_advance;
-        current_menu->highlight_position++;
-        current_entry = current_entry->next;
+    for (unsigned int i = 0; i < current_menu->num_entries; i++) {
+        Entry *entry = current_menu->items[i];
+        int x, y;
+        if (!layout_slot(&layout, current_menu->position, (int) i, &x, &y))
+            continue;
+        entry->icon_rect = (SDL_Rect) { x, y, layout.button, layout.button };
+        entry->text_rect.x = x + (layout.button - entry->text_rect.w) / 2;
+        entry->text_rect.y = y + layout.button + entry->title_offset + config.title_padding;
     }
+    current_entry = current_menu->items[current_menu->position.selected];
+    if (config.highlight) {
+        highlight->rect.x = current_entry->icon_rect.x - layout.hpad;
+        highlight->rect.y = current_entry->icon_rect.y - layout.vpad;
+    }
+}
 
-    // If we are in the rightmost postion, but there are more entries in the menu, load next page
-    else if (current_menu->highlight_position + current_menu->page*config.max_buttons <
-    (current_menu->num_entries - 1)) {
-        unsigned int buttons = current_menu->num_entries - (current_menu->page + 1)*config.max_buttons;
-        if (buttons > config.max_buttons)
-            buttons = config.max_buttons;
-        current_entry = current_entry->next;
-        current_menu->root_entry = current_entry;
-        calculate_button_geometry(current_menu->root_entry, (int) buttons);
-        if (config.highlight)
-            highlight->rect.x = current_entry->icon_rect.x - config.highlight_hpadding;
-        current_menu->page++;
-        current_menu->highlight_position = 0;
-    }
-
-    // If user has the wrap entries setting, reset menu to first entry
-    else if (config.wrap_entries) {
-        current_entry = current_menu->first_entry;
-        current_menu->root_entry = current_entry;
-        current_menu->highlight_position = 0;
-        current_menu->page = 0;
-        if (config.highlight)
-            highlight->rect.x = current_entry->icon_rect.x - config.highlight_hpadding;
-        calculate_button_geometry(current_menu->root_entry, (int) MIN(current_menu->num_entries, config.max_buttons));
-    }
+// A function to move the highlight, scrolling the strip or grid when needed
+static void move_selection(LayoutDirection direction)
+{
+    LayoutPosition position = layout_move(&layout, (int) current_menu->num_entries,
+                                  current_menu->position, direction, config.wrap_entries);
+    if (position.selected == current_menu->position.selected && position.first == current_menu->position.first)
+        return;
+    current_menu->position = position;
+    place_entries();
 }
 
 // A function to load a submenu
 static void load_submenu(const char *submenu)
 {
-    current_menu->last_selected_entry = current_entry;
     load_menu_by_name(submenu, true, true);
 }
 
@@ -770,13 +748,24 @@ static void draw_screen()
         if (config.background_overlay)
             SDL_RenderCopy(renderer, background_overlay, NULL, NULL);
 
-        // Draw scroll indicators
-        if (config.scroll_indicators &&
-        (current_menu->page*config.max_buttons + (unsigned int) geo.num_buttons) <= (current_menu->num_entries - 1))
-            SDL_RenderCopy(renderer, scroll->texture, NULL, &scroll->rect_right);
-
-        if (config.scroll_indicators && current_menu->page > 0)
-            SDL_RenderCopyEx(renderer, scroll->texture, NULL, &scroll->rect_left, 0, NULL, SDL_FLIP_HORIZONTAL);
+        // Draw scroll indicators: a strip's point left and right from the bottom corners,
+        // a grid's are the same arrow turned to point up and down from the top and bottom margins
+        if (config.scroll_indicators) {
+            int count = (int) current_menu->num_entries;
+            LayoutPosition position = current_menu->position;
+            if (layout.rows == 1) {
+                if (layout_can_scroll(&layout, count, position, LAYOUT_RIGHT))
+                    SDL_RenderCopy(renderer, scroll->texture, NULL, &scroll->rect_right);
+                if (layout_can_scroll(&layout, count, position, LAYOUT_LEFT))
+                    SDL_RenderCopyEx(renderer, scroll->texture, NULL, &scroll->rect_left, 0, NULL, SDL_FLIP_HORIZONTAL);
+            }
+            else {
+                if (layout_can_scroll(&layout, count, position, LAYOUT_UP))
+                    SDL_RenderCopyEx(renderer, scroll->texture, NULL, &scroll->rect_up, 270.0, NULL, SDL_FLIP_NONE);
+                if (layout_can_scroll(&layout, count, position, LAYOUT_DOWN))
+                    SDL_RenderCopyEx(renderer, scroll->texture, NULL, &scroll->rect_down, 90.0, NULL, SDL_FLIP_NONE);
+            }
+        }
 
         // Draw clock
         if (config.clock_enabled) {
@@ -793,15 +782,17 @@ static void draw_screen()
                 &highlight->rect
             );
 
-        // Draw buttons
-        Entry *entry = current_menu->root_entry;
-        SDL_Texture *icon;
-        for (int i = 0; i < geo.num_buttons; i++) {
-            icon = (entry->icon_selected != NULL && i == (int) current_menu->highlight_position) ? entry->icon_selected : entry->icon;
+        // Draw the visible buttons
+        for (unsigned int i = 0; i < current_menu->num_entries; i++) {
+            int x, y;
+            if (!layout_slot(&layout, current_menu->position, (int) i, &x, &y))
+                continue;
+            Entry *entry = current_menu->items[i];
+            SDL_Texture *icon = (entry->icon_selected != NULL && (int) i == current_menu->position.selected)
+                                ? entry->icon_selected : entry->icon;
             SDL_RenderCopy(renderer, icon, NULL, &entry->icon_rect);
             if (config.titles_enabled)
                 SDL_RenderCopy(renderer, entry->title_texture, NULL, &entry->text_rect);
-            entry = entry-> next;
         }
 
         // Draw screensaver
@@ -841,9 +832,9 @@ static void execute_command(const char *command)
                 start_process(fork_command, false);
         }
         else if (!strcmp(special_command, SCMD_LEFT))
-            move_left();
+            move_selection(LAYOUT_LEFT);
         else if (!strcmp(special_command, SCMD_RIGHT))
-            move_right();
+            move_selection(LAYOUT_RIGHT);
         else if (!strcmp(special_command, SCMD_SELECT))
             execute_command(current_entry->cmd);
         else if (!strcmp(special_command, SCMD_HOME))
@@ -1293,14 +1284,10 @@ int main(int argc, char *argv[])
         ticks.clock_update = ticks.main;
     }
     
-    // Render highlight
+    // Allocate the highlight; its texture is rendered for each button size as menus load
     if (config.highlight) {
-        int button_height = config.icon_size + config.title_padding + geo.font_height;
         highlight = malloc(sizeof(Highlight));
-        highlight->texture = render_highlight(config.icon_size + 2*config.highlight_hpadding,
-                                button_height + 2*config.highlight_vpadding,
-                                &highlight->rect
-                            );
+        *highlight = (Highlight) { .texture = NULL, .button = 0, .hpad = 0, .vpad = 0 };
     }
 
     // Render scroll indicators
@@ -1310,6 +1297,9 @@ int main(int argc, char *argv[])
         int scroll_indicator_height = (int) ((float) geo.screen_height * SCROLL_INDICATOR_HEIGHT);
         render_scroll_indicators(scroll, scroll_indicator_height, &geo);
     }
+
+    // Work out where the buttons may go, now that the clock's size is known
+    calculate_layout_area();
 
     // Render background overlay
     if (config.background_overlay) {

@@ -26,7 +26,6 @@ int config_handler(void *user, const char *section, const char *name, const char
 int convert_percent(const char *string, int max_value);
 const char *get_mode_setting(int type, int value);
 int utf8_length(const char *string);
-unsigned int calculate_width(int buttons, int icon_spacing, int icon_size, int highlight_padding);
 bool hex_to_color(const char *string, SDL_Color *color);
 bool convert_bool(const char *string, bool *setting);
 bool is_percent(const char *string);
@@ -47,4 +46,3 @@ void read_file(const char *path, char **buffer);
 void sprintf_alloc(char **buffer, const char *format, ...);
 Uint16 get_unicode_code_point(const char *p, int *bytes);
 Menu *get_menu(const char *menu_name);
-Entry *advance_entries(Entry *entry, int spaces, Direction direction);
