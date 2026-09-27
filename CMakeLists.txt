@@ -151,16 +151,14 @@ if (UNIX)
   if (PACKAGE STREQUAL "DEB")
     set(CPACK_DEBIAN_PACKAGE_NAME ${EXECUTABLE_TITLE})
     set(CPACK_DEBIAN_PACKAGE_VERSION ${CMAKE_PROJECT_VERSION})
-    # Epoch 1: versioning restarted at 0.1.0 after the original project's 2.2,
-    # and v0.1.0 shipped as flex-launcher 1:0.1.0 so apt would sort it above
-    # 2.2. The package has been named streamflex since; the epoch is kept.
-    set(CPACK_DEBIAN_PACKAGE_EPOCH 1)
+    # No epoch. v0.1.0 shipped as flex-launcher 1:0.1.0 to sort above the
+    # original project's 2.2; streamflex is a new package name with nothing
+    # to outrank. Never add one later: an epoch cannot be removed again.
     if (NOT CPACK_DEBIAN_PACKAGE_ARCHITECTURE)
       set (CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
     endif ()
-    # Explicit name: DEB-DEFAULT puts the epoch in the file name
-    # (streamflex_1:0.1.0_amd64.deb), and a colon is not a valid artifact
-    # or Windows file name. Debian file names leave the epoch out.
+    # Explicit name <package>_<version>_<arch>.deb, which the Release job and
+    # the docs download page match on.
     set(CPACK_DEBIAN_FILE_NAME "${CPACK_DEBIAN_PACKAGE_NAME}_${CMAKE_PROJECT_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
     # dpkg-shlibdeps derives every dependency and its minimum version (glibc
     # included) from the built binary. No explicit CPACK_DEBIAN_PACKAGE_DEPENDS:
