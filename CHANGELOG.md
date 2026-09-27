@@ -8,6 +8,10 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-27
+
+First release under the name StreamFlex. The launcher behaves exactly as in 0.1.0; what changes is its name, and with it the executable, package and directory names listed below. The new app icon follows in 0.1.2.
+
 ### Changed
 - **The project is renamed from Flex Launcher to StreamFlex**, with a new logo. Everything named after the project follows, so an existing install does not carry over:
   - The executable is `streamflex` (`streamflex.exe` on Windows), and the packages are `streamflex_<version>_amd64.deb`, `streamflex_<version>_arm64.deb`, `streamflex-<version>-1-x86_64.pkg.tar.zst` and `streamflex-<version>-win64.zip`. The Debian/Arch package name is `streamflex`; the `flex-launcher` package is not replaced or removed by it.
