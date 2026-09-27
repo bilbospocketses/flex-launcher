@@ -28,6 +28,7 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ### Fixed
 - On Windows, the default config's icons no longer depend on the folder StreamFlex was started from.
+- A font named by a relative path (the Windows default config uses `.\assets\fonts\...`) is now found next to the executable when StreamFlex is started from another folder, such as a shortcut's "Start in" folder. Before, it logged "Could not initialize font from config file" and fell back to the default font.
 - The README, the setup guide and the `OversizeMode` and Scroll Indicators docs still described the single-row layout, and the setup guide said SVG menu icons were not supported. They now describe grids, and recommend SVG icons.
 - Titles on very small buttons no longer write outside their memory. When fewer than three characters of a title fitted, truncating it walked back past the start of the text, which could crash the launcher or corrupt memory. It becomes `...` instead, and a one- or two-character title is left as it is. Small buttons were rare before grids; a dense grid on a small screen makes them ordinary.
 
