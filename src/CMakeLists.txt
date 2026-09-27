@@ -14,6 +14,8 @@ set(SOURCES
   layout.h
   utf8.c
   utf8.h
+  library.c
+  library.h
 )
 if (UNIX)
   add_executable(${EXECUTABLE_TITLE} ${SOURCES})
