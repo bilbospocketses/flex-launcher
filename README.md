@@ -127,3 +127,7 @@ StreamFlex's design, inherited from Flex Launcher, was strongly influenced by th
 
 ## License
 StreamFlex is released under the [GNU General Public License v3.0](LICENSE).
+
+---
+
+**Disclaimer:** StreamFlex is an independent open-source project and is not affiliated, associated, authorized, endorsed by, or in any way officially connected with Comcast/Xfinity, Streamflex Labs, RA Apps, BHSD Trading LLC, Streamflex (streamflex.com), or any other commercial entities operating under similar names. All product names, logos and trademarks are the property of their respective owners.
