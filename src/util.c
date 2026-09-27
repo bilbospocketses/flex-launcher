@@ -23,6 +23,7 @@ extern GamepadControl  *gamepad_controls;
 extern Hotkey          *hotkeys;
 Menu                   *menu  = NULL;
 Entry                  *entry = NULL;
+static bool            columns_set = false; // Columns wins over its older name, MaxButtons
 
 static const char *mode_settings[][5] = {
     {"Color", "Image", "Slideshow", "Transparent", NULL}, // Background Mode
@@ -163,10 +164,25 @@ int config_handler(void *user, const char *section, const char *name, const char
     }
 
     else if (MATCH(section, "Layout")) {
+        int count;
         if (MATCH(name, SETTING_MAX_BUTTONS)) {
             int max_buttons = atoi(value);
-            if (max_buttons > 0)
+            if (max_buttons > 0 && !columns_set)
                 config.max_buttons = (unsigned int) max_buttons;
+        }
+        else if (MATCH(name, SETTING_COLUMNS)) {
+            if (layout_parse_count(value, &count)) {
+                config.max_buttons = (unsigned int) count;
+                columns_set = true;
+            }
+            else
+                log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_COLUMNS, value);
+        }
+        else if (MATCH(name, SETTING_ROWS)) {
+            if (layout_parse_count(value, &count))
+                config.rows = (unsigned int) count;
+            else
+                log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_ROWS, value);
         }
         else if (MATCH(name, SETTING_ICON_SIZE)) {
             Uint16 icon_size = (Uint16) atoi(value);
@@ -417,6 +433,28 @@ int config_handler(void *user, const char *section, const char *name, const char
             }
         }
 
+        // Per-menu layout settings. They count only when the value is a number, so an
+        // existing entry that happens to be keyed Rows, Columns or IconSize still parses.
+        bool layout_key = MATCH(name, SETTING_ROWS) || MATCH(name, SETTING_COLUMNS) ||
+                          MATCH(name, SETTING_ICON_SIZE);
+        if (layout_key && strchr(value, ';') == NULL) {
+            int count = 0;
+            bool valid = layout_parse_count(value, &count);
+            if (valid && MATCH(name, SETTING_ICON_SIZE))
+                valid = count >= MIN_ICON_SIZE && count <= MAX_ICON_SIZE;
+            if (!valid)
+                log_error("Invalid %s value '%s' in menu '%s', ignoring it", name, value, section);
+            else if (MATCH(name, SETTING_ROWS))
+                menu->overrides.rows = count;
+            else if (MATCH(name, SETTING_COLUMNS))
+                menu->overrides.columns = count;
+            else
+                menu->overrides.icon_cap = count;
+            return 0;
+        }
+        if (layout_key)
+            log_error("Menu '%s': '%s' holds an entry, so it is read as an entry", section, name);
+
         // Parse entry line for title, icon path, command
         char *string = (char*) value;
         char *token;
@@ -426,7 +464,7 @@ int config_handler(void *user, const char *section, const char *name, const char
 
             // Create first entry in the menu if none exists
             if (menu->first_entry == NULL) {
-                menu->first_entry = malloc(sizeof(Entry));
+                menu->first_entry = calloc(1, sizeof(Entry));
                 entry = menu->first_entry;
                 entry->next = NULL;
             }
@@ -435,7 +473,7 @@ int config_handler(void *user, const char *section, const char *name, const char
             else {
                 previous_entry = entry;
                 entry = entry->next;
-                entry = malloc(sizeof(Entry));
+                entry = calloc(1, sizeof(Entry));
                 previous_entry->next = entry;
                 entry->next = NULL;
             }
@@ -1065,12 +1103,31 @@ Menu *create_menu(const char *menu_name, size_t *num_menus)
         .num_entries = 0,
         .page = 0,
         .highlight_position = 0,
-        .rendered = false
+        .rendered = false,
+        .items = NULL,
+        .overrides = { 0, 0, 0 },
+        .position = { 0, 0 },
+        .rendered_size = 0
     };
     menu->name = strdup(menu_name);
     (*num_menus)++;
-    
+
     return menu;
+}
+
+// A function to give every menu an array of its entries by index, for the layout maths
+void build_menu_items()
+{
+    for (Menu *m = config.first_menu; m != NULL; m = m->next) {
+        if (m->num_entries == 0)
+            continue;
+        m->items = malloc(m->num_entries * sizeof(Entry*));
+        Entry *e = m->first_entry;
+        for (unsigned int i = 0; i < m->num_entries; i++) {
+            m->items[i] = e;
+            e = e->next;
+        }
+    }
 }
 
 // A function to advance X spaces in the entry linked list (left or right)

@@ -93,6 +93,7 @@ Config config = {
     .highlight_rx                     = DEFAULT_HIGHLIGHT_CORNER_RADIUS,
     .title_padding                    = -1,
     .max_buttons                      = DEFAULT_MAX_BUTTONS,
+    .rows                             = DEFAULT_ROWS,
     .icon_spacing                     = -1,
     .highlight_vpadding               = -1,
     .highlight_hpadding               = -1,
@@ -370,6 +371,7 @@ static void cleanup()
     Menu *tmp_menu = NULL;
     for (size_t i = 0; i < config.num_menus; i++) {
         free(menu->name);
+        free(menu->items);
         entry = menu->first_entry;
         for(size_t j = 0; j < menu->num_entries; j++) {
             free(entry->title);
@@ -1220,6 +1222,7 @@ int main(int argc, char *argv[])
     // Parse config file for settings and menu entries
     parse_config_file(config_file_path);
     free(config_file_path);
+    build_menu_items();
 
     // Get default menu
     if (config.default_menu == NULL)

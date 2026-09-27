@@ -1,3 +1,5 @@
+#include "layout.h"
+
 // Color masking bit logic
 #if SDL_BYTEORDER == SDL_BIG_ENDIAN
 #define RMASK 0xff000000
@@ -153,16 +155,20 @@ typedef struct entry {
 
 // Linked list for menus
 typedef struct menu {
-    char         *name;
-    unsigned int num_entries;
-    bool         rendered;
-    unsigned int page;
-    unsigned int highlight_position;
-    Entry        *first_entry;
-    Entry        *root_entry;
-    Entry        *last_selected_entry;
-    struct menu  *next;
-    struct menu  *back;
+    char            *name;
+    unsigned int    num_entries;
+    bool            rendered;
+    unsigned int    page;
+    unsigned int    highlight_position;
+    Entry           *first_entry;
+    Entry           *root_entry;
+    Entry           *last_selected_entry;
+    Entry           **items;          // Entries by index, for the layout maths
+    LayoutOverrides overrides;        // Per-menu Rows/Columns/IconSize; 0 = from [Layout]
+    LayoutPosition  position;         // Selected entry and scroll position
+    int             rendered_size;    // Button size the textures were rendered at; 0 = not yet
+    struct menu     *next;
+    struct menu     *back;
 } Menu;
 
 typedef struct gamepad {
@@ -238,7 +244,8 @@ typedef struct {
 // Configuration settings
 typedef struct {
     char *default_menu;
-    unsigned int max_buttons;
+    unsigned int max_buttons; // The Columns setting (MaxButtons is its older name)
+    unsigned int rows;
     bool vsync;
     int fps_limit;
     Uint32 application_timeout;

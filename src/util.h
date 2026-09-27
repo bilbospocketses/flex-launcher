@@ -42,6 +42,7 @@ void random_array(int *array, int array_size);
 void clean_path(char *path);
 void validate_settings(Geometry *geo);
 void parse_config_file(const char *config_file_path);
+void build_menu_items(void);
 void read_file(const char *path, char **buffer);
 void sprintf_alloc(char **buffer, const char *format, ...);
 Uint16 get_unicode_code_point(const char *p, int *bytes);
