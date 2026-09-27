@@ -7,3 +7,6 @@ docs/.jekyll-cache
 docs/_data/release.json
 # Intermediate frames and the packed .ico from branding/icon/build-icon.ps1
 branding/icon/build/
+# Python caches and review output from branding/library tools
+branding/library/__pycache__/
+branding/library/build/

@@ -24,3 +24,13 @@ target_include_directories(test_library PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_compile_definitions(test_library PRIVATE LIBRARY_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/library")
 link_inih(test_library)
 add_test(NAME library COMMAND test_library)
+
+# Every generic icon in the shipped library must parse with nanosvg, the launcher's own SVG parser
+add_executable(test_library_svg test_library_svg.c)
+target_include_directories(test_library_svg PRIVATE "${PROJECT_SOURCE_DIR}/src" "${PROJECT_SOURCE_DIR}/src/external")
+target_compile_definitions(test_library_svg PRIVATE LIBRARY_ROOT="${PROJECT_SOURCE_DIR}/assets/icons/library")
+link_inih(test_library_svg)
+if (UNIX)
+  target_link_libraries(test_library_svg m)
+endif ()
+add_test(NAME library_svg COMMAND test_library_svg)
