@@ -1,7 +1,8 @@
 """Research: pull the banner's working palette (ribbon, arrow, ring, window glass, backdrop) by k-means.
 
-Reads the committed 1600x873 banner (docs/assets/branding/streamflex-banner.jpg), which is where
-the colour constants at the top of build-svg.py came from. The regions below are pixel boxes in
+Reads the committed 1600x873 banner (docs/assets/branding/streamflex-banner.jpg, a downscale of the
+branding/logo/streamflex-logo.jpg original), which is where the colour constants at the top of
+build-svg.py came from. The regions below are pixel boxes in
 that image. Needs Python with numpy + opencv-python. Prints hex colours; changes nothing.
 """
 import pathlib
