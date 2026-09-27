@@ -12,6 +12,8 @@ set(SOURCES
   clock.h
   layout.c
   layout.h
+  utf8.c
+  utf8.h
 )
 if (UNIX)
   add_executable(${EXECUTABLE_TITLE} ${SOURCES})

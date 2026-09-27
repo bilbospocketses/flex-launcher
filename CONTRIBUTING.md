@@ -11,7 +11,7 @@ Build instructions for Windows (Visual Studio + vcpkg) and Linux (CMake + distro
 ## Project Structure
 
 ```
-src/                 Launcher core (launcher.c, image.c, clock.c, util.c, debug.c)
+src/                 Launcher core (launcher.c, layout.c, image.c, clock.c, util.c, utf8.c, debug.c)
 src/platform/        Windows and Linux platform layers
 src/external/        Vendored third-party sources
 config/              Default config template, packaging and platform templates (PKGBUILD, .desktop, manifest, icon)

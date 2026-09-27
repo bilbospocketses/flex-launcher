@@ -202,7 +202,7 @@ The largest size of a button, in pixels. Buttons are sized to fill the grid but 
 Default: none (the sample config sets 256)
 
 ##### IconSpacing
-The gap between buttons, across and down, in pixels or percent of the screen width.
+The gap between buttons, across and down, in pixels or percent of the screen width. The gap is kept as set: if it is too large for the grid to fit at `IconSize`, the buttons shrink instead.
 
 Default: 5%
 
