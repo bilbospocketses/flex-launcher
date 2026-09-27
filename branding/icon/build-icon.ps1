@@ -13,6 +13,7 @@
     4. The outputs are copied to where the build and the docs site use them:
          streamflex-full.svg -> docs/streamflex.svg             (Linux scalable icon)
          frame 48            -> docs/streamflex.png             (Linux 48x48 icon)
+         frames 32/24/16     -> docs/streamflex-{32,24,16}.png  (Linux 32/24/16 icons, from the small master)
          frame 32            -> docs/assets/icons/favicon.png   (docs site favicon)
          streamflex.ico      -> config/streamflex.ico           (Windows exe, via streamflex.rc)
     5. The ICO is verified: struct parse, and a pixel round-trip that must be exact (RMSE 0)
@@ -74,15 +75,20 @@ if ($bad) { throw "$bad frame(s) did not round-trip exactly" }
 "round-trip exact for all $($sizes.Count) frames"
 
 '== 5. install'
-$install = [ordered]@{
-    (Join-Path $here 'streamflex-full.svg') = 'docs/streamflex.svg'
-    (Join-Path $frames 'ico_048.png')        = 'docs/streamflex.png'
-    (Join-Path $frames 'ico_032.png')        = 'docs/assets/icons/favicon.png'
-    $ico                                     = 'config/streamflex.ico'
-}
-foreach ($from in $install.Keys) {
-    Copy-Item -LiteralPath $from -Destination (Join-Path $repo $install[$from]) -Force
-    '{0,-32} {1}' -f $install[$from], (Get-FileHash (Join-Path $repo $install[$from]) -Algorithm SHA256).Hash.Substring(0, 16)
+# Pairs, not a hashtable: frame 32 feeds two outputs, and a hashtable keyed by source would drop one.
+$install = @(
+    @((Join-Path $here 'streamflex-full.svg'), 'docs/streamflex.svg'),
+    @((Join-Path $frames 'ico_048.png'),       'docs/streamflex.png'),
+    @((Join-Path $frames 'ico_032.png'),       'docs/streamflex-32.png'),
+    @((Join-Path $frames 'ico_024.png'),       'docs/streamflex-24.png'),
+    @((Join-Path $frames 'ico_016.png'),       'docs/streamflex-16.png'),
+    @((Join-Path $frames 'ico_032.png'),       'docs/assets/icons/favicon.png'),
+    @($ico,                                    'config/streamflex.ico')
+)
+foreach ($p in $install) {
+    $to = Join-Path $repo $p[1]
+    Copy-Item -LiteralPath $p[0] -Destination $to -Force
+    '{0,-32} {1}' -f $p[1], (Get-FileHash $to -Algorithm SHA256).Hash.Substring(0, 16)
 }
 '== changes against the committed icon (empty = the rebuild reproduced it exactly):'
-git -C $repo status --short -- branding/icon docs/streamflex.svg docs/streamflex.png docs/assets/icons/favicon.png config/streamflex.ico
+git -C $repo status --short -- branding/icon ($install | ForEach-Object { $_[1] })
