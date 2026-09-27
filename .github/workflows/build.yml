@@ -1,6 +1,13 @@
 name: Build
 on:
+  # Only master and release tags. A PR branch is built by `pull_request`;
+  # without this filter every PR commit ran the whole build twice. Tag pushes
+  # trigger the Release job, and GitHub does not apply paths-ignore to them.
   push:
+    branches:
+      - master
+    tags:
+      - "v*"
     paths-ignore:
       [
         "**/**.md"
@@ -246,7 +253,8 @@ jobs:
 
       # The project version in CMakeLists.txt is what the packages are named
       # after. On a tag it must equal the tag; on a dry run it is the version
-      # the next tag will carry.
+      # the next tag will carry. The docs site builds every download link from
+      # launcher_version in docs/_config.yml, so that must match it too.
       - name: Check packages
         run: |
           version=$(grep -m1 -oE '^[[:space:]]*VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | awk '{print $2}')
@@ -254,6 +262,12 @@ jobs:
           echo "PROJECT_VERSION=$version" >> "$GITHUB_ENV"
           if [ "$IS_RELEASE" = "true" ] && [ "v$version" != "$GITHUB_REF_NAME" ]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match project version $version in CMakeLists.txt"
+            exit 1
+          fi
+          docs_version=$(sed -nE 's/^launcher_version:[[:space:]]*"?([0-9]+\.[0-9]+\.[0-9]+)"?[[:space:]]*(#.*)?$/\1/p' docs/_config.yml | head -n1)
+          if [ -z "$docs_version" ]; then echo "::error::No launcher_version found in docs/_config.yml"; exit 1; fi
+          if [ "$docs_version" != "$version" ]; then
+            echo "::error::launcher_version $docs_version in docs/_config.yml does not match project version $version in CMakeLists.txt; the docs site's download links would point at the wrong release"
             exit 1
           fi
           ls -l dist
