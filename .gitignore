@@ -1,3 +1,5 @@
+# Out-of-source build directory used by docs/compilation.md
+/build/
 docs/Gemfile.lock
 docs/_site
 docs/.jekyll-cache
