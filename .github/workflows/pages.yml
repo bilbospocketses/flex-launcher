@@ -20,11 +20,15 @@ on:
     branches: [master]
     paths:
       - "docs/**"
+      - "assets/icons/library/**"
+      - "branding/library/**"
       - ".github/workflows/pages.yml"
   pull_request:
     branches: [master]
     paths:
       - "docs/**"
+      - "assets/icons/library/**"
+      - "branding/library/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
     inputs:
@@ -88,6 +92,10 @@ jobs:
               arch: pick("-x86_64\\.pkg\\.tar\\.zst$"),
               deb_arm64: pick("_arm64\\.deb$") }' > docs/_data/release.json
           cat docs/_data/release.json
+
+      # Writes docs/icons.md and copies the icons into the site; both are gitignored
+      - name: Build the icon gallery
+        run: python3 branding/library/build-gallery.py
 
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697 # v1.0.13

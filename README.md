@@ -121,7 +121,9 @@ StreamFlex is made possible by the following projects:
   - [SDL_ttf](https://github.com/libsdl-org/SDL_ttf)
 - [Nanosvg](https://github.com/memononen/nanosvg)
 - [inih](https://github.com/benhoyt/inih)
-- [Numix icons](https://github.com/numixproject)
+- [Material Symbols](https://github.com/google/material-design-icons) (Apache-2.0), the glyphs of the generic library icons
+
+The streaming and media service icons in the icon library are the trademarks of their owners; see [the brand notice](assets/icons/library/brands/NOTICE.md).
 
 StreamFlex's design, inherited from Flex Launcher, was strongly influenced by the excellent desktop application launcher [xlunch](https://github.com/Tomas-M/xlunch).
 

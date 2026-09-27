@@ -9,6 +9,7 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 ## [Unreleased]
 
 ### Added
+- **A built-in icon library.** The app icons of 33 streaming and media services, and 36 generic icons for system actions, kinds of media, general use and devices, all on one rounded-square outline. An entry names one instead of a path: `Entry1=Netflix;netflix;...`. The docs site has a gallery of every icon and its name.
 - **Menus can show several rows of buttons.** `Rows` sets how many rows are visible at once. With two or more, a menu is a grid: Left and Right stop at the end of a row, Up and Down move between rows, and the grid scrolls one row at a time. A single row still scrolls sideways.
 - **Buttons are sized to fill the grid.** Choose its shape with `Rows` and `Columns`, and the buttons scale to fit the screen, titles included.
 - **Each menu can have its own layout.** `Rows`, `Columns` and `IconSize` in a menu's section override the `[Layout]` settings for that menu.
@@ -17,6 +18,7 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 - Unit tests for the layout logic, run by CTest in CI.
 
 ### Changed
+- **The default config uses library icons.** The seven Numix icons are gone. A config that still points at one of their old files gets the matching library icon, and the log suggests its name.
 - **`MaxButtons` is now `Columns`.** The old name still works; if both are set, `Columns` wins.
 - **`IconSize` is now the largest a button may grow**, not a fixed size. Menus that set it look the same as before. A config with no `IconSize` line now gets buttons that grow to fill the screen, where it used to get 256 px.
 - **A single row with more buttons than fit now slides one button at a time**, instead of flipping to the next page.
@@ -25,6 +27,7 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 - SVG icons are drawn at the button's size, so they stay sharp at any size.
 
 ### Fixed
+- On Windows, the default config's icons no longer depend on the folder StreamFlex was started from.
 - The README, the setup guide and the `OversizeMode` and Scroll Indicators docs still described the single-row layout, and the setup guide said SVG menu icons were not supported. They now describe grids, and recommend SVG icons.
 - Titles on very small buttons no longer write outside their memory. When fewer than three characters of a title fitted, truncating it walked back past the start of the text, which could crash the launcher or corrupt memory. It becomes `...` instead, and a one- or two-character title is left as it is. Small buttons were rare before grids; a dense grid on a small screen makes them ordinary.
 

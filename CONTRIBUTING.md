@@ -11,13 +11,14 @@ Build instructions for Windows (Visual Studio + vcpkg) and Linux (CMake + distro
 ## Project Structure
 
 ```
-src/                 Launcher core (launcher.c, layout.c, image.c, clock.c, util.c, utf8.c, debug.c)
+src/                 Launcher core (launcher.c, layout.c, library.c, image.c, clock.c, util.c, utf8.c, debug.c)
 src/platform/        Windows and Linux platform layers
 src/external/        Vendored third-party sources
 config/              Default config template, packaging and platform templates (PKGBUILD, .desktop, manifest, icon)
 assets/              Icons and fonts
 branding/icon/       Source for the app icon; regenerate with build-icon.ps1 (see its README)
 branding/logo/       The full-resolution logo original; the docs banner is a downscale of it
+branding/library/    Tools for the icon library: generator, brand importer, checks, gallery (see its README)
 design/              Design specs and implementation plans (not published; docs/ is the site)
 tests/               Unit tests (CTest); run them with ctest after building
 docs/                Documentation site (GitHub Pages / Jekyll)
