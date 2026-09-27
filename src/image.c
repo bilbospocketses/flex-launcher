@@ -423,6 +423,16 @@ SDL_Texture *render_text_texture(const char *text, TextInfo *info, SDL_Rect *rec
     return load_texture(surface);
 }
 
+// A function to tell a relative path (.\assets\fonts\x.ttf, fonts/x.ttf) from an absolute one
+static bool is_relative_path(const char *path)
+{
+    if (path[0] == '/' || path[0] == '\\')
+        return false;
+    if (((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':')
+        return false;
+    return true;
+}
+
 // A function to load a font from a file
 int load_font(TextInfo *info, const char *default_font)
 {
@@ -430,6 +440,18 @@ int load_font(TextInfo *info, const char *default_font)
     // Load user specified font
     if (font_path != NULL)
         info->font = TTF_OpenFont(font_path, info->font_size);
+
+    // A relative path in the config means the folder StreamFlex is in, not the one it was started from
+    // (the Windows config names .\assets\fonts\...; a shortcut's "Start in" folder can be anywhere)
+    if (info->font == NULL && font_path != NULL && config.exe_path != NULL && is_relative_path(font_path)) {
+        char exe_font_path[MAX_PATH_CHARS + 1];
+        join_paths(exe_font_path, sizeof(exe_font_path), 2, config.exe_path, font_path);
+        info->font = TTF_OpenFont(exe_font_path, info->font_size);
+        if (info->font != NULL) {
+            free(font_path);
+            *(info->font_path) = strdup(exe_font_path);
+        }
+    }
 
     // Try to load default font if we failed loading from config file
     if (info->font == NULL) {
