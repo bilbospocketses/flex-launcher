@@ -21,6 +21,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import libtools  # noqa: E402
 
 
+NEAR_OPAQUE = 250   # alpha at or above this counts as opaque
+
+
 class ImportRefused(Exception):
     pass
 
@@ -50,6 +53,8 @@ def import_brand(name, image_path, source, art=None, fill=None, library=libtools
     size = min(width, libtools.BRAND_MAX)
     if width > size:
         image = image.resize((size, size), Image.Resampling.LANCZOS)
+    # Store art often carries alpha 250-254 from its encoder. That is not transparency: make it opaque.
+    image.putalpha(image.getchannel("A").point(lambda v: 255 if v >= NEAR_OPAQUE else v))
 
     mask = libtools.outline_mask(size)
     inside = mask.point(lambda v: 255 if v == 255 else 0)

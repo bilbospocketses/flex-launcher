@@ -86,6 +86,14 @@ class ImportBrand(unittest.TestCase):
             self.assertEqual(out.getpixel((300, 20)), (17, 34, 51, 255))  # inside the outline, outside the logo
         self.assertEqual(dict(ib.libtools.read_sections(self.brands_ini))["round"]["fill"], "#112233")
 
+    def test_near_opaque_art_counts_as_opaque(self):
+        # Store art often carries alpha 254 from an encoder: not transparency, and not worth a --fill
+        self.run_import("near", self.art(512, colour=(10, 120, 200, 252)))
+        with Image.open(self.library / "brands" / "near.png") as out:
+            self.assertEqual(out.getpixel((256, 256)), (10, 120, 200, 255))
+            self.assertEqual(out.getpixel((0, 0))[3], 0)
+        self.assertNotIn("fill", dict(ib.libtools.read_sections(self.brands_ini))["near"])
+
     def test_invalid_name_is_refused(self):
         with self.assertRaises(ib.ImportRefused):
             self.run_import("Net_Flix", self.art(512))
