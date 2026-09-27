@@ -8,6 +8,10 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-27
+
+On Linux the app icon now comes in the small sizes that menus and panels use. Everything else here is about the icon's source and tooling; the launcher behaves exactly as in 0.1.2.
+
 ### Added
 - The app icon's source is in the repository under `branding/icon/`. `build-svg.py` holds its geometry and colours and writes the two vector masters, and `build-icon.ps1` renders, packs, installs and verifies all four icon files. Run on the committed source, it reproduces the 0.1.2 icon byte for byte, so a later icon change can be regenerated rather than redrawn.
 - Three icon tools sit beside it. `review-sheet.py` lays every icon size out on light and dark backgrounds, with pixel zooms of the small sizes, for judging a design by eye. `render-check.py` renders the icon in Chromium and Inkscape and measures the difference, a portability check for design changes. `palette.py` re-derives the icon's colours from the logo banner.
