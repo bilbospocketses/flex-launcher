@@ -16,6 +16,7 @@ src/platform/        Windows and Linux platform layers
 src/external/        Vendored third-party sources
 config/              Default config template, packaging and platform templates (PKGBUILD, .desktop, manifest, icon)
 assets/              Icons and fonts
+branding/icon/       Source for the app icon; regenerate with build-icon.ps1 (see its README)
 docs/                Documentation site (GitHub Pages / Jekyll)
 ```
 

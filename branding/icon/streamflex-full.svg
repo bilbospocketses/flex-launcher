@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>StreamFlex</title>
+  <defs>
+    <linearGradient id="plate" x1="6" y1="250" x2="250" y2="6" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#061436"/><stop offset="1" stop-color="#07606C"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="148" cy="142" r="130" gradientUnits="userSpaceOnUse">
+      <stop offset="0.45" stop-color="#2BBFBC" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#2BBFBC" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="218" y1="72" x2="78" y2="212" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5BDFD7"/><stop offset="0.45" stop-color="#2BBFBC"/>
+      <stop offset="0.75" stop-color="#1B8AB5"/><stop offset="1" stop-color="#424AB2"/>
+    </linearGradient>
+    <linearGradient id="ribbon" x1="62" y1="250" x2="95.5" y2="28.7" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1FA1DC"/><stop offset="0.38" stop-color="#B24377"/>
+      <stop offset="0.66" stop-color="#F3643A"/><stop offset="1" stop-color="#F7A948"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="114.0" x2="0" y2="170.0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E6F6FA"/><stop offset="1" stop-color="#BFE5F0"/>
+    </linearGradient>
+    <clipPath id="plateclip"><rect x="6" y="6" width="244" height="244" rx="54"/></clipPath>
+    <radialGradient id="glow" cx="148" cy="142" r="106.0" gradientUnits="userSpaceOnUse">
+      <stop offset="0.4151" stop-color="#3FDAF2" stop-opacity="0"/>
+      <stop offset="0.5472" stop-color="#3FDAF2" stop-opacity="0.55"/>
+      <stop offset="0.7736" stop-color="#3FDAF2" stop-opacity="0.55"/>
+      <stop offset="0.8868" stop-color="#3FDAF2" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#3FDAF2" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="6" y="6" width="244" height="244" rx="54" fill="url(#plate)"/>
+  <g clip-path="url(#plateclip)">
+  <circle cx="148" cy="142" r="130" fill="url(#halo)"/>
+  <circle cx="148" cy="142" r="106.0" fill="url(#glow)"/>
+  <path d="M 218.00 142.00 A 70 70 0 1 1 218.00 141.99" fill="none" stroke="url(#ring)" stroke-width="24" stroke-linecap="round"/>
+  <path d="M 122.25 71.26 A 75.28 75.28 0 0 1 222.14 128.93" fill="none" stroke="#C8FFFA" stroke-width="3" stroke-linecap="round" opacity="0.75"/>
+  <rect x="106.0" y="111.0" width="88" height="70" rx="15" fill="#021026" opacity="0.045"/>
+  <rect x="107.0" y="112.0" width="86" height="68" rx="14" fill="#021026" opacity="0.045"/>
+  <rect x="108.0" y="113.0" width="84" height="66" rx="13" fill="#021026" opacity="0.045"/>
+  <rect x="109.0" y="114.0" width="82" height="64" rx="12" fill="#021026" opacity="0.045"/>
+  <rect x="110.0" y="115.0" width="80" height="62" rx="11" fill="#021026" opacity="0.045"/>
+  <rect x="111.0" y="116.0" width="78" height="60" rx="10" fill="#021026" opacity="0.045"/>
+  <rect x="112.0" y="117.0" width="76" height="58" rx="9" fill="#021026" opacity="0.045"/>
+  <rect x="113.0" y="118.0" width="74" height="56" rx="8" fill="#021026" opacity="0.045"/>
+  <rect x="111.0" y="114.0" width="74" height="56" rx="8" fill="url(#glass)"/>
+  <path d="M 111.0 128.0 V 122.0 Q 111.0 114.0 119.0 114.0 H 177.0 Q 185.0 114.0 185.0 122.0 V 128.0 Z" fill="#265D88"/>
+  <circle cx="121.0" cy="121.0" r="3" fill="#F3643A"/>
+  <circle cx="130.0" cy="121.0" r="3" fill="#F7A948"/>
+  <circle cx="139.0" cy="121.0" r="3" fill="#3FDAF2"/>
+  <rect x="118.0" y="135.0" width="18" height="28" rx="3" fill="#8CC4D6"/>
+  <rect x="141.0" y="135.0" width="37" height="11.8" rx="3" fill="#8CC4D6"/>
+  <rect x="141.0" y="151.2" width="16.5" height="11.8" rx="3" fill="#8CC4D6"/>
+  <rect x="161.5" y="151.2" width="16.5" height="11.8" rx="3" fill="#8CC4D6"/>
+  <path d="M 58 262 C 90 206, 52 150, 80 72" fill="none" stroke="#021026" stroke-width="34" stroke-linecap="round" opacity="0.1"/>
+  <path d="M 58 262 C 90 206, 52 150, 80 72" fill="none" stroke="#021026" stroke-width="28" stroke-linecap="round" opacity="0.18"/>
+  <path d="M 58 262 C 90 206, 52 150, 80 72" fill="none" stroke="url(#ribbon)" stroke-width="22" stroke-linecap="round"/>
+  <path d="M 95.54 28.71 L 106.35 81.46 L 53.65 62.54 Z" fill="url(#ribbon)" stroke="url(#ribbon)" stroke-width="3" stroke-linejoin="round"/>
+  </g>
+  <rect x="6.75" y="6.75" width="242.5" height="242.5" rx="53.25" fill="none" stroke="#8BF8F3" stroke-opacity="0.22" stroke-width="1.5"/>
+</svg>

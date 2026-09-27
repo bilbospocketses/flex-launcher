@@ -3,3 +3,5 @@ docs/_site
 docs/.jekyll-cache
 # Written by pages.yml from the latest release at build time
 docs/_data/release.json
+# Intermediate frames and the packed .ico from branding/icon/build-icon.ps1
+branding/icon/build/
