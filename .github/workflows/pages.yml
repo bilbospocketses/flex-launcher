@@ -1,5 +1,5 @@
 # Documentation site: builds docs/ with Jekyll and deploys it to GitHub Pages
-# at https://bilbospocketses.github.io/flex-launcher/.
+# at https://bilbospocketses.github.io/streamflex/.
 #
 # This replaces GitHub's built-in "pages build and deployment" workflow so
 # every action is SHA-pinned like the rest of the repo (sha_pinning_required).

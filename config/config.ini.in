@@ -1,5 +1,5 @@
 # @PROJECT_NAME@ v@PROJECT_VERSION@ sample configuration file
-# For documentation of these settings, visit: https://bilbospocketses.github.io/flex-launcher/configuration
+# For documentation of these settings, visit: https://bilbospocketses.github.io/streamflex/configuration
 [General]
 @SETTING_DEFAULT_MENU@=@DEFAULT_MENU@
 @SETTING_VSYNC@=@DEFAULT_VSYNC@

@@ -1,12 +1,12 @@
 # Project info
 cmake_minimum_required(VERSION 3.18)
-project("Flex Launcher" 
+project("StreamFlex" 
   LANGUAGES C
   VERSION 0.1.0
   DESCRIPTION "Customizable HTPC Application Launcher"
-  HOMEPAGE_URL "https://github.com/bilbospocketses/flex-launcher"
+  HOMEPAGE_URL "https://github.com/bilbospocketses/streamflex"
 )
-set(EXECUTABLE_TITLE "flex-launcher")
+set(EXECUTABLE_TITLE "streamflex")
 set(EXECUTABLE_OUTPUT_PATH "${PROJECT_BINARY_DIR}")
 include_directories(${PROJECT_BINARY_DIR})
 
@@ -152,13 +152,14 @@ if (UNIX)
     set(CPACK_DEBIAN_PACKAGE_NAME ${EXECUTABLE_TITLE})
     set(CPACK_DEBIAN_PACKAGE_VERSION ${CMAKE_PROJECT_VERSION})
     # Epoch 1: versioning restarted at 0.1.0 after the original project's 2.2,
-    # so without it apt would treat our packages as older than 2.2.
+    # and v0.1.0 shipped as flex-launcher 1:0.1.0 so apt would sort it above
+    # 2.2. The package has been named streamflex since; the epoch is kept.
     set(CPACK_DEBIAN_PACKAGE_EPOCH 1)
     if (NOT CPACK_DEBIAN_PACKAGE_ARCHITECTURE)
       set (CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
     endif ()
     # Explicit name: DEB-DEFAULT puts the epoch in the file name
-    # (flex-launcher_1:0.1.0_amd64.deb), and a colon is not a valid artifact
+    # (streamflex_1:0.1.0_amd64.deb), and a colon is not a valid artifact
     # or Windows file name. Debian file names leave the epoch out.
     set(CPACK_DEBIAN_FILE_NAME "${CPACK_DEBIAN_PACKAGE_NAME}_${CMAKE_PROJECT_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
     # dpkg-shlibdeps derives every dependency and its minimum version (glibc
@@ -219,8 +220,8 @@ if (UNIX)
   configure_file("${PROJECT_SOURCE_DIR}/config/launcher.desktop.in" "${PROJECT_BINARY_DIR}/install/${EXECUTABLE_TITLE}.desktop")
   install(FILES "${PROJECT_BINARY_DIR}/install/${EXECUTABLE_TITLE}.desktop" DESTINATION "${INSTALL_DIR_DESKTOP}")
   set(INSTALL_DIR_ICONS "${CMAKE_INSTALL_PREFIX}/share/icons")
-  install(FILES "${PROJECT_SOURCE_DIR}/docs/flex-launcher.png" DESTINATION "${INSTALL_DIR_ICONS}/hicolor/48x48/apps")
-  install(FILES "${PROJECT_SOURCE_DIR}/docs/flex-launcher.svg" DESTINATION "${INSTALL_DIR_ICONS}/hicolor/scalable/apps")
+  install(FILES "${PROJECT_SOURCE_DIR}/docs/streamflex.png" DESTINATION "${INSTALL_DIR_ICONS}/hicolor/48x48/apps")
+  install(FILES "${PROJECT_SOURCE_DIR}/docs/streamflex.svg" DESTINATION "${INSTALL_DIR_ICONS}/hicolor/scalable/apps")
 endif ()
   
 # Set paths for config files

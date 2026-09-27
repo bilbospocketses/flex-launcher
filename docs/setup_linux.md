@@ -15,13 +15,13 @@ title: Linux Setup Guide
 9. [Using an IR Remote](#using-an-ir-remote)
 
 ## Overview
-This page contains tips for setting up Flex Launcher on Linux-based systems, as well as general HTPC setup tips.
+This page contains tips for setting up StreamFlex on Linux-based systems, as well as general HTPC setup tips.
 
 ## Autostarting
-In a typical HTPC setup, Flex Launcher is autostarted after boot. On Linux, this can be accomplished in multiple ways. The most widely implemented is [XDG Autostart](https://specifications.freedesktop.org/autostart-spec/autostart-spec-latest.html). Application .desktop files in `~/.config/autostart` will be autostarted upon user login. The .desktop file for Flex Launcher is installed to `/usr/share/applications`. Copy it to your autostart directory:
+In a typical HTPC setup, StreamFlex is autostarted after boot. On Linux, this can be accomplished in multiple ways. The most widely implemented is [XDG Autostart](https://specifications.freedesktop.org/autostart-spec/autostart-spec-latest.html). Application .desktop files in `~/.config/autostart` will be autostarted upon user login. The .desktop file for StreamFlex is installed to `/usr/share/applications`. Copy it to your autostart directory:
 ```bash
 mkdir -p ~/.config/autostart
-cp /usr/share/applications/flex-launcher.desktop ~/.config/autostart
+cp /usr/share/applications/streamflex.desktop ~/.config/autostart
 ```
 Additionally, some desktop enviornments have their own, separate autostart protocol. Consult your DE's documentation for more details.
 
@@ -33,17 +33,17 @@ If you dislike Arch's rolling release model, another good choice is [Debian](htt
 ## Desktop Environment
 I recommend [Openbox](http://openbox.org/wiki/Main_Page), which is not a full-fledged desktop enviornment, but rather a standalone window manager. An HTPC is a very simple device, and most of the features of desktop environments are not needed and add unnecessary bloat. Since HTPC applications are always in fullscreen, not even compositing is necessary. 
 
-Openbox is lightweight and highly customizable. The basic install of Openbox provides only a black root window, over which Flex Launcher and your desired applications can be drawn.
+Openbox is lightweight and highly customizable. The basic install of Openbox provides only a black root window, over which StreamFlex and your desired applications can be drawn.
 
 ## Display Protocol
-Being based on SDL, Flex Launcher has support for both X11 and Wayland display protocols. I recommend using X11. The benefits that Wayland offers aren't broadly applicable to an HTPC, and Wayland support is still lacking in many areas.
+Being based on SDL, StreamFlex has support for both X11 and Wayland display protocols. I recommend using X11. The benefits that Wayland offers aren't broadly applicable to an HTPC, and Wayland support is still lacking in many areas.
 
-If you choose to run Flex Launcher in Wayland, it is strongly recommended to use it with the latest stable release of SDL, as later versions have seen significantly improved support.
+If you choose to run StreamFlex in Wayland, it is strongly recommended to use it with the latest stable release of SDL, as later versions have seen significantly improved support.
 
 ## Transparent Backgrounds
 Transparent backgrounds requires compositor support. I recommend [picom](https://github.com/yshui/picom), which supports transparency via GLSL shaders. The method described below requires version 10 or later which, as of this writing, is not yet packaged for most Linux distros. If this is this case for your distro, you will need to build it from source yourself.
 
-The picom option `--window-shader-fg` can be used to specify a custom GLSL shader to apply to the windows. The below shader program can be used as a starting point to implement transparency with Flex Launcher. The macros should be changed to match the values in your Flex Launcher config file, if necessary.
+The picom option `--window-shader-fg` can be used to specify a custom GLSL shader to apply to the windows. The below shader program can be used as a starting point to implement transparency with StreamFlex. The macros should be changed to match the values in your StreamFlex config file, if necessary.
 
 ```glsl
 #version 330
@@ -59,7 +59,7 @@ The picom option `--window-shader-fg` can be used to specify a custom GLSL shade
 #define BACKGROUND_OVERLAY_B 0x00
 #define BACKGROUND_OVERLAY_OPACITY 0.25
 
-// Replace with the values from your Flex Launcher config
+// Replace with the values from your StreamFlex config
 #define CHROMA_R 0x01
 #define CHROMA_G 0x01
 #define CHROMA_B 0x01
@@ -148,7 +148,7 @@ For an animated transparent background implementation, I recommend [anipaper](ht
 - `-p` (Pause): We will need to pause the playback when the application launches, and resume it after it finishes
 - `-d` (Hardware decoding): This will keep the CPU use as low as possible, and consequently fan noise and power consumption. Requires the hardware device name as an argument. This option is not absolutely required, but you should use it if your hardware is supported.
 
-In your autostart setup, make sure that anipaper starts *before* Flex Launcher. This ensures that Flex Launcher will have the window focus.
+In your autostart setup, make sure that anipaper starts *before* StreamFlex. This ensures that StreamFlex will have the window focus.
 
 #### Pausing anipaper
 When the `-p` option is enabled, anipaper can be paused when applications launch, and resumed when they finish. This is necessary to prevent anipaper from unecessarily consuming resources when the video is not visible. Use the following command in your scripts to pause and resume anipaper
@@ -174,10 +174,10 @@ fi
 systemctl --user start picom-transparent.service
 pkill -SIGUSR1 anipaper
 ```
-The above example script takes an argument which determines which application to launch. The script executes pre and post launch commands which are common to all applications, as well as commands that are specific to the particular application being launched. In your Flex Launcher config, your menu entry command should be the path to the script with the application you want to launch as the first argument.
+The above example script takes an argument which determines which application to launch. The script executes pre and post launch commands which are common to all applications, as well as commands that are specific to the particular application being launched. In your StreamFlex config, your menu entry command should be the path to the script with the application you want to launch as the first argument.
 
 ## Kiosk Mode Setup
-"Kiosk Mode" typically refers to a user interface which resembles an embedded-style device that performs only a single function (as opposed to a multitasking PC with a desktop interface). This section contains instructions to set up my interpretation of a "Kiosk Mode" interface for a Linux HTPC. The design is based on my recommendations in the previous sections, consisting of Xorg, Openbox, and Flex Launcher.
+"Kiosk Mode" typically refers to a user interface which resembles an embedded-style device that performs only a single function (as opposed to a multitasking PC with a desktop interface). This section contains instructions to set up my interpretation of a "Kiosk Mode" interface for a Linux HTPC. The design is based on my recommendations in the previous sections, consisting of Xorg, Openbox, and StreamFlex.
 
 ### Prerequisites
 Before starting I assume that you have one of the following operating systems installed *without* a desktop evironnment (only a console login):
@@ -221,7 +221,7 @@ sudo pacman -S xorg xorg-xinit openbox unclutter pulseaudio wget
 ```bash
 sudo apt install xorg openbox unclutter-xfixes pulseaudio wget
 ```
-Then, install Flex Launcher according to the instructions on the [README](https://github.com/bilbospocketses/flex-launcher#linux). Also, make sure to [copy the assets to your home directory](https://github.com/bilbospocketses/flex-launcher#copying-assets-to-home-directory).
+Then, install StreamFlex according to the instructions on the [README](https://github.com/bilbospocketses/streamflex#linux). Also, make sure to [copy the assets to your home directory](https://github.com/bilbospocketses/streamflex#copying-assets-to-home-directory).
 
 ### Configure Xorg
 Configure X to start after user login with `.bash_profile` and `startx`:
@@ -284,11 +284,11 @@ Openbox ships with default configuration files installed to `/etc/xdg/openbox`. 
 mkdir -p ~/.config/openbox
 cp -a /etc/xdg/openbox/ ~/.config/
 ```
-Among these configuration files is `autostart`, which Openbox will execute after initialization. This is the best way to autostart Flex Launcher:
+Among these configuration files is `autostart`, which Openbox will execute after initialization. This is the best way to autostart StreamFlex:
 ```bash
 nano ~/.config/openbox/autostart
 ```
-Add `flex-launcher` to the file, then save it.
+Add `streamflex` to the file, then save it.
 
 #### Application Menu
 You can access a basic application menu by right clicking anywhere on Openbox's root window. The menu entries are populated from `~/.config/openbox/menu.xml`. On Arch, this is a static menu that was pre-populated with programs, most of which you won't have installed. See the [Openbox Wiki](http://openbox.org/wiki/Help:Menus#Static_menus) for editing instructions. On Debian/Raspberry Pi, this is a dynamic menu that is automatically populated from your installed .desktop files, so you shouldn't need to edit anything.
@@ -309,7 +309,7 @@ In the `<keyboard>` section, paste the following:
 This assumes that you have a key on your TV remote that maps to F10.
 
 ### Install Applications
-The last step is to install your desired applications. Edit your Flex Launcher configuration file to add menu entries for each of the applications. See the [configuration file documentation](https://bilbospocketses.github.io/flex-launcher/configuration) for more details.
+The last step is to install your desired applications. Edit your StreamFlex configuration file to add menu entries for each of the applications. See the [configuration file documentation](https://bilbospocketses.github.io/streamflex/configuration) for more details.
 
 ## HTPC as Audio Receiver
 You can use your HTPC as a smart audio receiver for listening to music or podcasts on your living room speakers.

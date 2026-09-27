@@ -9,7 +9,7 @@ title: Compilation Guide
 3. [Windows](#windows)
 
 ## Overview
- Flex Launcher builds natively on Linux and Windows, and features a cross-platform CMake build system. The following external dependencies are required:
+ StreamFlex builds natively on Linux and Windows, and features a cross-platform CMake build system. The following external dependencies are required:
  - SDL ≥ 2.0.14
  - SDL_image ≥ 2.0.5
  - SDL_ttf ≥ 2.0.15
@@ -17,7 +17,7 @@ title: Compilation Guide
  - getopt (Windows only; provided by vcpkg)
 
 ## Linux
-Flex Launcher on Linux builds with GCC. This guide assumes you already have the development tools Git, CMake, pkg-config, and GCC installed on your system. If not, consult your distro's documentation. 
+StreamFlex on Linux builds with GCC. This guide assumes you already have the development tools Git, CMake, pkg-config, and GCC installed on your system. If not, consult your distro's documentation. 
 
 First, install the dependencies. The steps to do so are dependent on your distro:
 
@@ -39,8 +39,8 @@ sudo dnf install SDL2-devel SDL2_image-devel SDL2_ttf-devel inih-devel
 ### Building
 Clone the master repo and create a build directory:
 ```bash
-git clone https://github.com/bilbospocketses/flex-launcher.git
-cd flex-launcher
+git clone https://github.com/bilbospocketses/streamflex.git
+cd streamflex
 mkdir build && cd build
 ```
 Generate the Makefile:
@@ -52,7 +52,7 @@ If you're building on Raspberry Pi, it's recommended to pass `-DRPI=1` to cmake,
 Build and test the program:
 ```bash
 make
-./flex-launcher
+./streamflex
 ```
 Optionally, install it into your system directories:
 ```bash
@@ -61,7 +61,7 @@ sudo make install
 By default, this will install the program and assets with a prefix of `/usr/local`. If you wish to use a different prefix, re-run the cmake generation step with `-DCMAKE_INSTALL_PREFIX=prefix`.
 
 ## Windows
-Flex Launcher on Windows builds with Visual Studio, and uses [vcpkg](https://vcpkg.io/en/index.html) to manage the dependencies. Before starting, make sure the following steps are completed:
+StreamFlex on Windows builds with Visual Studio, and uses [vcpkg](https://vcpkg.io/en/index.html) to manage the dependencies. Before starting, make sure the following steps are completed:
 - Visual Studio is installed. The free Community Edition is available for download from Microsoft's website. The following tools and features for Visual Studio are required:
   - C++ core desktop features
   - Latest MSVC
@@ -73,8 +73,8 @@ Flex Launcher on Windows builds with Visual Studio, and uses [vcpkg](https://vcp
 ### Building
 Clone the master repo and create a build directory:
 ```
-git clone https://github.com/bilbospocketses/flex-launcher.git
-cd flex-launcher
+git clone https://github.com/bilbospocketses/streamflex.git
+cd streamflex
 mkdir build
 cd build
 ```
@@ -86,7 +86,7 @@ cmake .. -DCMAKE_TOOLCHAIN_FILE=".\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCP
 Build and test the program:
 ```
 cmake --build .
-.\Debug\flex-launcher.exe
+.\Debug\streamflex.exe
 ```
 Optionally, generate a clean zipped install package which may then be extracted to a directory of your choosing:
 ```

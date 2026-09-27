@@ -1,6 +1,6 @@
 # Security Policy
 
-This policy covers `bilbospocketses/flex-launcher`, an independent project that started from complexlogic's Flex Launcher at v2.2.
+This policy covers `bilbospocketses/streamflex`, an independent project that started from complexlogic's Flex Launcher at v2.2.
 
 ## Reporting a Vulnerability
 
@@ -8,7 +8,7 @@ This policy covers `bilbospocketses/flex-launcher`, an independent project that 
 
 Report security issues privately through GitHub's built-in security advisory flow:
 
-**[Report a vulnerability](https://github.com/bilbospocketses/flex-launcher/security/advisories/new)**
+**[Report a vulnerability](https://github.com/bilbospocketses/streamflex/security/advisories/new)**
 
 This opens a private channel between you and the maintainer — no public disclosure until a fix is ready.
 
@@ -36,7 +36,7 @@ Security fixes target the latest commit on `master`. Older commits and tags are 
 In scope: the launcher itself — config file parsing, application launching, image and font loading, and the Windows and Linux platform layers under `src/platform/`.
 
 Out of scope:
-- Vulnerabilities in third-party libraries (SDL2, SDL2_image, SDL2_ttf, inih, getopt) that are not specific to how flex-launcher uses them — report those to the library's maintainers.
+- Vulnerabilities in third-party libraries (SDL2, SDL2_image, SDL2_ttf, inih, getopt) that are not specific to how streamflex uses them — report those to the library's maintainers.
 - Behaviour that follows from a user deliberately configuring the launcher to run a given command. The config file is trusted input written by the machine's owner.
 
 Thanks for helping keep the project safe.

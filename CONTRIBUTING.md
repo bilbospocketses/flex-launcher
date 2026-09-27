@@ -1,6 +1,6 @@
-# Contributing to Flex Launcher
+# Contributing to StreamFlex
 
-Flex Launcher is a customizable application launcher and desktop replacement for Windows and Linux, written in C with SDL2.
+StreamFlex is a customizable application launcher and desktop replacement for Windows and Linux, written in C with SDL2.
 
 This repository is an independent project. It started from complexlogic's Flex Launcher at v2.2 and has been developed separately since; it does not track, sync with, or send changes back to that project. Changes land here through the process below.
 

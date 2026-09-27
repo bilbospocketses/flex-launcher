@@ -189,7 +189,7 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           cmake -B build -DPACKAGE=ARCH
-          git archive --format=tar.gz --prefix=flex-launcher/ -o build/flex-launcher.tar.gz HEAD
+          git archive --format=tar.gz --prefix=streamflex/ -o build/streamflex.tar.gz HEAD
           useradd --create-home builder
           chown -R builder build
           su builder -c "cd '$GITHUB_WORKSPACE/build' && makepkg"

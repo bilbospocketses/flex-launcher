@@ -54,7 +54,7 @@ jobs:
           results_file: results.sarif
           results_format: sarif
           # Publishes the score to api.securityscorecards.dev (public viewer at
-          # https://scorecard.dev/viewer/?uri=github.com/bilbospocketses/flex-launcher).
+          # https://scorecard.dev/viewer/?uri=github.com/bilbospocketses/streamflex).
           # Push events only: a PR run would publish a branch-HEAD SHA that is
           # not on master yet, which the webapp verifier rejects.
           publish_results: ${{ github.event_name == 'push' }}
