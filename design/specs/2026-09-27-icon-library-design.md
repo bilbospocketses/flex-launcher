@@ -106,8 +106,50 @@ file  = generic/movies.svg
 | `devices` | display, audio, bluetooth, network, gamepad | one steel blue |
 
 - **Plate.** A rounded square filling the canvas (`viewBox 0 0 512 512`), with a corner radius of 22% of its side. That matches the app icon's plate (54 of 244). It is a flat fill: no gradients, filters, masks or text, so nanosvg draws it the same everywhere.
-- **Colour.** The 13 media hues are spaced evenly around the LCh hue circle at one lightness and one chroma, so no plate looks heavier than another. Every plate colour must give the white glyph a contrast ratio of at least 3:1, and the generator asserts this.
-- **Glyphs.** Material Symbols Rounded, filled, converted to plain paths and drawn in white. The glyph box is about 56% of the plate, centred, and multiplied by a per-glyph optical trim factor. Each trim starts at 1.0 and is tuned on the review sheet, because equal-area glyphs do not look equal.
+- **Colour.** Chosen on a comparison screen with the real glyphs (2026-09-27). **Every plate has the same CIE lightness, L\* = 52**, so no plate looks heavier than another, and white contrast is 4.18:1 on all of them.
+  - **Media plates are vivid.** They sit at hue slots `h = 25 + k·360/13` (k = 0-12). Each one's chroma is `floor(0.85 × the largest chroma that hue can reach in sRGB at L* = 52)`.
+
+    Equal chroma was rejected. Blue and cyan leave the sRGB gamut early, which would have held all 13 hues to C = 30, a dusty palette.
+  - **Slots, in order:**
+
+    | k | Icon | Hex |
+    |---|---|---|
+    | 0 | movies | `#E7364B` |
+    | 1 | news | `#C85D21` |
+    | 2 | kids | `#9E7522` |
+    | 3 | sports | `#7A8223` |
+    | 4 | music | `#328E23` |
+    | 5 | podcasts | `#308B69` |
+    | 6 | audiobooks | `#338984` |
+    | 7 | photos | `#358696` |
+    | 8 | tv-shows | `#3784A9` |
+    | 9 | live-tv | `#3A7EC9` |
+    | 10 | games | `#7B68EA` |
+    | 11 | emulators | `#CF37C7` |
+    | 12 | radio | `#DF3784` |
+
+    The generator computes these colours rather than hard-coding them, and its tests pin these values.
+  - **Other plates:**
+    - `system`: slate, LCh(42, 6, 260), `#5C646D`;
+    - `general`: StreamFlex teal, the app icon's `TEAL_BG` `#07606C`;
+    - `devices`: steel blue, LCh(46, 18, 250), `#4D7189`.
+  - **Contrast rule.** Every plate must give white a contrast ratio of at least 3:1, and the generator asserts this.
+- **Glyphs.**
+  - **Source.** Material Symbols Rounded, filled (npm `@material-symbols/svg-500`, version 0.47.5, Apache-2.0). Each glyph is one path on a `0 -960 960 960` view box.
+  - **Vendored.** The 36 source files are copied into `branding/library/glyphs/` with the licence, so building needs no network.
+  - **Placement.** Each is drawn in white through a `transform`, with the 960-unit em box scaled to 60% of the plate side, centred, and multiplied by a per-glyph optical trim factor. Each trim starts at 1.0 and is tuned on the review sheet, because equal-area glyphs do not look equal.
+  - **Mapping, verified to exist in that package** (our name → glyph):
+    - power → `power_settings_new`, restart → `restart_alt`, sleep → `bedtime`, quit → `logout`;
+    - settings → `settings`, back → `arrow_back`, lock → `lock`, user → `switch_account`;
+    - movies → `movie`, tv-shows → `tv`, live-tv → `live_tv`, music → `music_note`;
+    - photos → `photo`, games → `sports_esports`, emulators → `joystick`, audiobooks → `headphones`;
+    - podcasts → `podcasts`, radio → `radio`, kids → `toys`, sports → `sports_soccer`;
+    - news → `newspaper`, apps → `apps`, web → `language`, folder → `folder`;
+    - favorites → `favorite`, home → `home`, search → `search`, info → `info`;
+    - download → `download`, terminal → `terminal`, desktop → `desktop_windows`, display → `display_settings`;
+    - audio → `volume_up`, bluetooth → `bluetooth`, network → `wifi`, gamepad → `gamepad`.
+
+    The files are `rounded/<glyph>-fill.svg`.
 - **One source of truth.** The generator holds the glyph, colour and trim tables and writes every SVG. Re-running it must reproduce the committed files byte for byte.
 
 ## The brand set
