@@ -198,6 +198,121 @@ static void test_compute_clock_band(void)
     CHECK_INT(g.y_origin, 180);  // 150 + 30
 }
 
+static LayoutGeometry shape(int rows, int columns)
+{
+    LayoutGeometry g = { 0 };
+    g.rows = rows;
+    g.columns = columns;
+    g.button = 100;
+    g.x_advance = 120;
+    g.y_advance = 150;
+    g.x_origin = 10;
+    g.y_origin = 20;
+    return g;
+}
+
+static LayoutPosition at(int selected, int first)
+{
+    LayoutPosition p = { selected, first };
+    return p;
+}
+
+#define CHECK_POS(position, want_selected, want_first) do { \
+    LayoutPosition p_ = (position); \
+    CHECK_INT(p_.selected, (want_selected)); \
+    CHECK_INT(p_.first, (want_first)); \
+} while (0)
+
+// A function to test a one-row strip of 4 visible buttons holding 6 entries
+static void test_strip_moves(void)
+{
+    LayoutGeometry g = shape(1, 4);
+    CHECK_POS(layout_move(&g, 6, at(0, 0), LAYOUT_RIGHT, false), 1, 0);
+    CHECK_POS(layout_move(&g, 6, at(3, 0), LAYOUT_RIGHT, false), 4, 1);  // slides one button
+    CHECK_POS(layout_move(&g, 6, at(4, 1), LAYOUT_RIGHT, false), 5, 2);
+    CHECK_POS(layout_move(&g, 6, at(5, 2), LAYOUT_RIGHT, false), 5, 2);  // end, no wrap
+    CHECK_POS(layout_move(&g, 6, at(5, 2), LAYOUT_RIGHT, true), 0, 0);   // wraps to the first
+    CHECK_POS(layout_move(&g, 6, at(0, 0), LAYOUT_LEFT, false), 0, 0);
+    CHECK_POS(layout_move(&g, 6, at(0, 0), LAYOUT_LEFT, true), 5, 2);    // wraps to the last
+    CHECK_POS(layout_move(&g, 6, at(2, 2), LAYOUT_LEFT, false), 1, 1);
+    CHECK_POS(layout_move(&g, 6, at(2, 0), LAYOUT_UP, true), 2, 0);      // no rows to move between
+    CHECK_POS(layout_move(&g, 6, at(2, 0), LAYOUT_DOWN, true), 2, 0);
+    CHECK_POS(layout_move(&g, 3, at(2, 0), LAYOUT_RIGHT, false), 2, 0);  // fewer entries than columns
+}
+
+// A function to test where strip buttons are drawn and when the strip can scroll
+static void test_strip_slots_and_scroll(void)
+{
+    LayoutGeometry g = shape(1, 4);
+    int x = -1, y = -1;
+    CHECK(layout_slot(&g, at(4, 1), 1, &x, &y));
+    CHECK_INT(x, 10);
+    CHECK_INT(y, 20);
+    CHECK(layout_slot(&g, at(4, 1), 4, &x, &y));
+    CHECK_INT(x, 370);
+    CHECK(!layout_slot(&g, at(4, 1), 0, &x, &y));
+    CHECK(!layout_slot(&g, at(4, 1), 5, &x, &y));
+    CHECK(!layout_can_scroll(&g, 6, at(0, 0), LAYOUT_LEFT));
+    CHECK(layout_can_scroll(&g, 6, at(0, 0), LAYOUT_RIGHT));
+    CHECK(layout_can_scroll(&g, 6, at(5, 2), LAYOUT_LEFT));
+    CHECK(!layout_can_scroll(&g, 6, at(5, 2), LAYOUT_RIGHT));
+    CHECK(!layout_can_scroll(&g, 6, at(0, 0), LAYOUT_UP));
+    CHECK(!layout_can_scroll(&g, 3, at(0, 0), LAYOUT_RIGHT));
+}
+
+// A function to test a 2-row, 4-column grid holding 10 entries: rows [0-3], [4-7], [8,9]
+static void test_grid_moves(void)
+{
+    LayoutGeometry g = shape(2, 4);
+    CHECK_POS(layout_move(&g, 10, at(3, 0), LAYOUT_RIGHT, false), 3, 0);  // stops at the row edge
+    CHECK_POS(layout_move(&g, 10, at(3, 0), LAYOUT_RIGHT, true), 0, 0);   // wraps within the row
+    CHECK_POS(layout_move(&g, 10, at(9, 1), LAYOUT_RIGHT, true), 8, 1);   // within the short last row
+    CHECK_POS(layout_move(&g, 10, at(4, 0), LAYOUT_LEFT, false), 4, 0);
+    CHECK_POS(layout_move(&g, 10, at(4, 0), LAYOUT_LEFT, true), 7, 0);
+    CHECK_POS(layout_move(&g, 10, at(1, 0), LAYOUT_DOWN, false), 5, 0);
+    CHECK_POS(layout_move(&g, 10, at(5, 0), LAYOUT_DOWN, false), 9, 1);   // scrolls one row
+    CHECK_POS(layout_move(&g, 10, at(7, 0), LAYOUT_DOWN, false), 9, 1);   // lands on the short row's last
+    CHECK_POS(layout_move(&g, 10, at(9, 1), LAYOUT_DOWN, false), 9, 1);
+    CHECK_POS(layout_move(&g, 10, at(9, 1), LAYOUT_DOWN, true), 1, 0);    // wraps to the first row
+    CHECK_POS(layout_move(&g, 10, at(1, 0), LAYOUT_UP, false), 1, 0);
+    CHECK_POS(layout_move(&g, 10, at(3, 0), LAYOUT_UP, true), 9, 1);      // wraps to the last row
+    CHECK_POS(layout_move(&g, 10, at(9, 1), LAYOUT_UP, false), 5, 1);     // row 1 is still in view
+    CHECK_POS(layout_move(&g, 10, at(5, 1), LAYOUT_UP, false), 1, 0);     // scrolls back
+    CHECK_POS(layout_move(&g, 3, at(1, 0), LAYOUT_DOWN, false), 1, 0);    // one partial row only
+}
+
+// A function to test where grid buttons are drawn and when the grid can scroll
+static void test_grid_slots_and_scroll(void)
+{
+    LayoutGeometry g = shape(2, 4);
+    int x = -1, y = -1;
+    CHECK(layout_slot(&g, at(9, 1), 4, &x, &y));
+    CHECK_INT(x, 10);
+    CHECK_INT(y, 20);
+    CHECK(layout_slot(&g, at(9, 1), 9, &x, &y));
+    CHECK_INT(x, 130);
+    CHECK_INT(y, 170);
+    CHECK(!layout_slot(&g, at(9, 1), 3, &x, &y));
+    CHECK(!layout_slot(&g, at(9, 1), -1, &x, &y));
+    CHECK(layout_can_scroll(&g, 10, at(0, 0), LAYOUT_DOWN));
+    CHECK(!layout_can_scroll(&g, 10, at(0, 0), LAYOUT_UP));
+    CHECK(!layout_can_scroll(&g, 10, at(0, 0), LAYOUT_LEFT));
+    CHECK(!layout_can_scroll(&g, 10, at(9, 1), LAYOUT_DOWN));
+    CHECK(layout_can_scroll(&g, 10, at(9, 1), LAYOUT_UP));
+    CHECK(!layout_can_scroll(&g, 3, at(0, 0), LAYOUT_DOWN));
+}
+
+// A function to test that clamping keeps the selection real and visible after a re-layout
+static void test_clamp(void)
+{
+    LayoutGeometry strip = shape(1, 4);
+    LayoutGeometry taller = shape(3, 4);
+    CHECK_POS(layout_clamp(&strip, 6, at(9, 0)), 5, 2);
+    CHECK_POS(layout_clamp(&strip, 6, at(-3, 5)), 0, 0);
+    CHECK_POS(layout_clamp(&taller, 10, at(9, 1)), 9, 0);  // 3 rows show everything now
+    CHECK_POS(layout_clamp(&strip, 0, at(4, 2)), 0, 0);
+}
+
 int main(void)
 {
     test_resolve();
@@ -211,5 +326,10 @@ int main(void)
     test_compute_centring();
     test_compute_vcenter_clamp();
     test_compute_clock_band();
+    test_strip_moves();
+    test_strip_slots_and_scroll();
+    test_grid_moves();
+    test_grid_slots_and_scroll();
+    test_clamp();
     return check_report();
 }

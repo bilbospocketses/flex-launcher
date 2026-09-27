@@ -108,3 +108,135 @@ int layout_compute(const LayoutParams *params, const LayoutArea *area, int entry
     *geometry = g;
     return 0;
 }
+
+// A function to tell a one-row strip from a grid
+static bool is_strip(const LayoutGeometry *g)
+{
+    return g->rows == 1;
+}
+
+// A function to count the buttons in a grid row; only the last row can be short
+static int row_length(const LayoutGeometry *g, int entry_count, int row)
+{
+    return min_int(entry_count - row * g->columns, g->columns);
+}
+
+// A function to keep the selection on a real entry and scrolled into view, without
+// scrolling past the last strip button or the last grid row
+LayoutPosition layout_clamp(const LayoutGeometry *geometry, int entry_count, LayoutPosition position)
+{
+    LayoutPosition p = position;
+    int window, unit, last_first;
+    if (entry_count <= 0) {
+        p.selected = 0;
+        p.first = 0;
+        return p;
+    }
+    p.selected = max_int(0, min_int(p.selected, entry_count - 1));
+    if (is_strip(geometry)) {
+        window = geometry->columns;
+        unit = p.selected;
+        last_first = max_int(0, entry_count - geometry->columns);
+    }
+    else {
+        window = geometry->rows;
+        unit = p.selected / geometry->columns;
+        last_first = max_int(0, (entry_count - 1) / geometry->columns - geometry->rows + 1);
+    }
+    if (unit < p.first)
+        p.first = unit;
+    if (unit >= p.first + window)
+        p.first = unit - window + 1;
+    p.first = max_int(0, min_int(p.first, last_first));
+    return p;
+}
+
+// A function to move the selection one step, following the strip or grid rules
+LayoutPosition layout_move(const LayoutGeometry *geometry, int entry_count, LayoutPosition position,
+                           LayoutDirection direction, bool wrap)
+{
+    if (entry_count <= 0)
+        return position;
+    LayoutPosition p = layout_clamp(geometry, entry_count, position);
+    int s = p.selected;
+
+    // A strip moves along its one row and ignores Up and Down
+    if (is_strip(geometry)) {
+        if (direction == LAYOUT_RIGHT)
+            s = s < entry_count - 1 ? s + 1 : (wrap ? 0 : s);
+        else if (direction == LAYOUT_LEFT)
+            s = s > 0 ? s - 1 : (wrap ? entry_count - 1 : s);
+    }
+
+    // A grid stops at row edges (or wraps within the row), and moves between rows keeping
+    // the column, landing on the last button of a shorter last row
+    else {
+        int columns = geometry->columns;
+        int row = s / columns;
+        int column = s % columns;
+        int last_row = (entry_count - 1) / columns;
+        int length = row_length(geometry, entry_count, row);
+        int target = -1;
+        if (direction == LAYOUT_RIGHT) {
+            if (column < length - 1)
+                s++;
+            else if (wrap)
+                s = row * columns;
+        }
+        else if (direction == LAYOUT_LEFT) {
+            if (column > 0)
+                s--;
+            else if (wrap)
+                s = row * columns + length - 1;
+        }
+        else if (direction == LAYOUT_DOWN)
+            target = row < last_row ? row + 1 : (wrap ? 0 : -1);
+        else if (direction == LAYOUT_UP)
+            target = row > 0 ? row - 1 : (wrap ? last_row : -1);
+        if (target >= 0)
+            s = target * columns + min_int(column, row_length(geometry, entry_count, target) - 1);
+    }
+    p.selected = s;
+    return layout_clamp(geometry, entry_count, p);
+}
+
+// A function to find where an entry is drawn; false when it is scrolled out of view
+bool layout_slot(const LayoutGeometry *geometry, LayoutPosition position, int index, int *x, int *y)
+{
+    int column, row;
+    if (index < 0)
+        return false;
+    if (is_strip(geometry)) {
+        column = index - position.first;
+        row = 0;
+        if (column < 0 || column >= geometry->columns)
+            return false;
+    }
+    else {
+        column = index % geometry->columns;
+        row = index / geometry->columns - position.first;
+        if (row < 0 || row >= geometry->rows)
+            return false;
+    }
+    *x = geometry->x_origin + column * geometry->x_advance;
+    *y = geometry->y_origin + row * geometry->y_advance;
+    return true;
+}
+
+// A function to tell whether more buttons lie off screen in a direction, for the scroll indicators
+bool layout_can_scroll(const LayoutGeometry *geometry, int entry_count, LayoutPosition position,
+                       LayoutDirection direction)
+{
+    if (is_strip(geometry)) {
+        if (direction == LAYOUT_LEFT)
+            return position.first > 0;
+        if (direction == LAYOUT_RIGHT)
+            return position.first + geometry->columns < entry_count;
+        return false;
+    }
+    if (direction == LAYOUT_UP)
+        return position.first > 0;
+    if (direction == LAYOUT_DOWN)
+        return position.first + geometry->rows <= (entry_count - 1) / geometry->columns;
+    return false;
+}
