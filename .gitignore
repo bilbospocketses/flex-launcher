@@ -7,3 +7,9 @@ docs/.jekyll-cache
 docs/_data/release.json
 # Intermediate frames and the packed .ico from branding/icon/build-icon.ps1
 branding/icon/build/
+# Written by branding/library/build-gallery.py when the site is built
+docs/icons.md
+docs/assets/library/
+# Python caches and review output from branding/library tools
+branding/library/__pycache__/
+branding/library/build/

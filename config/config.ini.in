@@ -118,12 +118,12 @@ Hotkey1=#1B;:quit
 
 # Menu configurations
 [@DEFAULT_MENU@]
-Entry1=Kodi;@ICONS_PREFIX@kodi.png;@CMD_KODI@
-Entry2=Plex;@ICONS_PREFIX@plex.png;@CMD_PLEX@
-Entry3=@TITLE_GAMES@;@ICONS_PREFIX@@ICON_GAMES@;@CMD_GAMES@
-Entry4=System;@ICONS_PREFIX@system.png;:submenu System
+Entry1=Kodi;kodi;@CMD_KODI@
+Entry2=Plex;plex;@CMD_PLEX@
+Entry3=@TITLE_GAMES@;@ICON_GAMES@;@CMD_GAMES@
+Entry4=System;settings;:submenu System
 
 [System]
-Entry1=Shutdown;@ICONS_PREFIX@system.png;:shutdown
-Entry2=Restart;@ICONS_PREFIX@restart.png;:restart
-Entry3=Sleep;@ICONS_PREFIX@sleep.png;:sleep
+Entry1=Shutdown;power;:shutdown
+Entry2=Restart;restart;:restart
+Entry3=Sleep;sleep;:sleep

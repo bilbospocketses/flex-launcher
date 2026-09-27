@@ -10,6 +10,7 @@
 #include "launcher.h"
 #include <launcher_config.h>
 #include "util.h"
+#include "library.h"
 #include "debug.h"
 #include "platform/platform.h"
 #include <ini.h>
@@ -1057,6 +1058,74 @@ void build_menu_items()
         for (unsigned int i = 0; i < m->num_entries; i++) {
             m->items[i] = e;
             e = e->next;
+        }
+    }
+}
+
+// A function to pass the icon library's warnings to the log
+static void library_warning(const char *message)
+{
+    log_error("%s", message);
+}
+
+// A function to point every entry that names a library icon at its file. It also rescues a missing
+// file that the library can stand in for (see library_rescue): a path to one of the seven icons older
+// versions shipped, or a name typed with capitals or stray spaces. Both use the library icon and log a note.
+void resolve_library_icons(void)
+{
+    library_set_warn(library_warning);
+    char exe_library[MAX_PATH_CHARS + 1];
+    const char *roots[2];
+    roots[0] = config.exe_path != NULL
+               ? join_paths(exe_library, sizeof(exe_library), 4, config.exe_path, PATH_ASSETS_EXE, PATH_ICONS_EXE, PATH_LIBRARY_EXE)
+               : NULL;
+#ifdef __unix__
+    roots[1] = PATH_LIBRARY_SYSTEM;
+#else
+    roots[1] = PATH_LIBRARY_RELATIVE;
+#endif
+    const char *root = NULL;
+    char manifest[MAX_PATH_CHARS + 1];
+    for (int i = 0; i < 2 && root == NULL; i++) {
+        if (roots[i] != NULL && file_exists(join_paths(manifest, sizeof(manifest), 2, roots[i], LIBRARY_MANIFEST)))
+            root = roots[i];
+    }
+    bool loaded = false;
+    if (root == NULL)
+        log_error("Icon library not found; entries that name a library icon will have no image");
+    else {
+        int count = library_load(root);
+        loaded = count >= 0;
+        if (loaded)
+            log_debug("Icon library: %s (%i icons)", root, count);
+        else
+            log_error("Icon library at %s could not be read; entries that name a library icon will have no image", root);
+    }
+
+    for (Menu *m = config.first_menu; m != NULL; m = m->next) {
+        for (Entry *e = m->first_entry; e != NULL; e = e->next) {
+            const char *path = NULL;
+            if (e->icon_path == NULL)
+                continue;
+            if (library_is_name(e->icon_path)) {
+                path = library_lookup(e->icon_path);
+                // Without a library every name misses; the line above already says why, once
+                if (path == NULL && loaded) {
+                    log_error("Entry '%s' in menu '%s': no library icon named '%s'", e->title, m->name, e->icon_path);
+                    path = library_lookup(LIBRARY_FALLBACK_ICON);
+                }
+            }
+            else if (!file_exists(e->icon_path)) {
+                const char *name = NULL;
+                path = library_rescue(e->icon_path, &name);
+                if (path != NULL)
+                    log_error("Entry '%s' in menu '%s': '%s' is not a file; using the library icon '%s' "
+                        "(write '%s' in the config to use it directly)", e->title, m->name, e->icon_path, name, name);
+            }
+            if (path != NULL) {
+                free(e->icon_path);
+                e->icon_path = strdup(path);
+            }
         }
     }
 }

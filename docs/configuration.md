@@ -367,10 +367,12 @@ Default: 100%
 ## Creating Menus
 At least one menu must be defined in the configuration file, and the title must match the `DefaultMenu` setting value. The title of a menu is its section name. Any title may be used that is not reserved for another section, such as "Settings", "Gamepad", etc. The entries of the menu are implemented as key=value pairs. The name of the key will be ignored by the program, and is therefore arbtrary. However, it is recommended to pick something intutitive such as Entry1, Entry2, Entry3, etc. The entry information is contained in the value.
 
-Each entry value contains 3 parts of information in order: the title, the icon image path, and the command to run when the button is clicked. These are delimited by semicolons:
+Each entry value contains 3 parts of information in order: the title, the icon, and the command to run when the button is clicked. These are delimited by semicolons:
 ```ini
-Entry=title;icon_path;command
+Entry=title;icon;command
 ```
+The icon is either the name of an icon from StreamFlex's built-in [Icon Library](icons), such as `netflix` or `movies`, or the path to an image file of your own (PNG, JPEG, WebP or SVG). A name is lowercase letters, digits and hyphens only; anything else is read as a path. To use a file of your own whose name looks like an icon name, write it as a path, for example `./kodi`.
+
 The command is typically one of the following:
 1. The path to the program executable that you want to launch 
 2. Windows: the path to a program shortcut (.lnk file)
@@ -381,10 +383,11 @@ The command is typically one of the following:
  A simple example menu titled `Media` is shown below:
 ```ini
 [Media]
-Entry1=Kodi;C:\Pictures\Icons\kodi.png;"C:\Program Shortcuts\kodi.lnk"
-Entry2=Netflix;C:\Pictures\Icons\netflix.png;"C:\Program Shortcuts\netflix.lnk"
-Entry3=Plex;C:\Pictures\Icons\plex.png;"C:\Program Shortcuts\plex.lnk"
-Entry4=Back;C:\Pictures\Icons\back.png;:back
+Entry1=Kodi;kodi;"C:\Program Shortcuts\kodi.lnk"
+Entry2=Netflix;netflix;"C:\Program Shortcuts\netflix.lnk"
+Entry3=Plex;plex;"C:\Program Shortcuts\plex.lnk"
+Entry4=Home Videos;C:\Pictures\Icons\camera.png;"C:\Program Shortcuts\videos.lnk"
+Entry5=Back;back;:back
 ```
 
 ### Menu Layouts
@@ -411,7 +414,7 @@ These three names count as layout settings only when their value is a number. A 
 ### Selected Icon Overrides
 The Selected Icon Override feature allows the user to define a different icon for the launcher to display when an entry is highlighted. To use this feature, name the path of the selected icon the same as the default entry icon path, but with a suffix of `_selected` (not including the file extension).
 
-For example, if the icon path for an entry is defined as `C:\icons\kodi.png`, then the program will check for the existence of `C:\icons\kodi_selected.png` and, if it exists, this icon will be shown when the entry is selected instead of the default. This feature allows the user to implement custom highlight effects such as glowing, color changes, etc.
+For example, if the icon path for an entry is defined as `C:\icons\kodi.png`, then the program will check for the existence of `C:\icons\kodi_selected.png` and, if it exists, this icon will be shown when the entry is selected instead of the default. This feature allows the user to implement custom highlight effects such as glowing, color changes, etc. Icons from the library have no selected versions; the highlight shows which one is selected.
 
 ### Special Commands
 Special commands are commands that are internal to StreamFlex and begin with a colon. The following is a list of special commands:
@@ -662,7 +665,7 @@ A limitation of this method is that your icons and text must be fully opqaue or 
 
 StreamFlex's text rendering is anti-aliased, which gives the text a "feathered" look with semi-transparent pixels on the edges. Normally, this is desirable, but in the case of chroma keying, semi-transparent pixels will cause your chroma key background color to "bleed through" on the edges of the text. If bright blue or bright green is chosen as the chroma key, this will result in a blue or green glowing effect around the text, which is usually undesirable. This is the reason why a dark color is chosen as the default chroma key. The bleed though appears as a dark outline rather than as a bright glowing.
 
-Some icons have shadows which are intended to provide a textured look. The shadows are usually semi-transparent, which will cause them to not render properly with the chroma key technique. You should choose icons without shadows, or manually erase the shadows from an icon if there are no other icons available for the given application. Some icons are also heavily anti-aliased, which can give a glowing or outline effect similar to the text rendering described above.
+Some icons have shadows which are intended to provide a textured look. The shadows are usually semi-transparent, which will cause them to not render properly with the chroma key technique. You should choose icons without shadows, or manually erase the shadows from an icon if there are no other icons available for the given application. Some icons are also heavily anti-aliased, which can give a glowing or outline effect similar to the text rendering described above. Icons from the [Icon Library](icons) have smooth, partly transparent edges, so a faint outline in the chroma key color can show around them.
 
 Another common issue is the highlight. The default highlight is semi-transparent, which will not render properly when blended with the chroma key background. There are a few ways to address with this:
 - Set the `FillOpacity` setting to 0%, and use an outline-only highlight instead

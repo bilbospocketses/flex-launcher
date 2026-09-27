@@ -12,6 +12,7 @@
 #include <launcher_config.h>
 #include "image.h"
 #include "util.h"
+#include "library.h"
 #include "debug.h"
 #include "clock.h"
 #include "platform/platform.h"
@@ -367,6 +368,7 @@ static void cleanup()
     free(scroll);
     free(screensaver);
     free(clk);
+    library_free();
 
     // Free menu and entry linked lists
     Entry *entry = NULL;
@@ -1232,6 +1234,7 @@ int main(int argc, char *argv[])
     parse_config_file(config_file_path);
     free(config_file_path);
     build_menu_items();
+    resolve_library_icons();
     if (config.gamepad_enabled)
         add_default_gamepad_controls();
 

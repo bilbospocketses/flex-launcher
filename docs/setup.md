@@ -19,7 +19,9 @@ This page contains tips for setting up StreamFlex, and HTPCs in general. The rec
 Make that you are generally familiar with the [configuration options](https://bilbospocketses.github.io/streamflex/configuration) as well.
 
 ## Selecting Menu Icons
-Transparency is essential for menu icons. Therefore, you should not use JPEG images for icons, since the JPEG format does not support transparency. Use PNG or WebP instead. PNG icons for most popular applications are easily found online in common sizes up to 256x256.
+StreamFlex ships an [icon library](icons): the app icons of popular streaming and media services, and generic icons for system actions, kinds of media and more. Use one by writing its name in place of an icon path, for example `Entry1=Netflix;netflix;...`.
+
+To use your own icons, transparency is essential, so avoid JPEG, which does not support it; use PNG, WebP or SVG instead.
 
 Icons are scaled to the size of their button, which the menu's grid decides (see [Layout](configuration.md#layout)), so the same icon may be drawn at different sizes in different menus. A PNG or WebP icon scales down best from a large original, 256x256 or more. An SVG icon is drawn at the button's exact size, so it stays sharp at any size; where an SVG version of an icon exists, it is the best choice.
 

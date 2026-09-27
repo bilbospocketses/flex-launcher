@@ -76,6 +76,22 @@ jobs:
       - name: Unit tests
         run: ctest --test-dir build -C ${{ env.CMAKE_BUILD_TYPE }} --output-on-failure
 
+      - name: Check the icon library is beside the executable in the zip
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = Get-ChildItem build/*.zip | Select-Object -First 1
+          $archive = [IO.Compression.ZipFile]::OpenRead($zip.FullName)
+          $names = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
+          $archive.Dispose()
+          $exe = $names | Where-Object { $_ -match '(^|/)streamflex\.exe$' } | Select-Object -First 1
+          if (-not $exe) { Write-Error "streamflex.exe is not in $($zip.Name)"; exit 1 }
+          $prefix = $exe.Substring(0, $exe.Length - 'streamflex.exe'.Length)
+          foreach ($want in 'assets/icons/library/icons.ini', 'assets/icons/library/brands/NOTICE.md', 'assets/icons/library/generic/apps.svg') {
+            if ($names -notcontains ($prefix + $want)) { Write-Error "$prefix$want is not in $($zip.Name)"; exit 1 }
+          }
+          "icon library found beside streamflex.exe in $($zip.Name)"
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         name: Upload package
         with:
@@ -123,6 +139,13 @@ jobs:
       - name: Show package metadata
         run: dpkg-deb -f build/*.deb Package Version Architecture Maintainer Depends Homepage
 
+      - name: Check the icon library is in the package
+        run: |
+          contents=$(dpkg-deb -c build/*.deb)
+          for want in usr/share/streamflex/assets/icons/library/icons.ini usr/share/streamflex/assets/icons/library/brands/NOTICE.md usr/share/streamflex/assets/icons/library/generic/apps.svg; do
+            grep -q "\./$want\$" <<< "$contents" || { echo "::error::$want is not in the package"; exit 1; }
+          done
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         name: Upload Package
         with:
@@ -162,6 +185,13 @@ jobs:
 
       - name: Show package metadata
         run: dpkg-deb -f build/*.deb Package Version Architecture Maintainer Depends Homepage
+
+      - name: Check the icon library is in the package
+        run: |
+          contents=$(dpkg-deb -c build/*.deb)
+          for want in usr/share/streamflex/assets/icons/library/icons.ini usr/share/streamflex/assets/icons/library/brands/NOTICE.md usr/share/streamflex/assets/icons/library/generic/apps.svg; do
+            grep -q "\./$want\$" <<< "$contents" || { echo "::error::$want is not in the package"; exit 1; }
+          done
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         name: Upload package
@@ -209,12 +239,35 @@ jobs:
           path: build/*.pkg.tar.zst
           if-no-files-found: error
 
+  # Generated library files are current, every file is listed, and brand art fits the shared outline
+  library_check:
+    name: Icon library
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Git repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Pinned so requirements.txt's wheel hash (CPython 3.12, x86-64) keeps matching when ubuntu-latest moves
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Check the icon library
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --quiet --require-hashes -r branding/library/requirements.txt
+          .venv/bin/python -m unittest discover -s branding/library -p "test_*.py" -v
+          .venv/bin/python branding/library/check-library.py
+
   # Single required status check for the master branch ruleset. It passes only
-  # when every platform build succeeded; `if: always()` makes it report a
-  # failure (rather than being skipped) when a build fails or is cancelled.
+  # when every platform build and the icon library check succeeded; `if: always()`
+  # makes it report a failure (rather than being skipped) when a job fails or is cancelled.
   build-and-test:
     runs-on: ubuntu-latest
-    needs: [build_windows, build_linux, build_rpi, build_arch]
+    needs: [build_windows, build_linux, build_rpi, build_arch, library_check]
     if: always()
     steps:
       - name: Check platform builds

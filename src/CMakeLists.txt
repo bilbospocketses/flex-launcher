@@ -14,6 +14,8 @@ set(SOURCES
   layout.h
   utf8.c
   utf8.h
+  library.c
+  library.h
 )
 if (UNIX)
   add_executable(${EXECUTABLE_TITLE} ${SOURCES})
@@ -24,6 +26,11 @@ if (WIN32)
   add_executable(${EXECUTABLE_TITLE} WIN32 ${SOURCES} ${MANIFEST_FILE} ${APP_ICON_RESOURCE_WINDOWS})
   set_property(TARGET ${EXECUTABLE_TITLE} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_BINARY_DIR}")
 endif()
+
+# The icon library is found next to the executable, so keep a copy beside it in the build tree as well
+add_custom_command(TARGET ${EXECUTABLE_TITLE} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/assets/icons/library"
+          "$<TARGET_FILE_DIR:${EXECUTABLE_TITLE}>/assets/icons/library")
 
 # Build libraries
 add_subdirectory("platform")
