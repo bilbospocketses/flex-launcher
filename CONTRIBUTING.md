@@ -6,7 +6,7 @@ This repository is an independent project. It started from complexlogic's Flex L
 
 ## Building
 
-Build instructions for Windows (Visual Studio + vcpkg) and Linux (CMake + distro packages) are in [`docs/compilation.md`](docs/compilation.md). The CI workflow in [`.github/workflows/build.yml`](.github/workflows/build.yml) is the authoritative, always-exercised recipe for all four targets: Windows, Debian, Raspberry Pi, and Arch Linux.
+Build instructions for Windows (Visual Studio + vcpkg) and Linux (CMake + distro packages) are in [`docs/compilation.md`](docs/compilation.md). The CI workflow in [`.github/workflows/build.yml`](.github/workflows/build.yml) is the authoritative, always-exercised recipe for all four targets: Windows, Debian, Raspberry Pi, and Arch Linux. After building, run the unit tests with `ctest --test-dir build -C Release --output-on-failure`.
 
 ## Project Structure
 
@@ -19,6 +19,7 @@ assets/              Icons and fonts
 branding/icon/       Source for the app icon; regenerate with build-icon.ps1 (see its README)
 branding/logo/       The full-resolution logo original; the docs banner is a downscale of it
 design/              Design specs and implementation plans (not published; docs/ is the site)
+tests/               Unit tests (CTest); run them with ctest after building
 docs/                Documentation site (GitHub Pages / Jekyll)
 ```
 

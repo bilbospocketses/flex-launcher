@@ -8,6 +8,20 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+### Added
+- **Menus can show several rows of buttons.** `Rows` sets how many rows are visible at once. With two or more, a menu is a grid: Left and Right stop at the end of a row, Up and Down move between rows, and the grid scrolls one row at a time. A single row still scrolls sideways.
+- **Buttons are sized to fill the grid.** Choose its shape with `Rows` and `Columns`, and the buttons scale to fit the screen, titles included.
+- **Each menu can have its own layout.** `Rows`, `Columns` and `IconSize` in a menu's section override the `[Layout]` settings for that menu.
+- The `:up` and `:down` special commands. The Up and Down arrow keys also move between rows; a hotkey already bound to Up or Down keeps working.
+- Gamepads get Up and Down by default. When the config maps nothing to `:up` or `:down`, the D-pad and the left stick's vertical axis run them, unless the config uses those controls for something else.
+- Unit tests for the layout logic, run by CTest in CI.
+
+### Changed
+- **`MaxButtons` is now `Columns`.** The old name still works; if both are set, `Columns` wins.
+- **`IconSize` is now the largest a button may grow**, not a fixed size. Menus that set it look the same as before. A config with no `IconSize` line now gets buttons that grow to fill the screen, where it used to get 256 px.
+- **A single row with more buttons than fit now slides one button at a time**, instead of flipping to the next page.
+- SVG icons are drawn at the button's size, so they stay sharp at any size.
+
 ## [0.1.3] - 2026-09-27
 
 On Linux the app icon now comes in the small sizes that menus and panels use. Everything else here is about the icon's source and tooling; the launcher behaves exactly as in 0.1.2.
