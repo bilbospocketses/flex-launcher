@@ -260,7 +260,7 @@ Defines the opacity of the menu entry titles. Must be a percent value.
 Default: 100%
 
 ##### OversizeMode
-Defines the behavior when the width of a menu entry title exceeds the width of its icon (which is defined in `IconSize`). Possible values: "Truncate", "Shrink", and "None"
+Defines the behavior when the width of a menu entry title exceeds the width of its button, which is set by the menu's grid (see [Layout](#layout)). Possible values: "Truncate", "Shrink", and "None"
 - Truncate: Truncates the title at the maximum width and adds "..." to the end.
 - Shrink: Shrinks oversized titles to a smaller font size than `TitleFontSize` so that the entire title fits within the maximum width.
 - None: No action is taken to limit the width of titles. Overlaps with other titles may occur, and it is the user's responsibility to manually handle any such case.
@@ -331,7 +331,7 @@ Defines the amount of horizontal distance that the highlight cursor extends beyo
 Default: 30
 
 #### Scroll Indicators
-The settings in this section pertain to scroll indicators. Scroll indicators are arrows which appear in the bottom left and/or bottom right of the screen to inform the user that there are additional pages of applications to scroll to.
+The settings in this section pertain to scroll indicators. Scroll indicators are arrows that show when a menu has more buttons than fit on the screen. A one-row menu shows them in the bottom left and/or bottom right corners. A grid shows them centred at the top and/or bottom of the screen, pointing up or down.
 
 - [Enabled](#enabled-2)
 - [FillColor](#fillcolor-1)
@@ -340,7 +340,7 @@ The settings in this section pertain to scroll indicators. Scroll indicators are
 - [Opacity](#opacity-1)
 
 ##### Enabled
-Defines whether scroll indicators will be enabled in the event that a menu has multiple pages of entries. This setting is a boolean "true" or "false".
+Defines whether scroll indicators will be enabled when a menu has more buttons than fit on the screen. This setting is a boolean "true" or "false".
 
 Default: true
 
