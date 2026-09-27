@@ -48,6 +48,8 @@
 #define SCMD_EXIT ":exit"
 #define SCMD_LEFT ":left"
 #define SCMD_RIGHT ":right"
+#define SCMD_UP ":up"
+#define SCMD_DOWN ":down"
 #define SCMD_HOME ":home"
 #define SCMD_BACK ":back"
 #define SCMD_QUIT ":quit"

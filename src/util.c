@@ -17,6 +17,9 @@
 static void add_gamepad_control(const char *label, const char *cmd);
 static bool parse_mode_setting(ModeSettingType type, const char *value, int *setting);
 static Menu *create_menu(const char *menu_name, size_t *num_menus);
+static bool gamepad_command_mapped(const char *cmd);
+static bool gamepad_control_mapped(const char *label);
+static void add_default_controls(const char *cmd, const char *const *labels, size_t count);
 
 extern Config          config;
 extern GamepadControl  *gamepad_controls;
@@ -898,6 +901,48 @@ static void add_gamepad_control(const char *label, const char *cmd)
         .next     = NULL
     };
     current_gamepad_control->cmd = strdup(cmd);
+}
+
+// A function to check whether any gamepad control runs a command
+static bool gamepad_command_mapped(const char *cmd)
+{
+    for (GamepadControl *i = gamepad_controls; i != NULL; i = i->next) {
+        if (MATCH(i->cmd, cmd))
+            return true;
+    }
+    return false;
+}
+
+// A function to check whether a gamepad control is mapped to anything
+static bool gamepad_control_mapped(const char *label)
+{
+    for (GamepadControl *i = gamepad_controls; i != NULL; i = i->next) {
+        if (MATCH(i->label, label))
+            return true;
+    }
+    return false;
+}
+
+// A function to map a command to each listed control the config leaves free, unless the
+// config already maps the command somewhere itself
+static void add_default_controls(const char *cmd, const char *const *labels, size_t count)
+{
+    if (gamepad_command_mapped(cmd))
+        return;
+    for (size_t i = 0; i < count; i++) {
+        if (!gamepad_control_mapped(labels[i]))
+            add_gamepad_control(labels[i], cmd);
+    }
+}
+
+// A function to give Up and Down default gamepad controls. Configs written before grids
+// existed map nothing to :up or :down, and a grid is unusable without them.
+void add_default_gamepad_controls()
+{
+    static const char *const up[] = { SETTING_GAMEPAD_BUTTON_DPAD_UP, SETTING_GAMEPAD_LSTICK_YM };
+    static const char *const down[] = { SETTING_GAMEPAD_BUTTON_DPAD_DOWN, SETTING_GAMEPAD_LSTICK_YP };
+    add_default_controls(SCMD_UP, up, sizeof(up) / sizeof(up[0]));
+    add_default_controls(SCMD_DOWN, down, sizeof(down) / sizeof(down[0]));
 }
 
 // A function to convert a string percent setting to an int value

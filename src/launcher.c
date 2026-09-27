@@ -37,6 +37,7 @@ static void load_submenu(const char *submenu);
 static void load_back_menu(Menu *menu);
 static void draw_screen(void);
 static void handle_keypress(SDL_Keysym *key);
+static bool hotkey_bound(SDL_Keycode keycode);
 static void execute_command(const char *command);
 static void poll_gamepad(void);
 static void init_gamepad(Gamepad **gamepad, int device_index);
@@ -412,17 +413,30 @@ static void cleanup()
         disconnect_gamepad(-1, false, true);
 }
 
+// A function to check whether the config binds a hotkey to a key
+static bool hotkey_bound(SDL_Keycode keycode)
+{
+    for (Hotkey *i = hotkeys; i != NULL; i = i->next) {
+        if (i->keycode == keycode)
+            return true;
+    }
+    return false;
+}
+
 // A function to handle key presses from keyboard
 static void handle_keypress(SDL_Keysym *key)
 {
     if (config.debug)
         log_debug("Key %s (#%X) detected", SDL_GetKeyName(key->sym), key->sym);
 
-    // Check default keys
+    // Check default keys. Up and Down give way to a hotkey bound to the same key, so an
+    // existing config's binding keeps working after the upgrade.
     if (key->sym == SDLK_LEFT)
         move_selection(LAYOUT_LEFT);
     else if (key->sym == SDLK_RIGHT)
         move_selection(LAYOUT_RIGHT);
+    else if ((key->sym == SDLK_UP || key->sym == SDLK_DOWN) && !hotkey_bound(key->sym))
+        move_selection(key->sym == SDLK_UP ? LAYOUT_UP : LAYOUT_DOWN);
     else if (key->sym == SDLK_RETURN) {
         log_debug("Selected Entry:\n"
             "Title: %s\n"
@@ -835,6 +849,10 @@ static void execute_command(const char *command)
             move_selection(LAYOUT_LEFT);
         else if (!strcmp(special_command, SCMD_RIGHT))
             move_selection(LAYOUT_RIGHT);
+        else if (!strcmp(special_command, SCMD_UP))
+            move_selection(LAYOUT_UP);
+        else if (!strcmp(special_command, SCMD_DOWN))
+            move_selection(LAYOUT_DOWN);
         else if (!strcmp(special_command, SCMD_SELECT))
             execute_command(current_entry->cmd);
         else if (!strcmp(special_command, SCMD_HOME))
@@ -1214,6 +1232,8 @@ int main(int argc, char *argv[])
     parse_config_file(config_file_path);
     free(config_file_path);
     build_menu_items();
+    if (config.gamepad_enabled)
+        add_default_gamepad_controls();
 
     // Get default menu
     if (config.default_menu == NULL)
