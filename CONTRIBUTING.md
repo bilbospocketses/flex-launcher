@@ -42,7 +42,7 @@ Record changes in `CHANGELOG.md`. The older `CHANGELOG` file holds the original 
 
 Versions follow [Semantic Versioning](https://semver.org/) with three parts (`0.1.0`). The project stays below 1.0 until the major overhaul is in place.
 
-1. In one PR, set `VERSION` in `CMakeLists.txt` and `launcher_version` in `docs/_config.yml` to the new version, and rename `## [Unreleased]` in `CHANGELOG.md` to `## [x.y.z] - YYYY-MM-DD` with a fresh empty `## [Unreleased]` above it. The `Release` job's dry run on that PR checks that every package carries the new version and that the notes extract.
+1. In one PR, set `VERSION` in `CMakeLists.txt` and `launcher_version` in `docs/_config.yml` to the new version, and rename `## [Unreleased]` in `CHANGELOG.md` to `## [x.y.z] - YYYY-MM-DD` with a fresh empty `## [Unreleased]` above it. The `Release` job's dry run on that PR checks that every package carries the new version, that `launcher_version` matches it, and that the notes extract.
 2. After it merges, tag the merge commit with a signed annotated tag and push it:
    ```bash
    git tag -s vx.y.z -m "vx.y.z"

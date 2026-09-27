@@ -161,10 +161,13 @@ if (UNIX)
     # (flex-launcher_1:0.1.0_amd64.deb), and a colon is not a valid artifact
     # or Windows file name. Debian file names leave the epoch out.
     set(CPACK_DEBIAN_FILE_NAME "${CPACK_DEBIAN_PACKAGE_NAME}_${CMAKE_PROJECT_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
-    # dpkg-shlibdeps derives the real minimum versions (glibc included) from
-    # the built binary; the explicit list keeps the package names readable.
+    # dpkg-shlibdeps derives every dependency and its minimum version (glibc
+    # included) from the built binary. No explicit CPACK_DEBIAN_PACKAGE_DEPENDS:
+    # CPack appends shlibdeps' list to it without merging, so each library
+    # would appear twice. The MIN_SDL_* floors above are enforced at build
+    # time; at run time the computed glibc floor (2.34) already rules out any
+    # system with an SDL2 older than them.
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libsdl2-2.0-0 (>= ${MIN_SDL_VERSION}), libsdl2-image-2.0-0 (>= ${MIN_SDL_IMAGE_VERSION}), libsdl2-ttf-2.0-0 (>= ${MIN_SDL_TTF_VERSION}), libinih1")
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "bilbospocketses <104535858+bilbospocketses@users.noreply.github.com>")
     set(CPACK_DEBIAN_PACKAGE_HOMEPAGE ${CMAKE_PROJECT_HOMEPAGE_URL})
     set(CPACK_DEBIAN_PACKAGE_SECTION "video")
