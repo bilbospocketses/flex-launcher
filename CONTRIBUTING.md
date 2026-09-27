@@ -17,6 +17,7 @@ src/external/        Vendored third-party sources
 config/              Default config template, packaging and platform templates (PKGBUILD, .desktop, manifest, icon)
 assets/              Icons and fonts
 branding/icon/       Source for the app icon; regenerate with build-icon.ps1 (see its README)
+branding/logo/       The full-resolution logo original; the docs banner is a downscale of it
 docs/                Documentation site (GitHub Pages / Jekyll)
 ```
 

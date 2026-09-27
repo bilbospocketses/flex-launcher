@@ -17,9 +17,11 @@
          frame 32            -> docs/assets/icons/favicon.png   (docs site favicon)
          streamflex.ico      -> config/streamflex.ico           (Windows exe, via streamflex.rc)
     5. The ICO is verified: struct parse, and a pixel round-trip that must be exact (RMSE 0)
-       for every frame.
+       for every frame. On Windows it is also read the way Windows consumers read it: WIC
+       (Explorer's decoder), GDI+ (the legacy one) and rc.exe (the Windows build).
 
     Needs Python 3 with numpy + opencv-python, Inkscape 1.x and ImageMagick 7 on PATH.
+    The rc.exe check needs the Windows 10/11 SDK, and is skipped with a notice without it.
     Run from anywhere: pwsh branding/icon/build-icon.ps1
 #>
 $ErrorActionPreference = 'Stop'
@@ -73,6 +75,43 @@ for ($i = 0; $i -lt $sizes.Count; $i++) {
 }
 if ($bad) { throw "$bad frame(s) did not round-trip exactly" }
 "round-trip exact for all $($sizes.Count) frames"
+
+if ($IsWindows) {
+    # The checks above prove the bytes; these prove the Windows readers accept them.
+    Add-Type -AssemblyName PresentationCore
+    $dec = [System.Windows.Media.Imaging.BitmapDecoder]::Create([uri]::new($ico),
+        [System.Windows.Media.Imaging.BitmapCreateOptions]::PreservePixelFormat,
+        [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad)
+    $got  = $dec.Frames | ForEach-Object { '{0}x{1} {2}' -f $_.PixelWidth, $_.PixelHeight, $_.Format }
+    $want = $sizes | ForEach-Object { "${_}x${_} Bgra32" }
+    if (Compare-Object $want $got) { throw "WIC decode differs from the plan: $($got -join ', ')" }
+    "WIC (Explorer): all $($got.Count) frames decode as Bgra32"
+
+    # GDI+ cannot read the PNG-compressed 256 entry and falls back to 128; every other size must be exact.
+    Add-Type -AssemblyName System.Drawing
+    foreach ($s in $sizes) {
+        $icon = [System.Drawing.Icon]::new($ico, [System.Drawing.Size]::new($s, $s))
+        $w = $icon.Width
+        $icon.Dispose()
+        $expect = if ($s -eq 256) { 128 } else { $s }
+        if ($w -ne $expect) { throw "GDI+ asked for $s, got $w (expected $expect)" }
+    }
+    'GDI+ (legacy): every size exact, 256 falls back to 128 as expected'
+
+    $rc = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\rc.exe' -ErrorAction SilentlyContinue |
+        Sort-Object { [version]$_.Directory.Parent.Name } | Select-Object -Last 1
+    if ($rc) {
+        # Compile a copy of the real streamflex.rc against the new icon, as the Windows build will.
+        $rcDir = Join-Path $build 'rc'
+        New-Item -ItemType Directory -Force $rcDir | Out-Null
+        Copy-Item -LiteralPath (Join-Path $repo 'config' 'streamflex.rc'), $ico -Destination $rcDir -Force
+        & $rc.FullName /nologo /fo (Join-Path $rcDir 'streamflex.res') (Join-Path $rcDir 'streamflex.rc')
+        if ($LASTEXITCODE -ne 0) { throw "rc.exe failed ($LASTEXITCODE)" }
+        "rc.exe $($rc.Directory.Parent.Name): compiles streamflex.rc ($((Get-Item (Join-Path $rcDir 'streamflex.res')).Length) B .res)"
+    } else {
+        'rc.exe: Windows SDK not found, check SKIPPED (CI compiles the .rc in the Windows build)'
+    }
+}
 
 '== 5. install'
 # Pairs, not a hashtable: frame 32 feeds two outputs, and a hashtable keyed by source would drop one.

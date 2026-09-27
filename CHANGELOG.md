@@ -10,7 +10,9 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ### Added
 - The app icon's source is in the repository under `branding/icon/`. `build-svg.py` holds its geometry and colours and writes the two vector masters, and `build-icon.ps1` renders, packs, installs and verifies all four icon files. Run on the committed source, it reproduces the 0.1.2 icon byte for byte, so a later icon change can be regenerated rather than redrawn.
-- Two icon tools sit beside it. `render-check.py` renders the icon in Chromium and Inkscape and measures the difference, a portability check for design changes. `palette.py` re-derives the icon's colours from the logo banner.
+- Three icon tools sit beside it. `review-sheet.py` lays every icon size out on light and dark backgrounds, with pixel zooms of the small sizes, for judging a design by eye. `render-check.py` renders the icon in Chromium and Inkscape and measures the difference, a portability check for design changes. `palette.py` re-derives the icon's colours from the logo banner.
+- On Windows, `build-icon.ps1` also checks that the icon reads correctly through WIC (Explorer's decoder) and GDI+, and that `rc.exe` compiles it.
+- The full-resolution logo original (2816×1536) is in the repository as `branding/logo/streamflex-logo.jpg`. The README and docs banner is a downscale of it.
 - The Windows build instructions in the compilation guide now reproduce the CI build: Visual Studio 2022, vcpkg pinned to the version CI uses, and CI's generator and library settings. The `build` directory is ignored by git.
 
 ### Fixed
