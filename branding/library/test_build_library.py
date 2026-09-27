@@ -57,6 +57,36 @@ class Geometry(unittest.TestCase):
         self.assertIn('transform="translate(179.200 332.800) scale(0.160000)"', svg)
 
 
+class ManifestGuards(unittest.TestCase):
+    """inih reads a line into a 200-byte buffer and treats ' ;' as a comment: guard both at build time."""
+
+    def build_with(self, keys):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            ini = pathlib.Path(tmp) / "brands.ini"
+            ini.write_text("[probe]\n" + "".join(f"{k} = {v}\n" for k, v in keys.items()), encoding="utf-8")
+            return bl.build_outputs(ini)[1]
+
+    def base(self, **changes):
+        keys = {"title": "Probe", "group": "video", "owner": "Probe, Inc.", "source": "https://example.com/p",
+                "size": "512", "sha256": "0" * 64}
+        keys.update(changes)
+        return keys
+
+    def test_a_long_manifest_line_is_refused(self):
+        errors = self.build_with(self.base(source="https://example.com/" + "x" * 200))
+        self.assertTrue(any("longer than" in e and "[probe]" in e for e in errors), errors)
+
+    def test_an_inline_comment_marker_in_a_value_is_refused(self):
+        for owner in ("Probe ; Inc.", "Probe #1"):
+            errors = self.build_with(self.base(owner=owner))
+            self.assertTrue(any("comment" in e and "[probe]" in e for e in errors), (owner, errors))
+
+    def test_a_normal_brand_raises_no_guard_error(self):
+        errors = self.build_with(self.base())
+        self.assertFalse(any("longer than" in e or "comment" in e for e in errors), errors)
+
+
 class Table(unittest.TestCase):
     def test_names_groups_and_slots(self):
         names = [row[0] for row in bl.GENERIC]

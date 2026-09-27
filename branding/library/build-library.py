@@ -167,6 +167,23 @@ MANIFEST_HEAD = [
 ]
 
 
+MAX_MANIFEST_LINE = 190   # inih reads each line into a 200-byte buffer (INI_MAX_LINE); keep a margin
+
+
+def manifest_problems(lines):
+    """The launcher reads icons.ini with inih, which splits a line longer than its buffer and cuts a value at
+    an inline comment (';' after whitespace; '#' is guarded too). Refuse both at build time."""
+    problems, section = [], "?"
+    for line in lines:
+        if line.startswith("[") and line.endswith("]"):
+            section = line
+        if len(line) > MAX_MANIFEST_LINE:
+            problems.append(f"{section}: manifest line is {len(line)} characters, longer than {MAX_MANIFEST_LINE}: {line[:60]}...")
+        if "=" in line and not line.startswith(";") and re.search(r"\s[;#]", line.split("=", 1)[1]):
+            problems.append(f"{section}: '{line}' would be cut at an inline comment (' ;' or ' #')")
+    return problems
+
+
 def build_outputs(brands_ini=libtools.BRANDS_INI):
     """Return ({library-relative path: text}, [errors])."""
     outputs, errors, names = {}, [], set()
@@ -204,6 +221,7 @@ def build_outputs(brands_ini=libtools.BRANDS_INI):
         manifest += [f"source = {keys['source']}", f"sha256 = {keys['sha256']}"]
         rows.append(f"| `{name}.png` | {keys['title']} | {keys['owner']} | {keys['source']} |")
 
+    errors += manifest_problems(manifest)
     outputs["icons.ini"] = "\n".join(manifest) + "\n"
     outputs["brands/NOTICE.md"] = NOTICE_HEAD + ("\n".join(rows) + "\n" if rows else "| (none yet) | | | |\n")
     outputs["generic/LICENSE-material-symbols.txt"] = (libtools.GLYPHS / "LICENSE").read_text(encoding="utf-8")

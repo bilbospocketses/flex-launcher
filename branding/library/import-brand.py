@@ -13,6 +13,7 @@ Needs Pillow.
 import argparse
 import io
 import pathlib
+import re
 import sys
 
 from PIL import Image, ImageChops, ImageCms
@@ -43,6 +44,8 @@ def import_brand(name, image_path, source, art=None, fill=None, library=libtools
                  brands_ini=libtools.BRANDS_INI):
     if not libtools.NAME_RE.match(name):
         raise ImportRefused(f"'{name}' is not a valid icon name (a-z, 0-9 and '-', up to 32 characters)")
+    if fill is not None and not re.fullmatch(r"#[0-9A-Fa-f]{6}", fill):
+        raise ImportRefused(f"--fill '{fill}' is not a colour; write it as #RRGGBB, for example #13405F")
     image = load_rgba(image_path)
     width, height = image.size
     if width != height:

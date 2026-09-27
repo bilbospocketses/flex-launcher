@@ -1090,11 +1090,16 @@ void resolve_library_icons(void)
         if (roots[i] != NULL && file_exists(join_paths(manifest, sizeof(manifest), 2, roots[i], LIBRARY_MANIFEST)))
             root = roots[i];
     }
+    bool loaded = false;
     if (root == NULL)
         log_error("Icon library not found; entries that name a library icon will have no image");
     else {
         int count = library_load(root);
-        log_debug("Icon library: %s (%i icons)", root, count);
+        loaded = count >= 0;
+        if (loaded)
+            log_debug("Icon library: %s (%i icons)", root, count);
+        else
+            log_error("Icon library at %s could not be read; entries that name a library icon will have no image", root);
     }
 
     for (Menu *m = config.first_menu; m != NULL; m = m->next) {
@@ -1104,7 +1109,8 @@ void resolve_library_icons(void)
                 continue;
             if (library_is_name(e->icon_path)) {
                 path = library_lookup(e->icon_path);
-                if (path == NULL) {
+                // Without a library every name misses; the line above already says why, once
+                if (path == NULL && loaded) {
                     log_error("Entry '%s' in menu '%s': no library icon named '%s'", e->title, m->name, e->icon_path);
                     path = library_lookup(LIBRARY_FALLBACK_ICON);
                 }

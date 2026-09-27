@@ -80,7 +80,9 @@ static int add_icon(const char *name)
 }
 
 // The inih handler. inih reports keys, not section headers, so a change of section name marks a new
-// section. A repeated section keeps the first; a repeated 'file' keeps the first.
+// section. A repeated section keeps the first; a repeated 'file' keeps the first. A section with no keys
+// at all never reaches this handler (inih's default build has no header callback, and Linux uses the
+// system library), so it is skipped without the "has no 'file'" warning. build-library.py never writes one.
 static int handler(void *user, const char *section, const char *key, const char *value)
 {
     (void) user;

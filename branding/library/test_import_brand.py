@@ -94,6 +94,13 @@ class ImportBrand(unittest.TestCase):
             self.assertEqual(out.getpixel((0, 0))[3], 0)
         self.assertNotIn("fill", dict(ib.libtools.read_sections(self.brands_ini))["near"])
 
+    def test_a_malformed_fill_is_refused_not_a_traceback(self):
+        path = self.art(600, round_logo=True)
+        for fill in ("#abc", "112233", "#GG0000", "#1122334"):
+            with self.assertRaises(ib.ImportRefused, msg=fill):
+                self.run_import("round", path, fill=fill)
+        self.assertFalse((self.library / "brands" / "round.png").exists())
+
     def test_invalid_name_is_refused(self):
         with self.assertRaises(ib.ImportRefused):
             self.run_import("Net_Flix", self.art(512))
