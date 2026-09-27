@@ -68,7 +68,9 @@ Entry1=...
 - The button size is the largest square for which `Columns` buttons fit across and `Rows` buttons fit down the usable area. Each button's height includes its title block (title padding plus font height, when titles are on), and the `IconSpacing` gap applies between columns and between rows.
 - The result is capped by the menu's `IconSize`, which falls back to `[Layout]`'s. With no `IconSize` anywhere, it is capped only by `MAX_ICON_SIZE`, 1024.
 - The size comes from the grid's **shape**, not its entry count. A `3×6` menu with four entries does not balloon.
-- **Usable area.** The screen minus the 5% `SCREEN_MARGIN` on every side. When the clock is enabled, the top edge also moves down to below the clock's bottom, so a grid never runs under the time or date.
+- **Usable area.**
+  - **Width:** the full screen width, as today's single row has. Left and right margins would shrink today's default 4 × 256 px row at 1280×720 (to 239 px).
+  - **Height:** the screen height minus the 5% `SCREEN_MARGIN` at top and bottom, where a grid's scroll arrows live. When the clock is enabled, the top edge also moves down to below the clock's bottom, so a grid never runs under the time or date.
 
 ### Placement
 
@@ -111,7 +113,7 @@ typedef enum { LAYOUT_UP, LAYOUT_DOWN, LAYOUT_LEFT, LAYOUT_RIGHT } LayoutDirecti
 
 typedef struct {
     int rows, columns;      // effective shape
-    int icon_cap;           // IconSize cap, or MAX_ICON_SIZE
+    int icon_cap;           // IconSize cap; 0 = no cap (MAX_ICON_SIZE)
     int spacing;            // px, used across and down
     int title_block;        // title padding + font height, or 0 with titles off
     int hpad, vpad;         // highlight padding (may be reduced to fit)
@@ -150,7 +152,11 @@ LayoutOverrides layout_resolve(LayoutOverrides menu, LayoutOverrides global,
 ```
 
 - **`layout_compute`** returns 0 on success. If the requested shape cannot fit even at `MIN_ICON_SIZE` (32), it reduces only the axis that overflows (columns when too wide, rows when too tall). It writes what it did to `why` for the log, and still returns 0. It returns non-zero only when not even one button fits.
-- **`layout_compute` also fits the highlight.** The gap between rows must be at least the highlight's vertical padding, and the gap between columns at least its horizontal padding. Otherwise the highlight would overlap a neighbour's title. When they don't fit, it reduces the padding, as `validate_settings()` does for the single row today.
+- **`layout_compute` also fits the highlight.** Highlight padding is capped at half the gap between buttons:
+  - horizontally always, which is today's rule, moved here from `validate_settings()`;
+  - vertically only for grids of two or more rows, since a single row has no row gap and today's strips must not change.
+
+  A negative (unset) padding counts as 0.
 - **Edge rules.** Every rule in **Behaviour** lives in `layout_move` and `layout_clamp`, and nowhere else.
 
 ### Changes elsewhere
@@ -162,14 +168,14 @@ LayoutOverrides layout_resolve(LayoutOverrides menu, LayoutOverrides global,
   - gains the button size its textures were last rendered at.
 
   `page`, `highlight_position` and `root_entry` are removed. `last_selected_entry` becomes part of the `LayoutPosition`.
-- **`Geometry`** keeps its screen-wide fields. The per-row fields (`x_margin`, `y_margin`, `x_advance`, `num_buttons`) move into the current menu's `LayoutGeometry`.
+- **`Geometry`** keeps its screen-wide fields and gains `vcenter` (the `VCenter` setting in px). The per-row fields (`x_margin`, `y_margin`, `x_advance`, `num_buttons`) move into the current menu's `LayoutGeometry`.
 - **Parser** (`util.c`):
   - `[Layout]` gains `Rows` and `Columns` (with `MaxButtons` as an alias);
   - menu sections apply the reserved-name rule above;
   - `validate_settings()` keeps the global checks (fonts, colours, limits), and the width-fitting logic moves into `layout_compute`.
 - **`launcher.c`:**
   - **`load_menu`** resolves the effective settings and calls `layout_compute`. If the button size changed, it re-renders the menu's textures:
-    - SVG icons are rasterised at the button size with `rasterize_svg`;
+    - SVG icons are rasterised at the button size with `rasterize_svg_from_file`, which `image.h` has declared but never defined until now;
     - titles are rendered with `max_width` set to the button size;
     - the highlight texture is re-rendered.
 
