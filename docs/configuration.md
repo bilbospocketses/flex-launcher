@@ -33,8 +33,8 @@ Key2=value
 A line can be commented out by using the # character at the beginning of the line, which will cause the line to be ignored by the program. In-line comments are not allowable. Here are a few things to note about the configuration settings for StreamFlex:
 - All keys and values are case sensitive.
 - Full UTF-8 character set is supported for titles.
-- The following image formats are supported: JPEG, PNG, and WebP
-- Relative paths are evaluated with respect to the *current working directory*, which may not be the same as the directory that the config file is located in. It is recommended to use absolute paths whenever possible to eliminate any confusion.
+- The following image formats are supported: JPEG, PNG, WebP and SVG
+- Relative paths are evaluated with respect to the *current working directory*, which may not be the same as the directory that the config file is located in. It is recommended to use absolute paths whenever possible to eliminate any confusion. Fonts are the exception: a relative path in either `Font` setting that isn't found there is also looked for in the folder containing the StreamFlex executable. Icons from the built-in [Icon Library](icons) are given by name rather than path, so they don't depend on the working directory at all.
 - Color is specified in 24 bit RGB HEX format prefixed with the # character, e.g. the color red should be `#FF0000`. The letters can be uppercase or lowercase. HEX color pickers can be easily found online to assist color choices.
 - Several settings allow for values to be specified in pixels *or* as a percentage of another value. In this case, if no percent sign is detected it will be interpreted as pixels, and if the percent sign is present, than it will be interpreted as a percent value e.g. "5" means 5 pixels and "5%" means 5 percent.
 - Shell variable expansion is generally not supported, e.g. you cannot use the ~ character to refer to your home directory. The exception is for commands, since those are passed through to your system shell.
@@ -394,14 +394,14 @@ Entry5=Back;back;:back
 A menu can set its own `Rows`, `Columns` and `IconSize`, which override the [Layout](#layout) settings for that menu only. For example, big buttons on the main menu and a denser grid for games:
 ```ini
 [Main]
-Entry1=Games;C:\Pictures\Icons\games.png;:submenu Games
+Entry1=Games;games;:submenu Games
 
 [Games]
 Rows=3
 Columns=6
 Entry1=...
 ```
-These three names count as layout settings only when their value is a number. A key with one of these names whose value is an entry (`title;icon_path;command`) is still read as an entry, and the log notes it.
+These three names count as layout settings only when their value is a number. A key with one of these names whose value is an entry (`title;icon;command`) is still read as an entry, and the log notes it.
 
 ### Moving Around
 - **A one-row menu** is a strip. Left and Right move along it, and it slides one button at a time at its edges. With `WrapEntries`, moving past the last button selects the first, and the other way round.

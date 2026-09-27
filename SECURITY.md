@@ -33,7 +33,7 @@ Security fixes target the latest commit on `master`. Older commits and tags are 
 
 ## Scope
 
-In scope: the launcher itself — config file parsing, application launching, image and font loading, and the Windows and Linux platform layers under `src/platform/`.
+In scope: the launcher itself — config file parsing, the icon library manifest (`icons.ini`, read by `src/library.c`), application launching, image and font loading, and the Windows and Linux platform layers under `src/platform/`.
 
 Out of scope:
 - Vulnerabilities in third-party libraries (SDL2, SDL2_image, SDL2_ttf, inih, getopt) that are not specific to how streamflex uses them — report those to the library's maintainers.
