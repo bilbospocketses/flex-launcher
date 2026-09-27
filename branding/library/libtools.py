@@ -57,3 +57,13 @@ def write_brands(sections, path=BRANDS_INI):
 
 def sha256_file(path):
     return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+
+
+def outline_mask(size, supersample=4):
+    """The shared outline at size x size: mode L, 255 inside, 0 outside, a box-filtered edge between.
+    Box filtering keeps the interior exactly 255 and the exterior exactly 0. Needs Pillow."""
+    from PIL import Image, ImageDraw
+    big = size * supersample
+    mask = Image.new("L", (big, big), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, big - 1, big - 1), radius=OUTLINE_RADIUS * big, fill=255)
+    return mask.resize((size, size), Image.Resampling.BOX)
