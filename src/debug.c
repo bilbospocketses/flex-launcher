@@ -122,8 +122,12 @@ void debug_settings()
     log_debug("");
 
     log_debug("======================= Layout =========================\n");
-    DEBUG_INT(SETTING_MAX_BUTTONS, config.max_buttons);
-    DEBUG_INT(SETTING_ICON_SIZE, config.icon_size);
+    DEBUG_INT(SETTING_ROWS, config.rows);
+    DEBUG_INT(SETTING_COLUMNS, config.max_buttons);
+    if (config.icon_size)
+        DEBUG_INT(SETTING_ICON_SIZE, config.icon_size);
+    else
+        DEBUG_STR(SETTING_ICON_SIZE, "none (buttons fill the grid)");
     DEBUG_INT(SETTING_ICON_SPACING, config.icon_spacing);
     DEBUG_STR(SETTING_VCENTER, config.vcenter[0] != '\0' ? config.vcenter : "50%");
     log_debug("");
@@ -191,6 +195,10 @@ void debug_menu_entries(Menu *first_menu, size_t num_menus)
     for (size_t i = 0; i < num_menus; i ++) {
         log_debug("Menu Name: %s",menu->name);
         log_debug("Number of Entries: %i",menu->num_entries);
+        log_debug("Layout overrides (0 = from [Layout]): %s %i, %s %i, %s %i",
+            SETTING_ROWS, menu->overrides.rows,
+            SETTING_COLUMNS, menu->overrides.columns,
+            SETTING_ICON_SIZE, menu->overrides.icon_cap);
         entry = menu->first_entry;
         for (size_t j = 0; j < menu->num_entries; j++) {
             log_debug("Entry %i Title: %s",j,entry->title);

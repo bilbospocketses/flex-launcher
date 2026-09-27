@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <math.h>
+#include <string.h>
 #include <SDL.h>
 #include <SDL_image.h>
 #include <SDL_ttf.h>
@@ -206,6 +207,31 @@ SDL_Texture *rasterize_svg(char *buffer, int w, int h, SDL_Rect *rect)
     return texture;
 }
 
+// A function to rasterize an SVG file; pass -1 for w or h to keep the aspect ratio
+SDL_Texture *rasterize_svg_from_file(const char *path, int w, int h, SDL_Rect *rect)
+{
+    char *buffer = SDL_LoadFile(path, NULL);
+    if (buffer == NULL) {
+        log_error("Could not load image %s\n%s", path, SDL_GetError());
+        return NULL;
+    }
+    SDL_Texture *texture = rasterize_svg(buffer, w, h, rect);
+    SDL_free(buffer);
+    return texture;
+}
+
+// A function to load a menu icon. SVGs are rasterized at the button size so they stay sharp
+// at any size; other formats load at their own size and the renderer scales them.
+SDL_Texture *load_icon(const char *path, int size)
+{
+    if (path == NULL)
+        return NULL;
+    size_t length = strlen(path);
+    if (length > 4 && SDL_strcasecmp(path + length - 4, ".svg") == 0)
+        return rasterize_svg_from_file(path, size, -1, NULL);
+    return load_texture_from_file(path);
+}
+
 // A function to render the highlight for the buttons
 SDL_Texture *render_highlight(int width, int height, SDL_Rect *rect)
 {
@@ -278,6 +304,21 @@ void render_scroll_indicators(Scroll *scroll, int height, Geometry *geo)
     scroll->rect_right.x = geo->screen_width - geo->screen_margin - scroll->rect_right.w;
     scroll->rect_left.y = scroll->rect_right.y;
     scroll->rect_left.x = geo->screen_margin;
+
+    // Grid indicators: the same arrow drawn a quarter turn round (see draw_screen), sized so
+    // its on-screen height is the screen margin and centred in the top and bottom margins.
+    // SDL rotates about the rect's centre, so the rect keeps the unrotated arrow's proportions,
+    // and its width becomes the on-screen height.
+    int grid_w = geo->screen_margin;
+    int grid_h = grid_w * scroll->rect_right.h / scroll->rect_right.w;
+    scroll->rect_up = (SDL_Rect) {
+        .x = geo->screen_width / 2 - grid_w / 2,
+        .y = geo->screen_margin / 2 - grid_h / 2,
+        .w = grid_w,
+        .h = grid_h
+    };
+    scroll->rect_down = scroll->rect_up;
+    scroll->rect_down.y = geo->screen_height - geo->screen_margin / 2 - grid_h / 2;
 }
 
 // A function to render text

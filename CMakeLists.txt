@@ -138,6 +138,10 @@ configure_file("${PROJECT_SOURCE_DIR}/config/launcher_config.h.in" "${PROJECT_BI
 #Build source files
 add_subdirectory("src")
 
+# Unit tests, run with ctest
+enable_testing()
+add_subdirectory("tests")
+
 # Installation - Linux
 if (UNIX)
   set(INSTALL_DIR_BIN "${CMAKE_INSTALL_PREFIX}/bin")

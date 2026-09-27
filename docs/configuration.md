@@ -176,30 +176,38 @@ Defines the opacity of the background overlay. Must be a percent value.
 Default: 50%
 
 #### Layout
-The settings in this section define the geometric layout of the launcher.
+The settings in this section define the geometric layout of the launcher. A menu shows its buttons in a grid of `Rows` × `Columns`, and the buttons are sized to fill it. Any menu can override these settings; see [Menu Layouts](#menu-layouts).
 
-- [MaxButtons](#maxbuttons)
+- [Rows](#rows)
+- [Columns](#columns)
 - [IconSize](#iconsize)
 - [IconSpacing](#iconspacing)
 - [VCenter](#vcenter)
 
-##### MaxButtons
-The maximum number of buttons that can be displayed on the screen. If a menu has more entries than this value, it will be split into multiple pages. A value of 3-5 is sensible for a typical TV size and viewing distance.
+##### Rows
+The number of rows of buttons shown at once. With 1 row the menu is a strip, which slides one button at a time when you move past its edge. With 2 or more the menu is a grid: Left and Right stop at the end of a row, Up and Down move between rows, and the grid scrolls one row at a time. See [Moving Around](#moving-around).
+
+Default: 1
+
+##### Columns
+The number of buttons in each row. The buttons are sized so that `Columns` of them fit across the screen and `Rows` of them fit down it, titles included. For a single row, 3-5 is sensible for a typical TV at a typical viewing distance.
+
+`MaxButtons`, the older name for this setting, is still accepted. If both are set, `Columns` is used.
 
 Default: 4
 
 ##### IconSize
-The width and height of icons on the screen in pixels. If an icon is not the same resolution, it will be stretched accordingly.
+The largest size of a button, in pixels. Buttons are sized to fill the grid but never grow past this. Leave it out to let them grow as large as the grid allows. An icon image that is not square is stretched to fit. SVG icons are drawn at the button's size, so they stay sharp at any size.
 
-Default: 256
+Default: none (the sample config sets 256)
 
 ##### IconSpacing
-Distance between the menu entry icons, in pixels or percent of the screen width.
+The gap between buttons, across and down, in pixels or percent of the screen width. The gap is kept as set: if it is too large for the grid to fit at `IconSize`, the buttons shrink instead.
 
 Default: 5%
 
 ##### VCenter
-Defines the vertical centering of the menu entries in percent of the screen height. A value of 50% will cause the buttons to be centered halfway in the screen. Increasing the value will lower the buttons, and lowering it will raise them.
+The vertical centre of the buttons, in percent of the screen height. A value of 50% centres them halfway down the screen; a higher value lowers them and a lower value raises them. The rows that have buttons are centred on this line, but a tall grid is kept on the screen and below the clock.
 
 Default: 50%
 
@@ -379,6 +387,27 @@ Entry3=Plex;C:\Pictures\Icons\plex.png;"C:\Program Shortcuts\plex.lnk"
 Entry4=Back;C:\Pictures\Icons\back.png;:back
 ```
 
+### Menu Layouts
+A menu can set its own `Rows`, `Columns` and `IconSize`, which override the [Layout](#layout) settings for that menu only. For example, big buttons on the main menu and a denser grid for games:
+```ini
+[Main]
+Entry1=Games;C:\Pictures\Icons\games.png;:submenu Games
+
+[Games]
+Rows=3
+Columns=6
+Entry1=...
+```
+These three names count as layout settings only when their value is a number. A key with one of these names whose value is an entry (`title;icon_path;command`) is still read as an entry, and the log notes it.
+
+### Moving Around
+- **A one-row menu** is a strip. Left and Right move along it, and it slides one button at a time at its edges. With `WrapEntries`, moving past the last button selects the first, and the other way round.
+- **A menu with two or more rows** is a grid.
+  - Left and Right move within a row and stop at its ends. With `WrapEntries`, they wrap within the row.
+  - Up and Down move between rows, keeping the column. Moving down into a shorter last row lands on its last button.
+  - The grid scrolls one row at a time. With `WrapEntries`, moving down from the last row goes to the first, and up from the first goes to the last.
+- Each menu remembers its selected button and scroll position when you come back to it, unless `ResetOnBack` is set.
+
 ### Selected Icon Overrides
 The Selected Icon Override feature allows the user to define a different icon for the launcher to display when an entry is highlighted. To use this feature, name the path of the selected icon the same as the default entry icon path, but with a suffix of `_selected` (not including the file extension).
 
@@ -417,6 +446,12 @@ Move the highlight cursor left.
 
 #### :right
 Move the highlight cursor right.
+
+#### :up
+Move the highlight cursor up one row. Only a menu with two or more [Rows](#rows) has rows to move between.
+
+#### :down
+Move the highlight cursor down one row.
 
 #### :select
 Press enter on the current selection. This special command is only available as a gamepad or hotkey command, it is forbidden for menu entries.
@@ -543,7 +578,7 @@ Hotkey=keycode;command
 ```
 The keycode is a HEX prefixed with the # character. There are two ways to find a keycode for a given key. The first is to use the [lookup table provided by SDL](https://wiki.libsdl.org/SDLKeycodeLookup). The name of each key is in the right column of the table, and the corresponding HEX keycode is in the center column. The second is to run StreamFlex in debug mode, press the key, then check the log. For each keystroke, the name of the key will be printed and the HEX value will be in parenthesis next to it.
 
-Any key can be set as a hotkey, except keys that are reserved for the default controls: the left and right arrow keys, enter/return, and backspace. Hotkeys may be used to "speed dial" your favorite applications, or to add controls via [special commands](#special-commands). As an example configuration below, the first hotkey is mapped to F1 and will launch Kodi when it is pressed, and the second hotkey is mapped to F12 and will cause StreamFlex to quit when it is pressed:
+Any key can be set as a hotkey, except keys that are reserved for the default controls: the left and right arrow keys, enter/return, and backspace. The up and down arrow keys move between rows of a grid, unless a hotkey is bound to them, in which case the hotkey is used. Hotkeys may be used to "speed dial" your favorite applications, or to add controls via [special commands](#special-commands). As an example configuration below, the first hotkey is mapped to F1 and will launch Kodi when it is pressed, and the second hotkey is mapped to F12 and will cause StreamFlex to quit when it is pressed:
 ```ini
 [Hotkeys]
 Hotkey1=#4000003A;"C:\Program Shortcuts\kodi.lnk"
@@ -585,7 +620,9 @@ The controls are defined in key=value pairs, where the key is the name of the ax
 
 The [SDL GameController](https://wiki.libsdl.org/CategoryGameController) interface is an abstraction which conceptualizes a controller as having an Xbox-style layout. The mapping names in SDL are based on the *location* of the buttons on an Xbox controller, and may not correspond to the actual labelling of the buttons on your controller. For example, `ButtonA` is for the "bottom" button, `ButtonB` is for the "right" button of the 4 main control buttons. If you have a Playstation-style controller, those mapping names will correspond to the X button and the Circle button, respectively. 
 
-The default controls in StreamFlex allow the user to move the highlight cursor left and right by using the left stick or the DPad, select an entry by pressing A, and go back to the previous menu by pressing B. These controls are simple and will suffice for the vast majority of use cases.
+The default controls in StreamFlex allow the user to move the highlight cursor with the left stick or the DPad, select an entry by pressing A, and go back to the previous menu by pressing B. These controls are simple and will suffice for the vast majority of use cases.
+
+Up and down have defaults of their own. If your config maps nothing to `:up` or `:down`, the DPad's up and down buttons and the left stick's vertical axis run them, unless your config already uses those controls for something else. A config written before grids existed can still move between rows.
 
 The following axis and buttons are available for control in StreamFlex:
 - LStickX-

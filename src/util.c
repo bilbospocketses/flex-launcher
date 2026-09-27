@@ -17,12 +17,16 @@
 static void add_gamepad_control(const char *label, const char *cmd);
 static bool parse_mode_setting(ModeSettingType type, const char *value, int *setting);
 static Menu *create_menu(const char *menu_name, size_t *num_menus);
+static bool gamepad_command_mapped(const char *cmd);
+static bool gamepad_control_mapped(const char *label);
+static void add_default_controls(const char *cmd, const char *const *labels, size_t count);
 
 extern Config          config;
 extern GamepadControl  *gamepad_controls;
 extern Hotkey          *hotkeys;
 Menu                   *menu  = NULL;
 Entry                  *entry = NULL;
+static bool            columns_set = false; // Columns wins over its older name, MaxButtons
 
 static const char *mode_settings[][5] = {
     {"Color", "Image", "Slideshow", "Transparent", NULL}, // Background Mode
@@ -163,10 +167,25 @@ int config_handler(void *user, const char *section, const char *name, const char
     }
 
     else if (MATCH(section, "Layout")) {
+        int count;
         if (MATCH(name, SETTING_MAX_BUTTONS)) {
             int max_buttons = atoi(value);
-            if (max_buttons > 0)
+            if (max_buttons > 0 && !columns_set)
                 config.max_buttons = (unsigned int) max_buttons;
+        }
+        else if (MATCH(name, SETTING_COLUMNS)) {
+            if (layout_parse_count(value, &count)) {
+                config.max_buttons = (unsigned int) count;
+                columns_set = true;
+            }
+            else
+                log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_COLUMNS, value);
+        }
+        else if (MATCH(name, SETTING_ROWS)) {
+            if (layout_parse_count(value, &count))
+                config.rows = (unsigned int) count;
+            else
+                log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_ROWS, value);
         }
         else if (MATCH(name, SETTING_ICON_SIZE)) {
             Uint16 icon_size = (Uint16) atoi(value);
@@ -417,6 +436,28 @@ int config_handler(void *user, const char *section, const char *name, const char
             }
         }
 
+        // Per-menu layout settings. They count only when the value is a number, so an
+        // existing entry that happens to be keyed Rows, Columns or IconSize still parses.
+        bool layout_key = MATCH(name, SETTING_ROWS) || MATCH(name, SETTING_COLUMNS) ||
+                          MATCH(name, SETTING_ICON_SIZE);
+        if (layout_key && strchr(value, ';') == NULL) {
+            int count = 0;
+            bool valid = layout_parse_count(value, &count);
+            if (valid && MATCH(name, SETTING_ICON_SIZE))
+                valid = count >= MIN_ICON_SIZE && count <= MAX_ICON_SIZE;
+            if (!valid)
+                log_error("Invalid %s value '%s' in menu '%s', ignoring it", name, value, section);
+            else if (MATCH(name, SETTING_ROWS))
+                menu->overrides.rows = count;
+            else if (MATCH(name, SETTING_COLUMNS))
+                menu->overrides.columns = count;
+            else
+                menu->overrides.icon_cap = count;
+            return 0;
+        }
+        if (layout_key)
+            log_error("Menu '%s': '%s' holds an entry, so it is read as an entry", section, name);
+
         // Parse entry line for title, icon path, command
         char *string = (char*) value;
         char *token;
@@ -426,7 +467,7 @@ int config_handler(void *user, const char *section, const char *name, const char
 
             // Create first entry in the menu if none exists
             if (menu->first_entry == NULL) {
-                menu->first_entry = malloc(sizeof(Entry));
+                menu->first_entry = calloc(1, sizeof(Entry));
                 entry = menu->first_entry;
                 entry->next = NULL;
             }
@@ -435,7 +476,7 @@ int config_handler(void *user, const char *section, const char *name, const char
             else {
                 previous_entry = entry;
                 entry = entry->next;
-                entry = malloc(sizeof(Entry));
+                entry = calloc(1, sizeof(Entry));
                 previous_entry->next = entry;
                 entry->next = NULL;
             }
@@ -650,65 +691,6 @@ char *find_file(const char *file, int num_prefixes, const char **prefixes)
     return NULL;
 }
 
-// Calculates the length of a utf-8 encoded string
-int utf8_length(const char *string)
-{
-    int length = 0;
-    char *ptr = (char*) string;
-    while (*ptr != '\0') {
-        // If byte is 0xxxxxxx, then it's a 1 byte (ASCII) char
-        if ((*ptr & 0x80) == 0)
-            ptr++;
-
-        // If byte is 110xxxxx, then it's a 2 byte char
-        else if ((*ptr & 0xE0) == 0xC0)
-            ptr +=2;
-
-        // If byte is 1110xxxx, then it's a 3 byte char
-        else if ((*ptr & 0xF0) == 0xE0)
-            ptr +=3;
-
-        // If byte is 11110xxx, then it's a 4 byte char
-        else if ((*ptr & 0xF8) == 0xF0)
-            ptr+=4;
-
-    length++;
-    }
-    return length;
-}
-
-// A function to truncate a utf-8 encoded string to max number of pixels
-void utf8_truncate(char *string, int width, int max_width)
-{
-    int string_length = utf8_length(string);
-    int avg_width = width / string_length;
-    int num_chars = max_width / avg_width;
-    int spaces = (string_length - num_chars) + 3; // Number of spaces to go back
-    char *ptr = string + strlen(string); // Change to null character of string
-    int chars = 0;
-
-    // Go back required number of spaces
-    do {
-        ptr--;
-        if (!(*ptr & 0x80)) // ASCII characters have 0 as most significant bit
-            chars++;
-        else { // Non-ASCII character detected
-            do {
-                ptr--;
-            } while (ptr > string && (*ptr & 0xC0) == 0x80); // Non-ASCII most significant byte begins with 0b11
-            chars++;
-        }
-    } while (chars < spaces);
-
-    // Add "..." to end of string to inform user of truncation
-    if (strlen(ptr) > 2) {
-        *ptr = '.';
-        *(ptr + 1) = '.';
-        *(ptr + 2) = '.';
-        *(ptr + 3) = '\0';
-    }
-}
-
 // A function to extract the Unicode code point from the first character in a UTF-8 string
 Uint16 get_unicode_code_point(const char *p, int *bytes)
 {
@@ -759,12 +741,6 @@ void random_array(int *array, int array_size)
         array[i] = array[j];
         array[j] = tmp;
     }
-}
-
-// A function to calculate the total width of all screen objects
-unsigned int calculate_width(int buttons, int icon_spacing, int icon_size, int highlight_hpadding)
-{
-    return (unsigned int) ((buttons - 1)*icon_spacing + buttons*icon_size + 2*highlight_hpadding);
 }
 
 // A function to add a hotkey to the linked list
@@ -868,6 +844,48 @@ static void add_gamepad_control(const char *label, const char *cmd)
     current_gamepad_control->cmd = strdup(cmd);
 }
 
+// A function to check whether any gamepad control runs a command
+static bool gamepad_command_mapped(const char *cmd)
+{
+    for (GamepadControl *i = gamepad_controls; i != NULL; i = i->next) {
+        if (MATCH(i->cmd, cmd))
+            return true;
+    }
+    return false;
+}
+
+// A function to check whether a gamepad control is mapped to anything
+static bool gamepad_control_mapped(const char *label)
+{
+    for (GamepadControl *i = gamepad_controls; i != NULL; i = i->next) {
+        if (MATCH(i->label, label))
+            return true;
+    }
+    return false;
+}
+
+// A function to map a command to each listed control the config leaves free, unless the
+// config already maps the command somewhere itself
+static void add_default_controls(const char *cmd, const char *const *labels, size_t count)
+{
+    if (gamepad_command_mapped(cmd))
+        return;
+    for (size_t i = 0; i < count; i++) {
+        if (!gamepad_control_mapped(labels[i]))
+            add_gamepad_control(labels[i], cmd);
+    }
+}
+
+// A function to give Up and Down default gamepad controls. Configs written before grids
+// existed map nothing to :up or :down, and a grid is unusable without them.
+void add_default_gamepad_controls()
+{
+    static const char *const up[] = { SETTING_GAMEPAD_BUTTON_DPAD_UP, SETTING_GAMEPAD_LSTICK_YM };
+    static const char *const down[] = { SETTING_GAMEPAD_BUTTON_DPAD_DOWN, SETTING_GAMEPAD_LSTICK_YP };
+    add_default_controls(SCMD_UP, up, sizeof(up) / sizeof(up[0]));
+    add_default_controls(SCMD_DOWN, down, sizeof(down) / sizeof(down[0]));
+}
+
 // A function to convert a string percent setting to an int value
 void convert_percent_to_int(char *string, int *result, int max_value)
 {
@@ -883,18 +901,6 @@ void convert_percent_to_int(char *string, int *result, int max_value)
 // A function to make sure all settings are in their correct range
 void validate_settings(Geometry *geo)
 {
-    // Reduce number of buttons if they can't all fit on screen
-    if (config.icon_size * config.max_buttons > (unsigned int) geo->screen_width) {
-        unsigned int i;
-        for (i = config.max_buttons; i * config.icon_size > (unsigned int) geo->screen_width && i > 0; i--);
-        log_error(
-            "Not enough screen space for %i buttons, reducing to %i", 
-            config.max_buttons, 
-            i
-        );
-        config.max_buttons = i; 
-    }
-
     if (!config.titles_enabled)
         config.title_padding = 0;
 
@@ -966,39 +972,11 @@ void validate_settings(Geometry *geo)
     if (config.highlight_hpadding > (config.icon_spacing / 2))
         config.highlight_hpadding = config.icon_spacing / 2;
 
-    // Reduce icon spacing and highlight padding if too large to fit onscreen
-    unsigned int required_length = calculate_width((int) config.max_buttons,
-                                       config.icon_spacing,
-                                       config.icon_size,
-                                       config.highlight_hpadding
-                                   );
-    int highlight_hpadding = config.highlight_hpadding;
-    int icon_spacing = config.icon_spacing;
-    for (int i = 0; i < 100 && required_length > (unsigned int) geo->screen_width; i++) {
-        if (highlight_hpadding > 0)
-            highlight_hpadding = (highlight_hpadding * 9) / 10;
-        if (icon_spacing > 0)
-            icon_spacing = (icon_spacing * 9) / 10;
-        required_length = calculate_width((int) config.max_buttons,icon_spacing,config.icon_size,highlight_hpadding);
-    }
-    if (config.highlight_hpadding != highlight_hpadding) {
-        log_error("Highlight padding value %i too large to fit screen, shrinking to %i",
-            config.highlight_hpadding, 
-            highlight_hpadding
-        );
-        config.highlight_hpadding = highlight_hpadding;
-    }
-    if (config.icon_spacing != icon_spacing) {
-        log_error("Icon spacing value %i too large to fit screen, shrinking to %i",
-            config.icon_spacing, 
-            icon_spacing
-        );
-        config.icon_spacing = icon_spacing;
-    }
-
-    // Make sure title padding is in valid range
-    if (config.title_padding < 0 || config.title_padding > config.icon_size / 2) {
-        int title_padding = config.icon_size / 10;
+    // Make sure title padding is in valid range. IconSize is an optional cap now, so the range
+    // is measured against it when set, and against the old fixed default when not.
+    int reference_size = config.icon_size ? (int) config.icon_size : DEFAULT_ICON_SIZE;
+    if (config.title_padding < 0 || config.title_padding > reference_size / 2) {
+        int title_padding = reference_size / 10;
         log_error("Text padding value %i invalid, changing to %i",
             config.title_padding, 
             title_padding
@@ -1006,25 +984,20 @@ void validate_settings(Geometry *geo)
         config.title_padding = title_padding;
     }
 
-    // Calculate y margin for buttons from centerline setting string, check limits
+    // Convert the vertical centre setting to px and check its limits
     int vcenter = INVALID_PERCENT_VALUE;
-    int button_height = config.icon_size + config.title_padding + geo->font_height;
     float f_screen_height = (float) geo->screen_height;
     int lower_limit = (int) (MIN_VCENTER*f_screen_height);
     int upper_limit = (int) (MAX_VCENTER*f_screen_height);
-
-    // Convert percent to int
     if (config.vcenter[0] != '\0')
         convert_percent_to_int(config.vcenter, &vcenter, geo->screen_height);
     if (vcenter == INVALID_PERCENT_VALUE)
         convert_percent_to_int(DEFAULT_VCENTER, &vcenter, geo->screen_height);
-
-    // Check limits, calculate margin
     if (vcenter < lower_limit)
         vcenter = lower_limit;
     else if (vcenter > upper_limit)
         vcenter = upper_limit;
-    geo->y_margin = vcenter - button_height / 2;
+    geo->vcenter = vcenter;
 
     // Max highlight outline
     int max_highlight_outline_size = (config.highlight_hpadding < config.highlight_vpadding) 
@@ -1059,32 +1032,33 @@ Menu *create_menu(const char *menu_name, size_t *num_menus)
     Menu *menu = malloc(sizeof(Menu));
     *menu = (Menu) {
         .first_entry = NULL,
+        .items = NULL,
         .next = NULL,
         .back = NULL,
-        .root_entry = NULL,
         .num_entries = 0,
-        .page = 0,
-        .highlight_position = 0,
-        .rendered = false
+        .overrides = { 0, 0, 0 },
+        .position = { 0, 0 },
+        .rendered_size = 0
     };
     menu->name = strdup(menu_name);
     (*num_menus)++;
-    
+
     return menu;
 }
 
-// A function to advance X spaces in the entry linked list (left or right)
-Entry *advance_entries(Entry *entry, int spaces, Direction direction)
+// A function to give every menu an array of its entries by index, for the layout maths
+void build_menu_items()
 {
-    if (direction == DIRECTION_LEFT) {
-        for (int i = 0; i < spaces; i++)
-            entry = entry->previous;
+    for (Menu *m = config.first_menu; m != NULL; m = m->next) {
+        if (m->num_entries == 0)
+            continue;
+        m->items = malloc(m->num_entries * sizeof(Entry*));
+        Entry *e = m->first_entry;
+        for (unsigned int i = 0; i < m->num_entries; i++) {
+            m->items[i] = e;
+            e = e->next;
+        }
     }
-    else if (direction == DIRECTION_RIGHT) {
-        for (int i = 0; i < spaces; i++)
-            entry = entry->next;
-    }
-    return entry;
 }
 
 // A function to dynamically allocate a buffer for and copy a formatted string
