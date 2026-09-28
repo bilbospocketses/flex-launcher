@@ -101,6 +101,32 @@ static void test_saves_only_the_edits(void)
     CHECK(!fileio_exists(CONFIG ".bak.tmp"));
 }
 
+// A function to test a key beside its older alias: the save leaves the key alone, whether it is
+// set or removed, so the file never holds two lines for one setting
+static void test_alias_beside_the_key_is_removed(void)
+{
+    const char *both =
+        "[Layout]\n"
+        "MaxButtons=3 ; the old name\n"
+        "Columns=4\n"
+        "Rows=1\n";
+    reset(CONFIG, both);
+    ConfigEdit edit = { "Layout", "Columns", "MaxButtons", "5", INIDOC_AFTER_LAST_KEY };
+    ConfigSaveResult result;
+    CHECK(config_save(CONFIG, NULL, NULL, &edit, 1, &result));
+    CHECK(holds(CONFIG,
+        "[Layout]\n"
+        "Columns=5\n"
+        "Rows=1\n"));
+
+    reset(CONFIG, both);
+    edit.value = NULL;
+    CHECK(config_save(CONFIG, NULL, NULL, &edit, 1, &result));
+    CHECK(holds(CONFIG,
+        "[Layout]\n"
+        "Rows=1\n"));
+}
+
 // A function to test that a change made on disk meanwhile, by hand, survives the save
 static void test_keeps_a_hand_edit_made_meanwhile(void)
 {
@@ -333,6 +359,7 @@ static void test_hidden_files(void)
 int main(void)
 {
     test_saves_only_the_edits();
+    test_alias_beside_the_key_is_removed();
     test_keeps_a_hand_edit_made_meanwhile();
     test_refused_value_changes_nothing();
     test_read_only_fails();

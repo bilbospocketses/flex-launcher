@@ -944,14 +944,17 @@ static void add_default_controls(const char *cmd, const char *const *labels, siz
     }
 }
 
-// A function to give Up and Down default gamepad controls. Configs written before grids
-// existed map nothing to :up or :down, and a grid is unusable without them.
+// A function to give Up, Down and :settings default gamepad controls. Configs written before
+// grids existed map nothing to :up or :down, and a grid is unusable without them; and any config
+// written before the settings screen needs a way to open it.
 void add_default_gamepad_controls()
 {
     static const char *const up[] = { SETTING_GAMEPAD_BUTTON_DPAD_UP, SETTING_GAMEPAD_LSTICK_YM };
     static const char *const down[] = { SETTING_GAMEPAD_BUTTON_DPAD_DOWN, SETTING_GAMEPAD_LSTICK_YP };
+    static const char *const settings[] = { SETTING_GAMEPAD_BUTTON_START };
     add_default_controls(SCMD_UP, up, sizeof(up) / sizeof(up[0]));
     add_default_controls(SCMD_DOWN, down, sizeof(down) / sizeof(down[0]));
+    add_default_controls(SCMD_SETTINGS, settings, sizeof(settings) / sizeof(settings[0]));
 }
 
 // A function to convert a string percent setting to an int value

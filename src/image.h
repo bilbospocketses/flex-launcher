@@ -23,6 +23,7 @@ typedef struct {
 } TextInfo;
 
 int init_svg(void);
+char *find_default_font(const char *font);
 int load_font(TextInfo *info, const char *default_font);
 void quit_svg(void);
 int render_scroll_indicators(Scroll *scroll, int height, Geometry *geo);

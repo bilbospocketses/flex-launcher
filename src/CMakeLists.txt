@@ -26,6 +26,8 @@ set(SOURCES
   settings.h
   browser.c
   browser.h
+  settings_screen.c
+  settings_screen.h
 )
 if (UNIX)
   add_executable(${EXECUTABLE_TITLE} ${SOURCES})

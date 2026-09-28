@@ -454,6 +454,20 @@ static bool is_relative_path(const char *path)
     return true;
 }
 
+// A function to find a bundled font: next to the executable, else where the packages install it
+char *find_default_font(const char *font)
+{
+    const char *prefixes[2];
+    char fonts_exe_buffer[MAX_PATH_CHARS + 1];
+    prefixes[0] = join_paths(fonts_exe_buffer, sizeof(fonts_exe_buffer), 3, config.exe_path, PATH_ASSETS_EXE, PATH_FONTS_EXE);
+#ifdef __unix__
+    prefixes[1] = PATH_FONTS_SYSTEM;
+#else
+    prefixes[1] = PATH_FONTS_RELATIVE;
+#endif
+    return find_file(font, 2, prefixes);
+}
+
 // A function to load a font from a file
 int load_font(TextInfo *info, const char *default_font)
 {
@@ -477,15 +491,7 @@ int load_font(TextInfo *info, const char *default_font)
     // Try to load default font if we failed loading from config file
     if (info->font == NULL) {
         log_error("Could not initialize font from config file");
-        const char *prefixes[2];
-        char fonts_exe_buffer[MAX_PATH_CHARS + 1];
-        prefixes[0] = join_paths(fonts_exe_buffer, sizeof(fonts_exe_buffer), 3, config.exe_path, PATH_ASSETS_EXE, PATH_FONTS_EXE);
-#ifdef __unix__
-        prefixes[1] = PATH_FONTS_SYSTEM;
-#else
-        prefixes[1] = PATH_FONTS_RELATIVE;
-#endif
-        char *default_font_path = find_file(default_font, 2, prefixes);
+        char *default_font_path = find_default_font(default_font);
 
         // Replace user font with default in config
         if (default_font_path != NULL) {

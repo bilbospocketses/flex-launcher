@@ -21,15 +21,20 @@ static void cut_to_folder(char *path)
     path[length] = '\0';
 }
 
-// A function to apply the edits to a config's text; false (with the reason) when one cannot be written
+// A function to apply the edits to a config's text; false (with the reason) when one cannot be written.
+// A key and its older alias never both survive an edit: the alias alone is edited in its place,
+// and beside the key it is removed, so the file never holds two lines for one setting.
 static bool apply_edits(IniDoc *doc, const ConfigEdit *edits, int count, ConfigSaveResult *result)
 {
     for (int i = 0; i < count; i++) {
         const ConfigEdit *edit = &edits[i];
         const char *key = edit->key;
-        if (edit->alias != NULL && inidoc_get(doc, edit->section, key) == NULL &&
-        inidoc_get(doc, edit->section, edit->alias) != NULL)
-            key = edit->alias;
+        if (edit->alias != NULL && inidoc_get(doc, edit->section, edit->alias) != NULL) {
+            if (inidoc_get(doc, edit->section, key) == NULL && edit->value != NULL)
+                key = edit->alias;
+            else
+                inidoc_remove(doc, edit->section, edit->alias);
+        }
         if (edit->value == NULL)
             inidoc_remove(doc, edit->section, key);
         else if (!inidoc_set(doc, edit->section, key, edit->value, edit->placement)) {

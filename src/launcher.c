@@ -15,6 +15,7 @@
 #include "library.h"
 #include "debug.h"
 #include "clock.h"
+#include "settings_screen.h"
 #include "platform/platform.h"
 
 static void init_sdl(void);
@@ -345,6 +346,8 @@ static void init_sdl_ttf()
 // A function to close subsystems and free memory before quitting
 static void cleanup()
 {
+    settings_close_now();
+
     // Wait until all threads have completed
     SDL_WaitThread(Slideshowhread, NULL);
     SDL_WaitThread(clock_thread, NULL);
@@ -449,6 +452,40 @@ static void handle_keypress(SDL_Keysym *key)
     if (config.debug)
         log_debug("Key %s (#%X) detected", SDL_GetKeyName(key->sym), key->sym);
 
+    // While settings are open, the built-in keys are their commands; other keys run their hotkey,
+    // which execute_command() hands to settings (and settings ignore unless it is one of theirs)
+    if (settings_is_open()) {
+        const char *command = NULL;
+        switch (key->sym) {
+            case SDLK_LEFT:
+                command = SCMD_LEFT;
+                break;
+            case SDLK_RIGHT:
+                command = SCMD_RIGHT;
+                break;
+            case SDLK_UP:
+                command = SCMD_UP;
+                break;
+            case SDLK_DOWN:
+                command = SCMD_DOWN;
+                break;
+            case SDLK_RETURN:
+                command = SCMD_SELECT;
+                break;
+            case SDLK_BACKSPACE:
+                command = SCMD_BACK;
+                break;
+            default:
+                if (key->sym == SDLK_APPLICATION && !hotkey_bound(SDLK_APPLICATION))
+                    command = SCMD_SETTINGS;
+                break;
+        }
+        if (command != NULL) {
+            settings_handle_command(command);
+            return;
+        }
+    }
+
     // Check default keys. Up and Down give way to a hotkey bound to the same key, so an
     // existing config's binding keeps working after the upgrade.
     if (key->sym == SDLK_LEFT)
@@ -471,6 +508,10 @@ static void handle_keypress(SDL_Keysym *key)
     }
     else if (key->sym == SDLK_BACKSPACE)
         load_back_menu(current_menu);
+
+    // The Menu key (the context-menu key on a keyboard) opens settings, unless a hotkey has it
+    else if (key->sym == SDLK_APPLICATION && !hotkey_bound(SDLK_APPLICATION))
+        execute_command(SCMD_SETTINGS);
 
     //Check hotkeys
     else {
@@ -1019,6 +1060,12 @@ static void draw_screen()
 // A function to execute the user's command
 static void execute_command(const char *command)
 {
+    // While settings are open the remote's keys belong to them, and everything else waits
+    if (settings_is_open()) {
+        settings_handle_command(command);
+        return;
+    }
+
     // Copy command into separate buffer
     char *cmd = strdup(command);
 
@@ -1058,6 +1105,8 @@ static void execute_command(const char *command)
             scmd_restart();
         else if (!strcmp(special_command, SCMD_SLEEP))
             scmd_sleep();
+        else if (!strcmp(special_command, SCMD_SETTINGS))
+            settings_open();
     }
 
     // Launch external application
@@ -1396,6 +1445,8 @@ void quit(int status)
             "A critical error occurred. Check the log file for details.", 
             NULL
         );
+    // Close settings first, saving nothing: while they are open they would swallow the QuitCmd
+    settings_close_now();
     if (config.quit_cmd != NULL) {
         execute_command(config.quit_cmd);
         free(config.quit_cmd);
@@ -1563,7 +1614,7 @@ int main(int argc, char *argv[])
                     break;
                 
                 case SDL_MOUSEBUTTONDOWN:
-                    if (config.mouse_select && event.button.button == SDL_BUTTON_LEFT) {
+                    if (config.mouse_select && !settings_is_open() && event.button.button == SDL_BUTTON_LEFT) {
                         ticks.last_input = ticks.main;
                         execute_command(current_entry->cmd);
                     }
@@ -1631,7 +1682,7 @@ int main(int argc, char *argv[])
                 poll_gamepad();
             if (background_shown == BACKGROUND_SLIDESHOW)
                 update_slideshow();
-            if (config.screensaver_enabled)
+            if (config.screensaver_enabled && !settings_is_open())
                 update_screensaver();
             if (config.clock_enabled)
                 update_clock(false);
@@ -1642,7 +1693,9 @@ int main(int argc, char *argv[])
             if (config.on_launch == ON_LAUNCH_BLANK)
                 set_draw_color();
         }
-        if (state.application_running)
+        if (settings_is_open())
+            settings_draw();
+        else if (state.application_running)
             SDL_Delay(APPLICATION_WAIT_PERIOD);
         else
             draw_screen();
