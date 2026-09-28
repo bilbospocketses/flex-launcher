@@ -27,7 +27,7 @@ ok=1
     && grep -q "Settings opened over menu 'Main'" "$out/f50-grid.log" \
     && grep -q 'Settings: \[Layout\] Columns 4 -> 5' "$out/f50-grid.log" \
     && grep -q "Settings saved 1 change(s) to $cfg (backup: $cfg.bak)" "$out/f50-grid.log" \
-    && grep -q 'Key Application' "$out/f50-grid.log" && sanitizer_clean f50-grid && ok=0
+    && grep -q 'Key .* (#40000065) detected' "$out/f50-grid.log" && sanitizer_clean f50-grid && ok=0
 result "settings: a grid change saves one line, keeps its comment, and keeps a backup" $ok
 diff "$FX/f50-grid.ini" "$cfg" | sed 's/^/      /'
 
