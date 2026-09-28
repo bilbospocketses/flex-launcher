@@ -478,15 +478,20 @@ int fileio_list(const char *folder, FileioEntry **entries)
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
             continue;
 
-        // d_type is DT_UNKNOWN on some file systems, and a link to a folder should open like one
-        size_t size = folder_length + strlen(entry->d_name) + 2;
-        char *full = malloc(size);
-        struct stat info;
-        bool is_dir = false;
-        if (full != NULL) {
-            snprintf(full, size, "%s/%s", folder, entry->d_name);
-            is_dir = stat(full, &info) == 0 && S_ISDIR(info.st_mode);
-            free(full);
+        // The listing says what each entry is, so a folder holding a network mount whose server is
+        // off is listed without touching the mount: stat() on it would block, on a hard NFS mount
+        // for good. Only a link is followed, since a link to a folder should open like one, and an
+        // entry of unknown kind (some file systems give none) is looked up.
+        bool is_dir = entry->d_type == DT_DIR;
+        if (entry->d_type == DT_LNK || entry->d_type == DT_UNKNOWN) {
+            size_t size = folder_length + strlen(entry->d_name) + 2;
+            char *full = malloc(size);
+            struct stat info;
+            if (full != NULL) {
+                snprintf(full, size, "%s/%s", folder, entry->d_name);
+                is_dir = stat(full, &info) == 0 && S_ISDIR(info.st_mode);
+                free(full);
+            }
         }
         add_entry(entries, &count, &capacity, strdup(entry->d_name), is_dir, entry->d_name[0] == '.');
     }

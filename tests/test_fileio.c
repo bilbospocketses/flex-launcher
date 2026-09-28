@@ -266,6 +266,56 @@ static void test_places_under(void)
     CHECK(nas);
     fileio_free_places(places, count);
 }
+
+// A function to find an entry in a listing by name; NULL when it is not there
+static const FileioEntry *find_entry(const FileioEntry *entries, int count, const char *name)
+{
+    for (int i = 0; i < count; i++) {
+        if (strcmp(entries[i].name, name) == 0)
+            return &entries[i];
+    }
+    return NULL;
+}
+
+// A function to test what a listing says each entry is: a folder and a file as the folder's own
+// listing says, a link as what it names, and a link to nothing as no folder, without failing
+static void test_list_kinds(void)
+{
+    chmod(DIR "/kinds", 0755);   // A run stopped halfway may have left it unsearchable
+    CHECK(fileio_make_dirs(DIR "/kinds/folder"));
+    CHECK(fileio_write_all(DIR "/kinds/file.png", "x", 1));
+    unlink(DIR "/kinds/dead");   // Links a run stopped halfway may have left
+    unlink(DIR "/kinds/to-folder");
+    CHECK(symlink("/streamflex-no-such-folder", DIR "/kinds/dead") == 0);
+    CHECK(symlink("folder", DIR "/kinds/to-folder") == 0);
+
+    FileioEntry *entries = NULL;
+    int count = fileio_list(DIR "/kinds", &entries);
+    CHECK_INT(count, 4);
+    const FileioEntry *folder = find_entry(entries, count, "folder");
+    const FileioEntry *file = find_entry(entries, count, "file.png");
+    const FileioEntry *dead = find_entry(entries, count, "dead");
+    const FileioEntry *link = find_entry(entries, count, "to-folder");
+    CHECK(folder != NULL && folder->is_dir && !folder->hidden);
+    CHECK(file != NULL && !file->is_dir && !file->hidden);
+    CHECK(dead != NULL && !dead->is_dir);
+    CHECK(link != NULL && link->is_dir);
+    fileio_free_list(entries, count);
+
+    // With read but no search permission the entries cannot be looked up, as a dead network mount
+    // cannot, yet a subfolder is still a folder: the listing says so, and nothing looks it up.
+    // Root ignores permissions, so there it is skipped.
+    if (geteuid() == 0) {
+        printf("skipped the unsearchable folder check: running as root\n");
+        return;
+    }
+    CHECK(chmod(DIR "/kinds", 0644) == 0);
+    count = fileio_list(DIR "/kinds", &entries);
+    folder = find_entry(entries, count, "folder");
+    CHECK(folder != NULL && folder->is_dir);
+    fileio_free_list(entries, count);
+    chmod(DIR "/kinds", 0755);
+}
 #endif
 
 int main(void)
@@ -284,6 +334,7 @@ int main(void)
     test_places();
 #ifndef _WIN32
     test_places_under();
+    test_list_kinds();
 #endif
     return check_report();
 }
