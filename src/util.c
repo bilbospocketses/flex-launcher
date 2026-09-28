@@ -418,26 +418,28 @@ int config_handler(void *user, const char *section, const char *name, const char
     else {
         Entry *previous_entry = NULL;
 
-        // Check if menu struct exists for current section
-        if (config.first_menu == NULL) {
-            config.first_menu = create_menu(section, &config.num_menus);
-            menu = config.first_menu;
+        // Point the menu and entry cursors at this section's menu, adding it to the end of the list
+        // when it is new. A section can appear twice with another menu between, so the cursors move
+        // back to it, and to its last entry, rather than staying on the last menu read.
+        Menu *section_menu = NULL;
+        Menu *last_menu = NULL;
+        for (Menu *tmp = config.first_menu; tmp != NULL; tmp = tmp->next) {
+            if (section_menu == NULL && MATCH(tmp->name, section))
+                section_menu = tmp;
+            last_menu = tmp;
         }
-        else {
-            bool menu_exists = false;
-            for (Menu *tmp = config.first_menu; tmp != NULL;
-            tmp = tmp->next) {
-                if (MATCH(tmp->name,section)) {
-                    menu_exists = true;
-                    break;
-                }
-            }
-
-        // Create menu if it doesn't already exist
-            if (menu_exists == false) {
-                menu->next = create_menu(section, &config.num_menus);
-                menu = menu->next;
-            }
+        if (section_menu == NULL) {
+            section_menu = create_menu(section, &config.num_menus);
+            if (last_menu == NULL)
+                config.first_menu = section_menu;
+            else
+                last_menu->next = section_menu;
+        }
+        if (section_menu != menu) {
+            menu = section_menu;
+            entry = menu->first_entry;
+            while (entry != NULL && entry->next != NULL)
+                entry = entry->next;
         }
 
         // Per-menu layout settings. They count only when the value is a number, so an
@@ -466,6 +468,10 @@ int config_handler(void *user, const char *section, const char *name, const char
         char *token;
         char *delimiter = ";";
         token = strtok(string, delimiter);
+        if (token == NULL) {
+            log_error("Menu '%s': '%s' is empty, ignoring it", section, name);
+            return 0;
+        }
         if (token != NULL) {
 
             // Create first entry in the menu if none exists
@@ -504,6 +510,9 @@ int config_handler(void *user, const char *section, const char *name, const char
 
         // Delete entry if parse failed to find 3 valid tokens
         if (i != 3 || MATCH(":select", entry->cmd)) {
+            free(entry->title);
+            free(entry->icon_path);
+            free(entry->cmd);
             if (menu->num_entries == 0) {
                 free(menu->first_entry);
                 menu->first_entry = NULL;
