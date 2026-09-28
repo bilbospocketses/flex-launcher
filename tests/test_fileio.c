@@ -182,6 +182,26 @@ static void test_replace_waits_for_a_held_file(void)
     free(text);
 }
 
+// A function to test that a replace keeps the target's hidden and system attributes, so a file
+// the user hid is still hidden afterwards
+static void test_replace_keeps_a_hidden_target_hidden(void)
+{
+    wchar_t wide[512];
+    MultiByteToWideChar(CP_UTF8, 0, DIR "/hidden.ini", -1, wide, 512);
+    SetFileAttributesW(wide, FILE_ATTRIBUTE_NORMAL);   // A run stopped halfway may have left it hidden
+    CHECK(fileio_write_all(DIR "/hidden.ini", "old", 3));
+    CHECK(SetFileAttributesW(wide, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM));
+    CHECK(fileio_write_all(DIR "/hidden.ini.tmp", "new", 3));
+    CHECK(fileio_replace(DIR "/hidden.ini.tmp", DIR "/hidden.ini"));
+    DWORD attributes = GetFileAttributesW(wide);
+    CHECK(attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_HIDDEN) != 0);
+    CHECK(attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_SYSTEM) != 0);
+    char *text = fileio_read_all(DIR "/hidden.ini", NULL);
+    CHECK(text != NULL && strcmp(text, "new") == 0);
+    free(text);
+    SetFileAttributesW(wide, FILE_ATTRIBUTE_NORMAL);
+}
+
 // A function to test the UTF-16 copy that start_process() launches commands with
 static void test_wide(void)
 {
@@ -203,6 +223,7 @@ int main(void)
     test_real_path();
 #ifdef _WIN32
     test_replace_waits_for_a_held_file();
+    test_replace_keeps_a_hidden_target_hidden();
     test_wide();
 #endif
     return check_report();

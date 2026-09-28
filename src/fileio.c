@@ -269,6 +269,15 @@ bool fileio_replace(const char *from, const char *to)
 #ifdef _WIN32
     wchar_t *wide_from = to_wide(from);
     wchar_t *wide_to = to_wide(to);
+
+    // The new file takes the old one's hidden and system attributes, so a file the user hid stays
+    // hidden. Read-only is not carried over: a read-only file is refused before it gets here.
+    DWORD kept = 0;
+    if (wide_to != NULL) {
+        DWORD attributes = GetFileAttributesW(wide_to);
+        if (attributes != INVALID_FILE_ATTRIBUTES)
+            kept = attributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+    }
     bool ok = false;
     for (int attempt = 0; wide_from != NULL && wide_to != NULL && attempt < FILEIO_REPLACE_ATTEMPTS; attempt++) {
         if (MoveFileExW(wide_from, wide_to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
@@ -280,6 +289,13 @@ bool fileio_replace(const char *from, const char *to)
         if (code != ERROR_SHARING_VIOLATION && code != ERROR_LOCK_VIOLATION && code != ERROR_ACCESS_DENIED)
             break;
         Sleep(FILEIO_REPLACE_WAIT_MS);
+    }
+
+    // The new content is in place by now, so an attribute that cannot be set does not fail the replace
+    if (ok && kept != 0) {
+        DWORD attributes = GetFileAttributesW(wide_to);
+        if (attributes != INVALID_FILE_ATTRIBUTES)
+            SetFileAttributesW(wide_to, attributes | kept);
     }
     free(wide_from);
     free(wide_to);
