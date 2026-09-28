@@ -849,7 +849,7 @@ bool fileio_copy(const char *from, const char *to);
 bool fileio_replace(const char *from, const char *to);     // Windows: retries while the file is held
 bool fileio_remove(const char *path);
 bool fileio_make_dirs(const char *path);
-bool fileio_real_path(const char *path, char *out, size_t size);  // follows symbolic links
+bool fileio_real_path(const char *path, char *out, size_t size);  // on Linux, follows symbolic links; on Windows, the path as given; false (out empty) when it does not fit
 int fileio_list(const char *folder, FileioEntry **entries); // count, or -1
 void fileio_free_list(FileioEntry *entries, int count);
 const char *fileio_last_error(void);             // why the last call failed, in a few words
