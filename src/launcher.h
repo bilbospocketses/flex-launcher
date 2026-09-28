@@ -330,7 +330,8 @@ int compute_menu_layout(const Menu *menu, LayoutGeometry *geometry, char *why, s
 void describe_titles(const LayoutGeometry *geometry, char *out, size_t size);
 
 extern ModeBackground background_shown;
-void draw_scene(void);
+extern SDL_Texture *background_override;
+void draw_scene(bool preview);
 void present_frame(void);
 void reload_background(void);
 void update_slideshow_timing(void);

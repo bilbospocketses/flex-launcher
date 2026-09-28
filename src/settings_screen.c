@@ -7,11 +7,15 @@
 #include <stdbool.h>
 #include <SDL.h>
 #include <SDL_ttf.h>
+#include <SDL_image.h>
 #include "launcher.h"
 #include <launcher_config.h>
 #include "settings.h"
 #include "settings_screen.h"
 #include "config_save.h"
+#include "browser.h"
+#include "fileio.h"
+#include "inidoc.h"
 #include "image.h"
 #include "util.h"
 #include "debug.h"
@@ -21,6 +25,7 @@ extern Geometry geo;
 extern SDL_Renderer *renderer;
 extern Menu *current_menu;
 extern LayoutGeometry layout;
+extern SDL_Texture *background_override;
 
 #define MARGIN_RATIO 0.03F         // Of the screen height
 #define HEADER_FONT_RATIO 0.045F
@@ -69,6 +74,23 @@ static int column_width = 0;
 static int row_height = 0;
 static int first_row = 0;             // The first row shown when a list is longer than the column
 static SDL_Rect preview_rect;
+static char counted_folder[SETTING_TEXT_MAX]; // The folder the Folder row last counted; "" counts again
+static int counted_images = -1;               // Its images; -1 when it could not be listed
+
+static Browser *browser = NULL;          // The folder browser, while it is open
+static SettingSlot *browser_slot = NULL; // The Image or Folder setting it chooses for
+static int browser_first = 0;            // Its first row on show
+static int browser_page = 1;             // How many of its rows fit: Left and Right move this far
+static char browser_note[128] = "";      // Why the last OK did nothing, for the caption
+
+// The preview's image, decoded on its own thread so moving through a folder never stalls
+static SDL_Thread *decode_thread = NULL;
+static SDL_atomic_t decode_done;
+static char decode_path[BROWSER_PATH_MAX];  // What the thread is decoding
+static SDL_Surface *decode_surface = NULL;  // Its result; NULL when it failed
+static char wanted_path[BROWSER_PATH_MAX];  // What the preview should show; "" = the real background
+static char shown_path[BROWSER_PATH_MAX];   // What background_override holds
+static char broken_path[BROWSER_PATH_MAX];  // The last image that could not be decoded
 
 // A function to return the smaller of two ints
 static int min_int(int a, int b)
@@ -431,9 +453,183 @@ static void follow_preview(void)
         show_menu(want);
 }
 
+// A function run on its own thread: decode one image for the preview
+static int decode_image(void *data)
+{
+    UNUSED(data);
+    decode_surface = IMG_Load(decode_path);
+    SDL_AtomicSet(&decode_done, 1);
+    return 0;
+}
+
+// A function to start decoding the wanted image, unless another is being decoded already, or it
+// is on show, or it already failed
+static void start_decode(void)
+{
+    if (decode_thread != NULL || wanted_path[0] == '\0' || strcmp(wanted_path, shown_path) == 0
+    || strcmp(wanted_path, broken_path) == 0)
+        return;
+    copy_string(decode_path, wanted_path, sizeof(decode_path));
+    SDL_AtomicSet(&decode_done, 0);
+    decode_thread = SDL_CreateThread(decode_image, "Preview image", NULL);
+}
+
+// A function to ask for an image as the preview's background; "" goes back to the real one
+static void want_preview_image(const char *path)
+{
+    copy_string(wanted_path, path, sizeof(wanted_path));
+    if (wanted_path[0] == '\0' && background_override != NULL) {
+        SDL_DestroyTexture(background_override);
+        background_override = NULL;
+        shown_path[0] = '\0';
+    }
+    start_decode();
+}
+
+// A function to pick up a finished decode: show it if it is still wanted, then start the next
+static void poll_decode(void)
+{
+    if (decode_thread == NULL || !SDL_AtomicGet(&decode_done))
+        return;
+    SDL_WaitThread(decode_thread, NULL);
+    decode_thread = NULL;
+    if (decode_surface == NULL) {
+        copy_string(broken_path, decode_path, sizeof(broken_path));
+        log_debug("Settings: could not open %s", decode_path);
+    }
+    else if (strcmp(decode_path, wanted_path) == 0) {
+        SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, decode_surface);
+        if (texture != NULL) {
+            if (background_override != NULL)
+                SDL_DestroyTexture(background_override);
+            background_override = texture;
+            copy_string(shown_path, decode_path, sizeof(shown_path));
+        }
+    }
+    if (decode_surface != NULL)
+        SDL_FreeSurface(decode_surface);
+    decode_surface = NULL;
+    start_decode();
+}
+
+// A function to wait out a decode in flight and drop the preview's image
+static void stop_decoding(void)
+{
+    if (decode_thread != NULL) {
+        SDL_WaitThread(decode_thread, NULL);
+        decode_thread = NULL;
+    }
+    if (decode_surface != NULL)
+        SDL_FreeSurface(decode_surface);
+    decode_surface = NULL;
+    wanted_path[0] = '\0';
+    shown_path[0] = '\0';
+    broken_path[0] = '\0';
+    if (background_override != NULL)
+        SDL_DestroyTexture(background_override);
+    background_override = NULL;
+}
+
+// A function to list a folder for the browser
+static int list_folder(const char *folder, FileioEntry **entries, void *context)
+{
+    UNUSED(context);
+    return fileio_list(folder, entries);
+}
+
+// A function to tell the browser whether config.ini can hold a path for its setting
+static const char *check_path(const char *path, void *context)
+{
+    const SettingSlot *slot = context;
+    return inidoc_check(slot->def->key, path);
+}
+
+// A function to preview what the browser's cursor is on: an image, or a folder's first image
+static void preview_highlighted(void)
+{
+    const BrowserRow *row = browser_row(browser, browser_cursor(browser));
+    char path[BROWSER_PATH_MAX] = "";
+    if (row != NULL && row->kind == BROWSER_ROW_IMAGE)
+        copy_string(path, row->path, sizeof(path));
+    else if (row != NULL && (row->kind == BROWSER_ROW_FOLDER || row->kind == BROWSER_ROW_USE_FOLDER))
+        browser_first_image(browser, row->path, path, sizeof(path));
+    want_preview_image(path);
+}
+
+// A function to open the folder browser for an Image or Folder setting, at its current path
+static void open_browser(SettingSlot *slot)
+{
+    FileioPlace *places = NULL;
+    int count = fileio_places(&places);
+    BrowserPlace *list = calloc((size_t) (count > 0 ? count : 1), sizeof(BrowserPlace));
+    for (int i = 0; list != NULL && i < count; i++) {
+        list[i].label = places[i].label;
+        list[i].path = places[i].path;
+    }
+    BrowserMode mode = slot->def->id == SET_ID_BACKGROUND_IMAGE ? BROWSER_IMAGE : BROWSER_FOLDER;
+    browser = list != NULL ? browser_open(mode, slot->value.text, list, count, list_folder, check_path, slot) : NULL;
+    free(list);
+    fileio_free_places(places, count);
+    if (browser == NULL)
+        return;
+    browser_slot = slot;
+    browser_first = 0;
+    browser_note[0] = '\0';
+    log_debug("Settings: browsing %s", browser_folder(browser) != NULL ? browser_folder(browser) : "the places");
+    preview_highlighted();
+}
+
+// A function to close the folder browser, back to the Background page
+static void close_browser(void)
+{
+    browser_free(browser);
+    browser = NULL;
+    browser_slot = NULL;
+    want_preview_image("");
+}
+
+// A function to count a folder's images as the browser does (files with an image's extension,
+// hidden ones left out); -1 when it cannot be listed
+static int count_images(const char *folder)
+{
+    FileioEntry *entries = NULL;
+    int count = fileio_list(folder, &entries);
+    int images = count < 0 ? -1 : 0;
+    for (int i = 0; i < count; i++) {
+        if (!entries[i].hidden && !entries[i].is_dir && browser_is_image(entries[i].name))
+            images++;
+    }
+    fileio_free_list(entries, count > 0 ? count : 0);
+    return images;
+}
+
+// A function to add the folder's image count to the Folder row's value, after a middle dot. The
+// folder is counted again only when it changes or the Background page opens, never every frame.
+static void describe_folder_row(SettingsRow *row)
+{
+    const char *folder = row->slot->value.text;
+    if (folder[0] == '\0')
+        return;
+    bool recounted = strcmp(folder, counted_folder) != 0;
+    if (recounted) {
+        copy_string(counted_folder, folder, sizeof(counted_folder));
+        counted_images = count_images(folder);
+    }
+    if (counted_images >= 0) {
+        size_t used = strlen(row->value);
+        snprintf(row->value + used, sizeof(row->value) - used,
+            counted_images == 1 ? " \xC2\xB7 %i image" : " \xC2\xB7 %i images", counted_images);
+    }
+    if (recounted)
+        log_debug("Settings: the Folder row shows %s", row->value);
+}
+
 // A function to free what the screen holds while open
 static void free_screen(void)
 {
+    if (browser != NULL)
+        close_browser();
+    stop_decoding();
     if (preview != NULL)
         SDL_DestroyTexture(preview);
     preview = NULL;
@@ -544,8 +740,8 @@ static void handle_event(const SettingsEvent *event)
             apply_all();
             break;
         case SETTINGS_EVENT_BROWSE:
-            // The folder browser is not built yet: the Image and Folder rows do nothing on OK
-            break;
+            open_browser(event->slot);
+            return;
         case SETTINGS_EVENT_CLOSE:
         case SETTINGS_EVENT_CLOSE_HOME:
             if (event->slot != NULL) {
@@ -589,6 +785,68 @@ static bool to_settings_command(const char *command, SettingsCommand *out)
     return false;
 }
 
+// A function to act on a key while the folder browser is open: move, page, open, choose or go back
+static void handle_browser_command(const char *command)
+{
+    BrowserCommand key;
+    browser_note[0] = '\0';
+    if (MATCH(command, SCMD_UP))
+        key = BROWSER_UP;
+    else if (MATCH(command, SCMD_DOWN))
+        key = BROWSER_DOWN;
+    else if (MATCH(command, SCMD_LEFT))
+        key = BROWSER_PAGE_UP;
+    else if (MATCH(command, SCMD_RIGHT))
+        key = BROWSER_PAGE_DOWN;
+    else if (MATCH(command, SCMD_SELECT))
+        key = BROWSER_OK;
+    else if (MATCH(command, SCMD_BACK))
+        key = BROWSER_BACK;
+    else if (MATCH(command, SCMD_HOME) || MATCH(command, SCMD_SETTINGS)) {
+        // Leave the browser without choosing, then close settings as the pages would
+        close_browser();
+        SettingsEvent event = settings_command(model, MATCH(command, SCMD_HOME) ? SETTINGS_HOME : SETTINGS_CLOSE);
+        handle_event(&event);
+        return;
+    }
+    else {
+        log_debug("Settings: ignoring '%s' while settings are open", command);
+        return;
+    }
+
+    BrowserResult result = browser_command(browser, key, browser_page);
+    if (result == BROWSER_CLOSED) {
+        close_browser();
+        return;
+    }
+    if (result == BROWSER_CHOSEN) {
+        char chosen[BROWSER_PATH_MAX];
+        copy_string(chosen, browser_chosen(browser), sizeof(chosen));
+        if (strcmp(chosen, broken_path) == 0) {
+            snprintf(browser_note, sizeof(browser_note), "This image cannot be opened");
+            log_debug("Settings: %s: %s", browser_note, chosen);
+            return;
+        }
+        SettingSlot *slot = browser_slot;
+        close_browser();
+        log_debug("Settings: chose %s", chosen);
+        SettingsEvent event = settings_choose(model, slot, chosen);
+        handle_event(&event);
+        return;
+    }
+    if (key == BROWSER_OK && result == BROWSER_NONE) {
+        // A disabled row says why; a folder or place that could not be listed says what went wrong
+        const BrowserRow *row = browser_row(browser, browser_cursor(browser));
+        if (row != NULL && row->why != NULL)
+            snprintf(browser_note, sizeof(browser_note), "%s", row->why);
+        else if (row != NULL && (row->kind == BROWSER_ROW_FOLDER || row->kind == BROWSER_ROW_PLACE))
+            snprintf(browser_note, sizeof(browser_note), "Can't open %s: %s", row->name, fileio_last_error());
+        if (browser_note[0] != '\0')
+            log_debug("Settings: %s", browser_note);
+    }
+    preview_highlighted();
+}
+
 // A function to act on a special command while settings are open: the remote's keys move through
 // them, and every other command waits until they close
 void settings_handle_command(const char *command)
@@ -596,12 +854,19 @@ void settings_handle_command(const char *command)
     SettingsCommand key;
     if (model == NULL)
         return;
+    if (browser != NULL) {
+        handle_browser_command(command);
+        return;
+    }
     if (!to_settings_command(command, &key)) {
         log_debug("Settings: ignoring '%s' while settings are open", command);
         return;
     }
+    SettingsPage before = settings_page(model);
     SettingsEvent event = settings_command(model, key);
     handle_event(&event);
+    if (model != NULL && before != SETTINGS_PAGE_BACKGROUND && settings_page(model) == SETTINGS_PAGE_BACKGROUND)
+        counted_folder[0] = '\0';   // The Background page opened: count the Folder's images again
 }
 
 // A function to draw one row; returns the height it took
@@ -651,22 +916,59 @@ static void draw_model_rows(int x, int top, int bottom)
         first_row = cursor - visible + 1;
     first_row = max_int(0, min_int(first_row, count - visible));
     int y = top;
-    for (int i = first_row; i < count && y + row_height <= bottom; i++)
+    for (int i = first_row; i < count && y + row_height <= bottom; i++) {
+        if (rows[i].slot != NULL && rows[i].slot->def->id == SET_ID_SLIDESHOW_DIRECTORY)
+            describe_folder_row(&rows[i]);
         y += draw_row(&rows[i], i == cursor, x, y, column_width);
+    }
 }
 
-// A function to draw the column: the title, the page path, the rows and the key hint
+// A function to draw the browser's rows, scrolled to keep the cursor in view
+static void draw_browser_rows(int x, int top, int bottom)
+{
+    int count = browser_row_count(browser);
+    int cursor = browser_cursor(browser);
+    browser_page = max_int(1, (bottom - top) / row_height);
+    if (cursor < browser_first)
+        browser_first = cursor;
+    if (cursor >= browser_first + browser_page)
+        browser_first = cursor - browser_page + 1;
+    browser_first = max_int(0, min_int(browser_first, count - browser_page));
+    int y = top;
+    for (int i = browser_first; i < count && y + row_height <= bottom; i++) {
+        const BrowserRow *row = browser_row(browser, i);
+        bool opens = row->kind == BROWSER_ROW_PLACE || row->kind == BROWSER_ROW_FOLDER;
+        SettingsRow shown;
+        memset(&shown, 0, sizeof(shown));
+        shown.kind = opens ? SETTINGS_ROW_LINK : SETTINGS_ROW_ACTION;
+        shown.enabled = opens || row->enabled;
+        copy_string(shown.label, row->name, sizeof(shown.label));
+        if (row->kind == BROWSER_ROW_USE_FOLDER)
+            snprintf(shown.value, sizeof(shown.value), row->image_count == 1 ? "%i image" : "%i images", row->image_count);
+        y += draw_row(&shown, i == cursor, x, y, column_width);
+    }
+}
+
+// A function to draw the column: the title, the page path (or the folder being browsed), the rows
+// and the key hint
 static void draw_column(void)
 {
     char path[512];
     int x = margin;
     draw_text(font_header, "Settings", x, margin, column_width, 255, false);
-    settings_path(model, path, sizeof(path));
+    if (browser != NULL)
+        copy_string(path, browser_folder(browser) != NULL ? browser_folder(browser) : "Places", sizeof(path));
+    else
+        settings_path(model, path, sizeof(path));
     draw_text(font_small, path, x, margin + TTF_FontHeight(font_header), column_width, ALPHA_DIM, false);
     int top = (int) (ROWS_TOP_RATIO * (float) geo.screen_height);
     int hint_y = geo.screen_height - margin - TTF_FontHeight(font_small);
-    draw_model_rows(x, top, hint_y - margin);
-    const char *hint = settings_page(model) == SETTINGS_PAGE_TOP
+    if (browser != NULL)
+        draw_browser_rows(x, top, hint_y - margin);
+    else
+        draw_model_rows(x, top, hint_y - margin);
+    const char *hint = browser != NULL ? "Left and right page \xC2\xB7 OK opens or chooses \xC2\xB7 Back goes up"
+                     : settings_page(model) == SETTINGS_PAGE_TOP
                        ? "Left and right change \xC2\xB7 OK opens \xC2\xB7 Back saves and closes"
                        : "Left and right change \xC2\xB7 OK opens \xC2\xB7 Back goes back";
     draw_text(font_small, hint, x, hint_y, column_width, ALPHA_DIM, false);
@@ -685,7 +987,12 @@ static void draw_caption(void)
         layout.columns, layout.rows, layout.button, titles, reduced ? " (reduced to fit the screen)" : "");
     int y = preview_rect.y + preview_rect.h + margin / 2;
     draw_text(font_small, caption, preview_rect.x, y, preview_rect.w, ALPHA_VALUE, false);
-    draw_text(font_small, settings_notice(model), preview_rect.x, y + TTF_FontHeight(font_small), preview_rect.w, 255, false);
+    const char *note = settings_notice(model);
+    if (browser != NULL) {
+        const BrowserRow *row = browser_row(browser, browser_cursor(browser));
+        note = browser_note[0] != '\0' ? browser_note : (row != NULL && row->why != NULL ? row->why : "");
+    }
+    draw_text(font_small, note, preview_rect.x, y + TTF_FontHeight(font_small), preview_rect.w, 255, false);
 }
 
 // A function to draw one frame of the screen and present it
@@ -693,9 +1000,10 @@ void settings_draw(void)
 {
     if (model == NULL)
         return;
+    poll_decode();
     if (preview != NULL) {
         SDL_SetRenderTarget(renderer, preview);
-        draw_scene();
+        draw_scene(true);
         SDL_SetRenderTarget(renderer, NULL);
         SDL_SetRenderDrawColor(renderer, BACKDROP.r, BACKDROP.g, BACKDROP.b, BACKDROP.a);
         SDL_RenderClear(renderer);
@@ -706,7 +1014,7 @@ void settings_draw(void)
     }
     else {
         // No render targets: the scene fills the screen and the column sits on a dark backing
-        draw_scene();
+        draw_scene(true);
         SDL_Rect backing = { 0, 0, column_width + 2 * margin, geo.screen_height };
         SDL_SetRenderDrawColor(renderer, BACKDROP.r, BACKDROP.g, BACKDROP.b, 220);
         SDL_RenderFillRect(renderer, &backing);
@@ -754,6 +1062,7 @@ void settings_open(void)
     origin = current_menu;
     go_home = false;
     first_row = 0;
+    counted_folder[0] = '\0';
     measure_layout();
     if (SDL_RenderTargetSupported(renderer)) {
         preview = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, geo.screen_width, geo.screen_height);

@@ -171,6 +171,7 @@ SDL_Window *window                    = NULL;
 SDL_Renderer *renderer                = NULL;
 SDL_Texture *background_texture       = NULL;
 SDL_Texture *background_overlay       = NULL;
+SDL_Texture *background_override      = NULL; // The image being browsed in settings, shown in their preview
 Menu *default_menu                    = NULL;
 Menu *current_menu                    = NULL;
 ModeBackground background_shown       = BACKGROUND_COLOR; // What is on screen: the colour when the chosen background failed
@@ -347,6 +348,8 @@ static void init_sdl_ttf()
 static void cleanup()
 {
     settings_close_now();
+    if (background_override != NULL)
+        SDL_DestroyTexture(background_override);
 
     // Wait until all threads have completed
     SDL_WaitThread(Slideshowhread, NULL);
@@ -967,16 +970,39 @@ void show_home()
     load_menu(default_menu, false, true);
 }
 
+// A function to fill the screen with a grey checkerboard. In the settings preview it stands for a
+// transparent background: a texture cannot show the desktop through.
+static void draw_checkerboard()
+{
+    int square = geo.screen_height / 18 > 8 ? geo.screen_height / 18 : 8;
+    for (int y = 0; y < geo.screen_height; y += square) {
+        for (int x = 0; x < geo.screen_width; x += square) {
+            Uint8 shade = ((x / square) + (y / square)) % 2 == 0 ? 0x55 : 0x88;
+            SDL_Rect cell = { x, y, square, square };
+            SDL_SetRenderDrawColor(renderer, shade, shade, shade, 0xFF);
+            SDL_RenderFillRect(renderer, &cell);
+        }
+    }
+}
+
 // A function to draw the launcher's scene: the background, its overlay, the scroll indicators,
-// the clock, the highlight and the visible buttons. The settings screen draws it into its preview.
-void draw_scene()
+// the clock, the highlight and the visible buttons. The settings screen draws it into its preview
+// (preview true), where a transparent background shows as a checkerboard and an image being
+// browsed replaces the background.
+void draw_scene(bool preview)
 {
     set_draw_color();
     SDL_RenderClear(renderer);
-    if (background_shown == BACKGROUND_IMAGE || background_shown == BACKGROUND_SLIDESHOW)
-        SDL_RenderCopy(renderer, background_texture, NULL, NULL);
-    if (background_shown == BACKGROUND_SLIDESHOW && state.slideshow_transition)
-        SDL_RenderCopy(renderer, slideshow->transition_texture, NULL, NULL);
+    if (preview && background_override != NULL)
+        SDL_RenderCopy(renderer, background_override, NULL, NULL);
+    else if (preview && background_shown == BACKGROUND_TRANSPARENT)
+        draw_checkerboard();
+    else {
+        if (background_shown == BACKGROUND_IMAGE || background_shown == BACKGROUND_SLIDESHOW)
+            SDL_RenderCopy(renderer, background_texture, NULL, NULL);
+        if (background_shown == BACKGROUND_SLIDESHOW && state.slideshow_transition)
+            SDL_RenderCopy(renderer, slideshow->transition_texture, NULL, NULL);
+    }
 
     // Draw background overlay
     if (config.background_overlay)
@@ -1046,7 +1072,7 @@ void present_frame()
 static void draw_screen()
 {
     if (!(state.application_launching && config.on_launch == ON_LAUNCH_BLANK)) {
-        draw_scene();
+        draw_scene(false);
         if (state.screensaver_active)
             SDL_RenderCopy(renderer, screensaver->texture, NULL, NULL);
     }
@@ -1290,6 +1316,7 @@ static void update_slideshow()
                 slideshow->transition_texture = load_texture(slideshow->transition_surface);
                 SDL_SetTextureAlphaMod(slideshow->transition_texture, 0);
                 state.slideshow_transition = true;
+                log_debug("Slideshow: fading in the next image");
             }
             else {
                 SDL_DestroyTexture(background_texture);
