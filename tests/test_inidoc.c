@@ -153,7 +153,7 @@ static void test_edits(void)
     check_edit(__LINE__, "[Background]\n", "Background", "Image", ";x", INIDOC_AFTER_LAST_KEY, false, "[Background]\n");
 }
 
-// A function to test inih's 199-byte line limit: a longer line would be split in two
+// A function to test inih's 199-byte line limit: a longer line would be misread
 static void test_line_limit(void)
 {
     char value[256];
@@ -178,6 +178,51 @@ static void test_line_limit(void)
     inidoc_free(doc);
 }
 
+// A function to test that a section's name is matched on its first 49 bytes, as inih keeps it,
+// while the header line itself is written back exactly as it was
+static void test_long_section_name(void)
+{
+    char name[61];
+    memset(name, 'M', 60);
+    name[60] = '\0';
+    char prefix[INIDOC_MAX_SECTION + 1];                 // The name as inih gives it to the launcher
+    memcpy(prefix, name, INIDOC_MAX_SECTION);
+    prefix[INIDOC_MAX_SECTION] = '\0';
+    char text[128];
+    char expected[128];
+    snprintf(text, sizeof(text), "[%s]\nRows=3\n", name);
+
+    IniDoc *doc = inidoc_parse(text, strlen(text));
+    CHECK_STR(inidoc_get(doc, prefix, "Rows"), "3");
+    CHECK_STR(inidoc_get(doc, name, "Rows"), "3");       // Agrees for 49 bytes: the same section to inih
+
+    // Setting changes the existing key and adds no header; the 60-byte header line stays
+    CHECK(inidoc_set(doc, prefix, "Rows", "4", INIDOC_UNDER_HEADER));
+    snprintf(expected, sizeof(expected), "[%s]\nRows=4\n", name);
+    char *out = inidoc_serialize(doc, NULL);
+    CHECK_STR(out, expected);
+    free(out);
+
+    // Removing takes the key away, and the header line still stays
+    CHECK(inidoc_remove(doc, prefix, "Rows"));
+    CHECK(inidoc_get(doc, prefix, "Rows") == NULL);
+    snprintf(expected, sizeof(expected), "[%s]\n", name);
+    out = inidoc_serialize(doc, NULL);
+    CHECK_STR(out, expected);
+    free(out);
+    inidoc_free(doc);
+
+    // A new section with a long name is read back under the name inih gives it
+    doc = inidoc_parse("[General]\n", 10);
+    CHECK(inidoc_set(doc, name, "Rows", "2", INIDOC_AFTER_LAST_KEY));
+    CHECK_STR(inidoc_get(doc, prefix, "Rows"), "2");
+    snprintf(expected, sizeof(expected), "[General]\n\n[%s]\nRows=2\n", name);
+    out = inidoc_serialize(doc, NULL);
+    CHECK_STR(out, expected);
+    free(out);
+    inidoc_free(doc);
+}
+
 // A function to test the reasons given for a value that cannot be written
 static void test_check(void)
 {
@@ -195,6 +240,7 @@ int main(void)
     test_get_reads_like_inih();
     test_edits();
     test_line_limit();
+    test_long_section_name();
     test_check();
     return check_report();
 }

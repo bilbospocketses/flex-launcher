@@ -13,8 +13,9 @@ typedef enum {
 typedef struct {
     char *text;          // The line as written, without its line ending
     const char *eol;     // "\n", "\r\n", or "" for a last line with no ending
-    LineKind kind;
-    char *name;          // SECTION: the section's name; KEY: the key's name, as inih reads them
+    LineKind form;       // What the line reads as on its own: SECTION, KEY or OTHER
+    LineKind kind;       // What it reads as where it stands: `form`, or CONTINUATION after a key
+    char *name;          // SECTION: the section's name, cut as inih cuts it; KEY: the key's name
     char *value;         // KEY: the value, as inih reads it
     size_t value_start;  // KEY: where the value starts in `text`; just after the separator when empty
     size_t value_length; // KEY: how many bytes of `text` the value spans
@@ -69,19 +70,88 @@ static const char *section_name(const IniDoc *doc, int section)
     return section < 0 ? "" : doc->lines[section].name;
 }
 
-// A function to read every line the way inih's ini_parse_stream() does. It runs again after
-// each edit: config files are small, and reading them whole keeps every index honest.
+// A function to tell whether a section's name is the one asked for. inih keeps only the first
+// INIDOC_MAX_SECTION bytes of a name, so names that agree that far are one section to it.
+static bool same_section(const char *name, const char *section)
+{
+    return strncmp(name, section, (size_t) INIDOC_MAX_SECTION) == 0;
+}
+
+// A function to free what a line holds
+static void free_line(Line *line)
+{
+    free(line->text);
+    free(line->name);
+    free(line->value);
+}
+
+// A function to read one line on its own, as inih's ini_parse_stream() does when the line is
+// not a continuation: a section header and its name, or a key and its value. It allocates the
+// line's name and value, and is false only when out of memory, with nothing left allocated.
+static bool read_line(Line *line)
+{
+    const char *text = line->text;
+    line->form = LINE_OTHER;
+    line->name = NULL;
+    line->value = NULL;
+    size_t start = 0;
+    while (is_space(text[start]))
+        start++;
+    if (text[start] == '\0' || text[start] == ';' || text[start] == '#')
+        return true;
+    if (text[start] == '[') {
+        size_t end = find_chars_or_comment(text, start + 1, "]");
+        if (text[end] != ']')
+            return true;
+        size_t length = end - start - 1;
+        if (length > (size_t) INIDOC_MAX_SECTION)
+            length = (size_t) INIDOC_MAX_SECTION;
+        line->name = copy_span(text + start + 1, length);
+        if (line->name == NULL)
+            return false;
+        line->form = LINE_SECTION;
+        return true;
+    }
+    size_t end = find_chars_or_comment(text, start, "=:");
+    if (text[end] != '=' && text[end] != ':')
+        return true;
+    size_t name_end = end;
+    while (name_end > start && is_space(text[name_end - 1]))
+        name_end--;
+    size_t value_begin = end + 1;
+    size_t value_end = find_chars_or_comment(text, value_begin, NULL);
+    size_t first = value_begin;
+    while (first < value_end && is_space(text[first]))
+        first++;
+    size_t last = value_end;
+    while (last > first && is_space(text[last - 1]))
+        last--;
+    line->name = copy_span(text + start, name_end - start);
+    line->value = copy_span(text + first, last - first);
+    if (line->name == NULL || line->value == NULL) {
+        free(line->name);
+        free(line->value);
+        line->name = NULL;
+        line->value = NULL;
+        return false;
+    }
+    line->form = LINE_KEY;
+    line->value_start = first == last ? value_begin : first;
+    line->value_length = last - first;
+    return true;
+}
+
+// A function to place every line the way inih's ini_parse_stream() does: which section it sits
+// under, and whether an indented line continues the key before it. It runs again after each
+// edit: config files are small, and placing them whole keeps every index honest. It allocates
+// nothing, so it cannot fail.
 static void classify_all(IniDoc *doc)
 {
     int section = -1;
     bool after_key = false;   // inih's prev_name: a key has been read since the last header
     for (int i = 0; i < doc->count; i++) {
         Line *line = &doc->lines[i];
-        free(line->name);
-        free(line->value);
-        line->name = NULL;
-        line->value = NULL;
-        line->kind = LINE_OTHER;
+        line->kind = line->form;
         line->section = section;
         const char *text = line->text;
         size_t start = 0;
@@ -91,39 +161,15 @@ static void classify_all(IniDoc *doc)
             continue;
         if (after_key && start > 0) {
             line->kind = LINE_CONTINUATION;
-            continue;
         }
-        if (text[start] == '[') {
-            size_t end = find_chars_or_comment(text, start + 1, "]");
-            if (text[end] == ']') {
-                line->kind = LINE_SECTION;
-                line->name = copy_span(text + start + 1, end - start - 1);
-                line->section = i;
-                section = i;
-                after_key = false;
-            }
-            continue;
+        else if (line->form == LINE_SECTION) {
+            line->section = i;
+            section = i;
+            after_key = false;
         }
-        size_t end = find_chars_or_comment(text, start, "=:");
-        if (text[end] != '=' && text[end] != ':')
-            continue;
-        size_t name_end = end;
-        while (name_end > start && is_space(text[name_end - 1]))
-            name_end--;
-        size_t value_begin = end + 1;
-        size_t value_end = find_chars_or_comment(text, value_begin, NULL);
-        size_t first = value_begin;
-        while (first < value_end && is_space(text[first]))
-            first++;
-        size_t last = value_end;
-        while (last > first && is_space(text[last - 1]))
-            last--;
-        line->kind = LINE_KEY;
-        line->name = copy_span(text + start, name_end - start);
-        line->value = copy_span(text + first, last - first);
-        line->value_start = first == last ? value_begin : first;
-        line->value_length = last - first;
-        after_key = true;
+        else if (line->form == LINE_KEY) {
+            after_key = true;
+        }
     }
 }
 
@@ -150,30 +196,33 @@ static bool append_raw(IniDoc *doc, const char *text, size_t length, const char 
     memset(line, 0, sizeof(*line));
     line->text = copy_span(text, length);
     line->eol = eol;
-    if (line->text == NULL)
+    if (line->text == NULL || !read_line(line)) {
+        free_line(line);
         return false;
+    }
     doc->count++;
     return true;
 }
 
 // A function to insert a new line at an index. A new last line takes over "no line ending" from
-// the old last line, so a file that did not end with a newline still does not.
+// the old last line, so a file that did not end with a newline still does not. When out of
+// memory the document is left as it was.
 static bool insert_line(IniDoc *doc, int at, const char *text)
 {
-    if (!grow(doc))
+    Line line;
+    memset(&line, 0, sizeof(line));
+    line.text = copy_span(text, strlen(text));
+    line.eol = doc->eol;
+    if (line.text == NULL || !read_line(&line) || !grow(doc)) {
+        free_line(&line);
         return false;
-    char *copy = copy_span(text, strlen(text));
-    if (copy == NULL)
-        return false;
+    }
     memmove(&doc->lines[at + 1], &doc->lines[at], (size_t) (doc->count - at) * sizeof(Line));
-    Line *line = &doc->lines[at];
-    memset(line, 0, sizeof(*line));
-    line->text = copy;
-    line->eol = doc->eol;
+    doc->lines[at] = line;
     doc->count++;
     if (at == doc->count - 1 && at > 0 && doc->lines[at - 1].eol[0] == '\0') {
         doc->lines[at - 1].eol = doc->eol;
-        line->eol = EOL_NONE;
+        doc->lines[at].eol = EOL_NONE;
     }
     classify_all(doc);
     return true;
@@ -184,9 +233,7 @@ static bool insert_line(IniDoc *doc, int at, const char *text)
 static void remove_line(IniDoc *doc, int at)
 {
     bool was_open_end = at == doc->count - 1 && doc->lines[at].eol[0] == '\0';
-    free(doc->lines[at].text);
-    free(doc->lines[at].name);
-    free(doc->lines[at].value);
+    free_line(&doc->lines[at]);
     memmove(&doc->lines[at], &doc->lines[at + 1], (size_t) (doc->count - at - 1) * sizeof(Line));
     doc->count--;
     if (was_open_end && doc->count > 0)
@@ -199,7 +246,7 @@ static int find_key(const IniDoc *doc, const char *section, const char *key)
 {
     for (int i = doc->count - 1; i >= 0; i--) {
         const Line *line = &doc->lines[i];
-        if (line->kind == LINE_KEY && strcmp(line->name, key) == 0 && strcmp(section_name(doc, line->section), section) == 0)
+        if (line->kind == LINE_KEY && strcmp(line->name, key) == 0 && same_section(section_name(doc, line->section), section))
             return i;
     }
     return -1;
@@ -209,7 +256,7 @@ static int find_key(const IniDoc *doc, const char *section, const char *key)
 static int find_header(const IniDoc *doc, const char *section)
 {
     for (int i = doc->count - 1; i >= 0; i--) {
-        if (doc->lines[i].kind == LINE_SECTION && strcmp(doc->lines[i].name, section) == 0)
+        if (doc->lines[i].kind == LINE_SECTION && same_section(doc->lines[i].name, section))
             return i;
     }
     return -1;
@@ -340,24 +387,29 @@ static bool replace_value(IniDoc *doc, int i, const char *section, const char *k
     size_t new_length = head + value_length + (text_length - tail);
     if (new_length > INIDOC_MAX_LINE)
         return false;
-    char *text = malloc(new_length + 1);
-    if (text == NULL)
+    Line updated = *line;   // Keeps the line ending; read_line() replaces the name and value
+    updated.text = malloc(new_length + 1);
+    if (updated.text == NULL)
         return false;
-    memcpy(text, line->text, head);
-    memcpy(text + head, value, value_length);
-    memcpy(text + head + value_length, line->text + tail, text_length - tail + 1);
-    char *old = line->text;
-    line->text = text;
+    memcpy(updated.text, line->text, head);
+    memcpy(updated.text + head, value, value_length);
+    memcpy(updated.text + head + value_length, line->text + tail, text_length - tail + 1);
+    if (!read_line(&updated)) {
+        free(updated.text);
+        return false;
+    }
+    Line old = *line;
+    *line = updated;
     classify_all(doc);
 
     // Prove the line reads back as intended; if not, put the old line back
     if (find_key(doc, section, key) != i || strcmp(doc->lines[i].value, value) != 0) {
-        doc->lines[i].text = old;
-        free(text);
+        free_line(&doc->lines[i]);
+        doc->lines[i] = old;
         classify_all(doc);
         return false;
     }
-    free(old);
+    free_line(&old);
     return true;
 }
 
@@ -376,13 +428,15 @@ bool inidoc_set(IniDoc *doc, const char *section, const char *key, const char *v
         return false;
     snprintf(text, size, "%s=%s", key, value);
     int keys_before = count_keys(doc);
+    int lines_before = doc->count;
     int header = find_header(doc, section);
     int at;
+    bool ok = true;
     if (header < 0) {
         // A missing section goes at the end, after a blank line
         size_t header_size = strlen(section) + 3;
         char *header_text = malloc(header_size);
-        bool ok = header_text != NULL;
+        ok = header_text != NULL;
         if (ok) {
             snprintf(header_text, header_size, "[%s]", section);
             if (doc->count > 0 && doc->lines[doc->count - 1].text[0] != '\0')
@@ -390,10 +444,6 @@ bool inidoc_set(IniDoc *doc, const char *section, const char *key, const char *v
             ok = ok && insert_line(doc, doc->count, header_text);
         }
         free(header_text);
-        if (!ok) {
-            free(text);
-            return false;
-        }
         at = doc->count;
     }
     else {
@@ -403,19 +453,24 @@ bool inidoc_set(IniDoc *doc, const char *section, const char *key, const char *v
         if (placement == INIDOC_AFTER_LAST_KEY || is_space(next[0])) {
             for (int i = 0; i < doc->count; i++) {
                 const Line *line = &doc->lines[i];
-                if (line->kind == LINE_KEY && strcmp(section_name(doc, line->section), section) == 0)
+                if (line->kind == LINE_KEY && same_section(section_name(doc, line->section), section))
                     at = end_of_key(doc, i) + 1;
             }
         }
     }
-    bool ok = insert_line(doc, at, text);
+    bool inserted = ok && insert_line(doc, at, text);
     free(text);
 
     // Prove the file now holds exactly one more key, reading as intended
-    const char *read_back = ok ? inidoc_get(doc, section, key) : NULL;
-    if (ok && (count_keys(doc) != keys_before + 1 || read_back == NULL || strcmp(read_back, value) != 0)) {
-        remove_line(doc, at);
-        return false;
+    const char *read_back = inserted ? inidoc_get(doc, section, key) : NULL;
+    ok = inserted && count_keys(doc) == keys_before + 1 && read_back != NULL && strcmp(read_back, value) == 0;
+
+    // On failure take back every line added: the key, then a missing section's header and blank line
+    if (!ok) {
+        if (inserted)
+            remove_line(doc, at);
+        while (doc->count > lines_before)
+            remove_line(doc, doc->count - 1);
     }
     return ok;
 }
@@ -438,11 +493,8 @@ void inidoc_free(IniDoc *doc)
 {
     if (doc == NULL)
         return;
-    for (int i = 0; i < doc->count; i++) {
-        free(doc->lines[i].text);
-        free(doc->lines[i].name);
-        free(doc->lines[i].value);
-    }
+    for (int i = 0; i < doc->count; i++)
+        free_line(&doc->lines[i]);
     free(doc->lines);
     free(doc);
 }

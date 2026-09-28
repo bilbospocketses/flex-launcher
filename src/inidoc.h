@@ -7,8 +7,13 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-// inih reads a line into a 200-byte buffer, so a line longer than 199 bytes is split in two
+// inih reads a line into a 200-byte buffer, so it misreads a line longer than 199 bytes: newer
+// versions cut it off and report an error the launcher ignores, older ones read the rest as another line
 #define INIDOC_MAX_LINE 199
+
+// inih reads a section's name into a 50-byte buffer (MAX_SECTION in its ini.c), so it keeps only the
+// first 49 bytes of a longer name, and two names that agree that far are one section to it
+#define INIDOC_MAX_SECTION 49
 
 typedef enum {
     INIDOC_AFTER_LAST_KEY,  // After the section's last key, before any trailing blank or comment lines
