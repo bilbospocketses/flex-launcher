@@ -40,6 +40,48 @@ void quit_svg()
     nsvgDeleteRasterizer(rasterizer);
 }
 
+#define MAX_TITLE_FONTS 16
+
+// Title fonts by point size, for menus whose titles scale with their buttons
+static struct {
+    int size;
+    TTF_Font *font;
+} title_fonts[MAX_TITLE_FONTS];
+static int title_font_count = 0;
+
+// A function to get the title font at a point size, opening it the first time. SDL_ttf 2.0.15
+// cannot resize an open font, so each size is its own; the cache keeps MAX_TITLE_FONTS of them
+// and closes the oldest to make room.
+TTF_Font *title_font(int size)
+{
+    for (int i = 0; i < title_font_count; i++) {
+        if (title_fonts[i].size == size)
+            return title_fonts[i].font;
+    }
+    TTF_Font *font = TTF_OpenFont(config.title_font_path, size);
+    if (font == NULL) {
+        log_error("Could not open the title font at %i pt\n%s", size, TTF_GetError());
+        return NULL;
+    }
+    if (title_font_count == MAX_TITLE_FONTS) {
+        TTF_CloseFont(title_fonts[0].font);
+        memmove(&title_fonts[0], &title_fonts[1], (MAX_TITLE_FONTS - 1) * sizeof(title_fonts[0]));
+        title_font_count--;
+    }
+    title_fonts[title_font_count].size = size;
+    title_fonts[title_font_count].font = font;
+    title_font_count++;
+    return font;
+}
+
+// A function to close every cached title font
+void title_fonts_free(void)
+{
+    for (int i = 0; i < title_font_count; i++)
+        TTF_CloseFont(title_fonts[i].font);
+    title_font_count = 0;
+}
+
 // A function to load the next slideshow background from the struct
 SDL_Surface *load_next_slideshow_background(Slideshow *slideshow, bool transition)
 {
@@ -341,29 +383,31 @@ SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *
             TTF_SizeUTF8(info->font, text_buffer, &w, &h);
         }
 
-        // Shrink mode:
+        // Shrink mode: work out the size that fits from the measured width, never going below
+        // the readable minimum, then cut whatever still does not fit
         else if (info->oversize_mode == OVERSIZE_SHRINK) {
-            int reduced_font_size = (int) info->font_size - 1;
-            reduced_font = TTF_OpenFont(*info->font_path, reduced_font_size);
-            TTF_SizeUTF8(reduced_font, text_buffer, &w, &h);
+            int size = info->font_size * info->max_width / w;
+            if (size < info->min_size)
+                size = info->min_size;
+            if (size > 0 && size < info->font_size) {
+                reduced_font = TTF_OpenFont(*info->font_path, size);
 
-            // Keep trying smaller font until it fits
-            while (w > info->max_width && reduced_font_size > 0) {
-                TTF_CloseFont(reduced_font);
-                reduced_font = NULL;
-                reduced_font_size--;
-                reduced_font = TTF_OpenFont(*info->font_path, reduced_font_size);
-                TTF_SizeUTF8(reduced_font, text_buffer, &w, &h);
+                // The font's own rounding can leave it a pixel or two too wide: step down to the minimum
+                while (reduced_font != NULL) {
+                    TTF_SizeUTF8(reduced_font, text_buffer, &w, &h);
+                    if (w <= info->max_width || size <= info->min_size)
+                        break;
+                    TTF_CloseFont(reduced_font);
+                    reduced_font = TTF_OpenFont(*info->font_path, --size);
+                }
             }
-
-            if (reduced_font_size)
-                output_font = reduced_font;
-            else
-                reduced_font = NULL;
+            if (w > info->max_width) {
+                utf8_truncate(text_buffer, w, info->max_width);
+                TTF_SizeUTF8(reduced_font != NULL ? reduced_font : info->font, text_buffer, &w, &h);
+            }
         }
     }
-    if (reduced_font == NULL)
-        output_font = info->font;
+    output_font = reduced_font != NULL ? reduced_font : info->font;
 
     // Render surface
     SDL_Surface *surface = NULL;

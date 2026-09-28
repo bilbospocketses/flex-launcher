@@ -35,7 +35,7 @@ static bool            columns_set = false; // Columns wins over its older name,
 static const char *mode_settings[][5] = {
     {"Color", "Image", "Slideshow", "Transparent", NULL}, // Background Mode
     {"Blank", "None", "Quit", NULL, NULL},                // OnLaunch
-    {"Truncated", "Shrink", "None", NULL, NULL},          // OversizeMode
+    {"Truncate", "Shrink", "None", NULL, NULL},           // OversizeMode ("Truncated" is read too)
     {"Left", "Right", NULL, NULL, NULL},                  // Clock Alignment
     {"24hr", "12hr", "Auto", NULL, NULL},                 // Clock Format
     {"Big", "Little", "Auto", NULL, NULL}                 // Date Format
@@ -285,8 +285,18 @@ int config_handler(void *user, const char *section, const char *name, const char
             config.title_font_path = strdup(value);
             clean_path(config.title_font_path);
         }
-        else if (MATCH(name, SETTING_TITLE_FONT_SIZE))
-            config.title_font_size = (unsigned int) atoi(value);
+        else if (MATCH(name, SETTING_TITLE_FONT_SIZE)) {
+            SettingValue parsed;
+            if (!setting_parse(setting_def(SET_ID_TITLE_SIZE), value, &parsed))
+                log_error("Invalid %s value '%s' in [Titles] (use a percentage of the button such as 14%%, or a size such as 36), ignoring it",
+                    SETTING_TITLE_FONT_SIZE, value);
+            else if (parsed.percent)
+                config.title_font_size_pct = parsed.number;
+            else {
+                config.title_font_size = (unsigned int) parsed.number;
+                config.title_font_size_pct = 0;
+            }
+        }
         else if (MATCH(name, SETTING_TITLE_FONT_COLOR))
             hex_to_color(value, &config.title_font_color);
         else if (MATCH(name, SETTING_TITLE_OPACITY)) {
@@ -297,12 +307,27 @@ int config_handler(void *user, const char *section, const char *name, const char
             convert_bool(value, &config.title_shadows);
         else if (MATCH(name, SETTING_TITLE_SHADOW_COLOR))
             hex_to_color(value, &config.title_shadow_color);
-        else if (MATCH(name, SETTING_TITLE_OVERSIZE_MODE))
-            parse_mode_setting(MODE_SETTING_OVERSIZE, value, (int*) &config.title_oversize_mode);
+        else if (MATCH(name, SETTING_TITLE_OVERSIZE_MODE)) {
+            // "Truncated" was the only spelling the parser knew; the docs have always said "Truncate"
+            if (MATCH(value, "Truncated"))
+                config.title_oversize_mode = OVERSIZE_TRUNCATE;
+            else
+                parse_mode_setting(MODE_SETTING_OVERSIZE, value, (int*) &config.title_oversize_mode);
+        }
         else if (MATCH(name, SETTING_TITLE_PADDING)) {
-            int title_padding = atoi(value);
-            if (title_padding >= 0)
-                config.title_padding = title_padding;
+            int padding;
+            bool percent;
+            if (!layout_parse_title_padding(value, &padding, &percent))
+                log_error("Invalid %s value '%s' in [Titles] (use a percentage of the button such as 8%%, or px such as 20), ignoring it",
+                    SETTING_TITLE_PADDING, value);
+            else if (percent) {
+                config.title_padding_pct = padding;
+                config.title_padding = 0;
+            }
+            else {
+                config.title_padding = padding;
+                config.title_padding_pct = 0;
+            }
         }
     }
 
@@ -944,8 +969,10 @@ void convert_percent_to_int(char *string, int *result, int max_value)
 // A function to make sure all settings are in their correct range
 void validate_settings(Geometry *geo)
 {
-    if (!config.titles_enabled)
+    if (!config.titles_enabled) {
         config.title_padding = 0;
+        config.title_padding_pct = 0;
+    }
 
     // Convert % opacity settings to 0-255
     if (config.title_opacity[0] != '\0') {
@@ -1021,18 +1048,6 @@ void validate_settings(Geometry *geo)
     // Reduce highlight hpadding to prevent overlaps
     if (config.highlight_hpadding > (config.icon_spacing / 2))
         config.highlight_hpadding = config.icon_spacing / 2;
-
-    // Make sure title padding is in valid range. IconSize is an optional cap now, so the range
-    // is measured against it when set, and against the old fixed default when not.
-    int reference_size = config.icon_size ? (int) config.icon_size : DEFAULT_ICON_SIZE;
-    if (config.title_padding < 0 || config.title_padding > reference_size / 2) {
-        int title_padding = reference_size / 10;
-        log_error("Text padding value %i invalid, changing to %i",
-            config.title_padding, 
-            title_padding
-        );
-        config.title_padding = title_padding;
-    }
 
     // Convert the vertical centre setting to px and check its limits
     int vcenter = INVALID_PERCENT_VALUE;

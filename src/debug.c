@@ -136,12 +136,21 @@ void debug_settings()
     log_debug("======================== Titles ========================\n");
     DEBUG_BOOL(SETTING_TITLES_ENABLED, config.titles_enabled);
     DEBUG_STR(SETTING_TITLE_FONT, config.title_font_path);
-    DEBUG_INT(SETTING_TITLE_FONT_SIZE, config.title_font_size);
+    char title_value[40];
+    if (config.title_font_size_pct)
+        snprintf(title_value, sizeof(title_value), "%i%% of the button", config.title_font_size_pct);
+    else
+        snprintf(title_value, sizeof(title_value), "%u", config.title_font_size);
+    DEBUG_STR(SETTING_TITLE_FONT_SIZE, title_value);
     DEBUG_COLOR(SETTING_TITLE_FONT_COLOR, config.title_font_color);
     DEBUG_BOOL(SETTING_TITLE_SHADOWS, config.title_shadows);
     DEBUG_COLOR(SETTING_TITLE_SHADOW_COLOR, config.title_shadow_color);
     DEBUG_MODE(SETTING_TITLE_OVERSIZE_MODE, MODE_SETTING_OVERSIZE, config.title_oversize_mode);
-    DEBUG_INT(SETTING_TITLE_PADDING, config.title_padding);
+    if (config.title_padding_pct)
+        snprintf(title_value, sizeof(title_value), "%i%% of the button", config.title_padding_pct);
+    else
+        snprintf(title_value, sizeof(title_value), "%i", config.title_padding);
+    DEBUG_STR(SETTING_TITLE_PADDING, title_value);
     log_debug("");
 
     log_debug("====================== Highlight =======================\n");
@@ -205,7 +214,9 @@ void debug_menu_entries(Menu *first_menu, size_t num_menus)
         if (compute_menu_layout(menu, &geometry, why, sizeof(why)))
             log_debug("Layout: cannot be shown: %s", why);
         else {
-            log_debug("Layout: %i x %i grid, %i px buttons", geometry.columns, geometry.rows, geometry.button);
+            char titles[32];
+            describe_titles(&geometry, titles, sizeof(titles));
+            log_debug("Layout: %i x %i grid, %i px buttons, %s", geometry.columns, geometry.rows, geometry.button, titles);
             if (why[0] != '\0')
                 log_debug("Layout note: %s", why);
         }

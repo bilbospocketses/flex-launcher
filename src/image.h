@@ -18,6 +18,7 @@ typedef struct {
     bool shadow;
     SDL_Color *shadow_color;
     int max_width;
+    int min_size; // Shrink mode stops here: the readable minimum
     ModeOversize oversize_mode;
 } TextInfo;
 
@@ -35,3 +36,5 @@ SDL_Texture *load_icon(const char *path, int size);
 SDL_Texture *render_highlight(int width, int height, SDL_Rect *rect);
 SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *text_height);
 SDL_Texture *render_text_texture(const char *text, TextInfo *info, SDL_Rect *rect, int *text_height);
+TTF_Font *title_font(int size);
+void title_fonts_free(void);

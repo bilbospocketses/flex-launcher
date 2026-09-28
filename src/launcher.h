@@ -38,6 +38,8 @@
 #define APPLICATION_WAIT_PERIOD 100
 #define MIN_APPLICATION_TIMEOUT 3
 #define MAX_APPLICATION_TIMEOUT 30
+#define TITLE_MIN_SIZE 0.02F       // The readable minimum title size: 2% of the screen height
+#define TITLE_MEASURE_SIZE 1000    // Point size a title font's line height is measured at
 
 // Special commands
 #define SCMD_SELECT ":select"
@@ -191,7 +193,9 @@ typedef struct {
     int screen_width;
     int screen_height;
     int screen_margin;
-    int font_height;
+    int font_height;    // The fixed FontSize's line height
+    int title_min_size; // The readable minimum title size, in points
+    int title_line_pm;  // The title font's line height per point, in thousandths
     int vcenter; // The VCenter setting in px from the top of the screen
 } Geometry;
 
@@ -202,6 +206,7 @@ typedef struct {
     int button;
     int hpad;
     int vpad;
+    int title_block;
 } Highlight;
 
 // Struct for scroll indicators: left and right for a strip, up and down for a grid
@@ -255,12 +260,14 @@ typedef struct {
     bool titles_enabled;
     char *title_font_path; // Path to title TTF font file
     unsigned int title_font_size;
+    int title_font_size_pct;    // FontSize as a percentage of the button; 0 = the fixed title_font_size
     SDL_Color title_font_color; // Color struct for title text
     bool title_shadows;
     SDL_Color title_shadow_color;
     char title_opacity[PERCENT_MAX_CHARS];
     ModeOversize title_oversize_mode; 
     int title_padding;
+    int title_padding_pct;      // Padding as a percentage of the button; 0 = the fixed title_padding
     bool highlight;
     SDL_Color highlight_fill_color;
     SDL_Color highlight_outline_color;
@@ -317,3 +324,4 @@ void set_draw_color(void);
 void quit(int status);
 void print_version(FILE *stream);
 int compute_menu_layout(const Menu *menu, LayoutGeometry *geometry, char *why, size_t why_size);
+void describe_titles(const LayoutGeometry *geometry, char *out, size_t size);

@@ -31,7 +31,7 @@ static void init_slideshow(void);
 static void init_screensaver(void);
 static void calculate_layout_area(void);
 static int apply_layout(Menu *menu);
-static void render_buttons(Menu *menu, int size);
+static void render_buttons(Menu *menu, const LayoutGeometry *geometry);
 static void place_entries(void);
 static void move_selection(LayoutDirection direction);
 static void load_submenu(const char *submenu);
@@ -58,6 +58,7 @@ Config config = {
     .application_timeout              = DEFAULT_APPLICATION_TIMEOUT * 1000,
     .titles_enabled                   = DEFAULT_TITLES_ENABLED,
     .title_font_size                  = DEFAULT_FONT_SIZE,
+    .title_font_size_pct              = DEFAULT_FONT_SIZE_PERCENT,
     .title_font_color.r               = DEFAULT_TITLE_FONT_COLOR_R,
     .title_font_color.g               = DEFAULT_TITLE_FONT_COLOR_G,
     .title_font_color.b               = DEFAULT_TITLE_FONT_COLOR_B,
@@ -94,7 +95,8 @@ Config config = {
     .highlight_outline_color.a        = DEFAULT_HIGHLIGHT_OUTLINE_COLOR_A,
     .highlight_outline_size           = DEFAULT_HIGHLIGHT_OUTLINE_SIZE,
     .highlight_rx                     = DEFAULT_HIGHLIGHT_CORNER_RADIUS,
-    .title_padding                    = -1,
+    .title_padding                    = 0,
+    .title_padding_pct                = DEFAULT_TITLE_PADDING_PERCENT,
     .max_buttons                      = DEFAULT_MAX_BUTTONS,
     .rows                             = DEFAULT_ROWS,
     .icon_spacing                     = -1,
@@ -186,6 +188,7 @@ SDL_Event event;
 SDL_SysWMinfo wm_info;
 SDL_DisplayMode display_mode;
 TextInfo title_info;
+static TTF_Font *fixed_title_font = NULL; // The title font at the fixed FontSize
 Ticks ticks;
 Geometry geo;
 LayoutGeometry layout;                     // The current menu's layout
@@ -224,6 +227,7 @@ static void init_sdl()
     }
     refresh_period = 1000 / (Uint32) display_mode.refresh_rate;
     geo.screen_margin = (int) (SCREEN_MARGIN * (float) geo.screen_height);
+    geo.title_min_size = (int) (TITLE_MIN_SIZE * (float) geo.screen_height + 0.5F);
 }
 
 // A function to create the window and renderer
@@ -316,6 +320,7 @@ static void init_sdl_ttf()
         .shadow = config.title_shadows,
         .font_path = &config.title_font_path,
         .max_width = 0, // Set per menu to its button size, in render_buttons
+        .min_size = geo.title_min_size,
         .oversize_mode = config.title_oversize_mode,
         .color = &config.title_font_color
     };
@@ -329,7 +334,15 @@ static void init_sdl_ttf()
     int error = load_font(&title_info, FILENAME_DEFAULT_FONT);
     if (error)
         log_fatal("Could not load title font");
+    fixed_title_font = title_info.font;
     geo.font_height = config.titles_enabled ? TTF_FontHeight(title_info.font) : 0;
+
+    // A percentage FontSize sizes each menu's titles from its buttons, so measure the font's line
+    // height per point once, at a large size, for the layout to reserve room for any size
+    TTF_Font *probe = TTF_OpenFont(config.title_font_path, TITLE_MEASURE_SIZE);
+    geo.title_line_pm = probe != NULL ? TTF_FontHeight(probe) * 1000 / TITLE_MEASURE_SIZE : 1500;
+    if (probe != NULL)
+        TTF_CloseFont(probe);
 }
 
 // A function to close subsystems and free memory before quitting
@@ -352,6 +365,7 @@ static void cleanup()
     // Quit subsystems
     SDL_Quit();
     IMG_Quit();
+    title_fonts_free();
     TTF_Quit();
     quit_svg();
     if (config.background_mode == BACKGROUND_SLIDESHOW)
@@ -651,16 +665,31 @@ int compute_menu_layout(const Menu *menu, LayoutGeometry *geometry, char *why, s
     LayoutOverrides global = { (int) config.rows, (int) config.max_buttons, (int) config.icon_size };
     LayoutOverrides builtin = { DEFAULT_ROWS, DEFAULT_MAX_BUTTONS, 0 };
     LayoutOverrides effective = layout_resolve(menu->overrides, global, builtin);
+    bool titles = config.titles_enabled;
     LayoutParams params = {
-        .rows        = effective.rows,
-        .columns     = effective.columns,
-        .icon_cap    = effective.icon_cap,
-        .spacing     = config.icon_spacing,
-        .title_block = config.title_padding + geo.font_height,
-        .hpad        = config.highlight_hpadding,
-        .vpad        = config.highlight_vpadding
+        .rows              = effective.rows,
+        .columns           = effective.columns,
+        .icon_cap          = effective.icon_cap,
+        .spacing           = config.icon_spacing,
+        .title_block       = titles && config.title_font_size_pct == 0 ? geo.font_height : 0,
+        .hpad              = config.highlight_hpadding,
+        .vpad              = config.highlight_vpadding,
+        .title_padding     = titles ? config.title_padding : 0,
+        .title_padding_pct = titles ? config.title_padding_pct : 0,
+        .title_size_pct    = titles ? config.title_font_size_pct : 0,
+        .title_min_size    = geo.title_min_size,
+        .title_line_pm     = geo.title_line_pm
     };
     return layout_compute(&params, &layout_area, (int) menu->num_entries, geometry, why, why_size);
+}
+
+// A function to describe a menu's titles for the log: "36 pt titles", or "no titles"
+void describe_titles(const LayoutGeometry *geometry, char *out, size_t size)
+{
+    if (!config.titles_enabled)
+        snprintf(out, size, "no titles");
+    else
+        snprintf(out, size, "%i pt titles", geometry->title_size > 0 ? geometry->title_size : (int) config.title_font_size);
 }
 
 // A function to lay out the current menu: size its buttons for its grid, re-render its
@@ -676,17 +705,19 @@ static int apply_layout(Menu *menu)
     // A reduced grid is reported when the menu is first laid out at this size, not on every load
     if (why[0] != '\0' && menu->rendered_size != layout.button)
         log_error("Menu '%s': %s", menu->name, why);
-    log_debug("Menu '%s': %i x %i grid, %i px buttons", menu->name, layout.columns, layout.rows, layout.button);
+    char titles[32];
+    describe_titles(&layout, titles, sizeof(titles));
+    log_debug("Menu '%s': %i x %i grid, %i px buttons, %s", menu->name, layout.columns, layout.rows, layout.button, titles);
 
     if (menu->rendered_size != layout.button) {
-        render_buttons(menu, layout.button);
+        render_buttons(menu, &layout);
         menu->rendered_size = layout.button;
     }
-    if (config.highlight && (highlight->button != layout.button ||
-    highlight->hpad != layout.hpad || highlight->vpad != layout.vpad)) {
+    if (config.highlight && (highlight->button != layout.button || highlight->hpad != layout.hpad ||
+    highlight->vpad != layout.vpad || highlight->title_block != layout.title_block)) {
         if (highlight->texture != NULL)
             SDL_DestroyTexture(highlight->texture);
-        int button_height = layout.button + config.title_padding + geo.font_height;
+        int button_height = layout.button + layout.title_block;
         highlight->texture = render_highlight(layout.button + 2*layout.hpad,
                                  button_height + 2*layout.vpad,
                                  &highlight->rect
@@ -694,16 +725,29 @@ static int apply_layout(Menu *menu)
         highlight->button = layout.button;
         highlight->hpad = layout.hpad;
         highlight->vpad = layout.vpad;
+        highlight->title_block = layout.title_block;
     }
     menu->position = layout_clamp(&layout, (int) menu->num_entries, menu->position);
     place_entries();
     return 0;
 }
 
-// A function to render all buttons (icon and title) of a menu at a button size
-static void render_buttons(Menu *menu, int size)
+// A function to render all buttons (icon and title) of a menu for its layout: the icons at the
+// button size, and the titles in the menu's own title size
+static void render_buttons(Menu *menu, const LayoutGeometry *geometry)
 {
+    int size = geometry->button;
     title_info.max_width = size;
+    title_info.font = fixed_title_font;
+    title_info.font_size = (int) config.title_font_size;
+    if (geometry->title_size > 0) {
+        TTF_Font *font = title_font(geometry->title_size);
+        if (font != NULL) {
+            title_info.font = font;
+            title_info.font_size = geometry->title_size;
+        }
+    }
+    int line_height = TTF_FontHeight(title_info.font);
     for (unsigned int i = 0; i < menu->num_entries; i++) {
         Entry *entry = menu->items[i];
         if (entry->icon != NULL)
@@ -717,8 +761,8 @@ static void render_buttons(Menu *menu, int size)
             if (entry->title_texture != NULL)
                 SDL_DestroyTexture(entry->title_texture);
             entry->title_texture = render_text_texture(entry->title, &title_info, &entry->text_rect, &h);
-            entry->title_offset = (config.title_oversize_mode == OVERSIZE_SHRINK && h != geo.font_height)
-                                  ? (geo.font_height - h) / 2 : 0;
+            entry->title_offset = (config.title_oversize_mode == OVERSIZE_SHRINK && h != line_height)
+                                  ? (line_height - h) / 2 : 0;
         }
     }
 }
@@ -733,7 +777,7 @@ static void place_entries()
             continue;
         entry->icon_rect = (SDL_Rect) { x, y, layout.button, layout.button };
         entry->text_rect.x = x + (layout.button - entry->text_rect.w) / 2;
-        entry->text_rect.y = y + layout.button + entry->title_offset + config.title_padding;
+        entry->text_rect.y = y + layout.button + entry->title_offset + layout.title_padding;
     }
     current_entry = current_menu->items[current_menu->position.selected];
     if (config.highlight) {
@@ -1327,7 +1371,7 @@ int main(int argc, char *argv[])
     // Allocate the highlight; its texture is rendered for each button size as menus load
     if (config.highlight) {
         highlight = malloc(sizeof(Highlight));
-        *highlight = (Highlight) { .texture = NULL, .button = 0, .hpad = 0, .vpad = 0 };
+        *highlight = (Highlight) { .texture = NULL, .button = 0, .hpad = 0, .vpad = 0, .title_block = 0 };
     }
 
     // Render scroll indicators
