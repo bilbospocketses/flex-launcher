@@ -280,15 +280,29 @@ jobs:
       - name: Build the test image
         run: docker build -t streamflex-test tests/headless
 
+      # Both passes run even when the first fails, so one run shows every failure; the step then
+      # fails if either did
       - name: Run the headless checks
+        run: |
+          mkdir -p "$RUNNER_TEMP/headless"
+          status=0
+          docker run --rm --security-opt seccomp=unconfined \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/headless:/out" \
+            streamflex-test bash /src/tests/headless/run.sh ci || status=1
+          docker run --rm --security-opt seccomp=unconfined \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/headless:/out" \
+            streamflex-test bash /src/tests/headless/run.sh ci-scrollfail scrollfail || status=1
+          exit $status
+
+      # Every fixture that quits by itself, again with LeakSanitizer on; runs whatever the step
+      # before it found, so its result is never lost to an unrelated failure
+      - name: Look for memory leaks
+        if: success() || failure()
         run: |
           mkdir -p "$RUNNER_TEMP/headless"
           docker run --rm --security-opt seccomp=unconfined \
             -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/headless:/out" \
-            streamflex-test bash /src/tests/headless/run.sh ci
-          docker run --rm --security-opt seccomp=unconfined \
-            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/headless:/out" \
-            streamflex-test bash /src/tests/headless/run.sh ci-scrollfail scrollfail
+            streamflex-test bash /src/tests/headless/run.sh ci-leaks leaks
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         name: Upload the logs of a failed run
@@ -312,7 +326,7 @@ jobs:
           echo "Build results: $RESULTS"
           for r in $RESULTS; do
             if [ "$r" != "success" ]; then
-              echo "::error::A platform build did not succeed ($r)"
+              echo "::error::A required job did not succeed ($r)"
               exit 1
             fi
           done

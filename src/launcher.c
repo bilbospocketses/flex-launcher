@@ -689,8 +689,10 @@ void reload_background()
     if (slideshow != NULL) {
         if (slideshow->transition_surface != NULL)
             SDL_FreeSurface(slideshow->transition_surface);
-        if (slideshow->transition_texture != NULL)
+        if (slideshow->transition_texture != NULL) {
+            log_debug("Slideshow: dropped the fade in progress");
             SDL_DestroyTexture(slideshow->transition_texture);
+        }
         quit_slideshow();
     }
     state.slideshow_transition = false;

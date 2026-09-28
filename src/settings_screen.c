@@ -458,6 +458,12 @@ static void follow_preview(void)
 static int decode_image(void *data)
 {
     UNUSED(data);
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: it slows the decode down, so a key can land during it
+    const char *delay = getenv("STREAMFLEX_TEST_DECODE_DELAY_MS");
+    if (delay != NULL)
+        SDL_Delay((Uint32) atoi(delay));
+#endif
     decode_surface = IMG_Load(decode_path);
     SDL_AtomicSet(&decode_done, 1);
     return 0;
@@ -520,6 +526,7 @@ static void poll_decode(bool wait)
                 SDL_DestroyTexture(background_override);
             background_override = texture;
             copy_string(shown_path, decode_path, sizeof(shown_path));
+            log_debug("Settings: the preview shows %s", shown_path);
         }
     }
     if (decode_surface != NULL)
@@ -843,8 +850,10 @@ static void handle_browser_command(const char *command)
             // opens. An image highlighted before may still be decoding, with this one next.
             if (decode_thread != NULL && strcmp(decode_path, chosen) != 0)
                 poll_decode(true);
-            if (decode_thread != NULL && strcmp(decode_path, chosen) == 0)
+            if (decode_thread != NULL && strcmp(decode_path, chosen) == 0) {
+                log_debug("Settings: OK waited for the decode of %s", chosen);
                 poll_decode(true);
+            }
         }
         if (strcmp(chosen, broken_path) == 0) {
             snprintf(browser_note, sizeof(browser_note), "%s", CANNOT_OPEN);
@@ -1088,8 +1097,11 @@ void settings_open(void)
         preview = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, geo.screen_width, geo.screen_height);
         if (preview == NULL)
             log_error("Settings: no preview texture, the menu is drawn behind the settings instead\n%s", SDL_GetError());
-        else
+        else {
             SDL_SetTextureBlendMode(preview, SDL_BLENDMODE_NONE);
+            log_debug("Settings: the preview is at %i,%i, %i x %i", preview_rect.x, preview_rect.y,
+                preview_rect.w, preview_rect.h);
+        }
     }
     log_debug("Settings opened over menu '%s'", origin->name);
 }
