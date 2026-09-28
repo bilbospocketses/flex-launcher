@@ -73,16 +73,19 @@ run_quick() {
 }
 
 # A config left running: send the keys a second apart, then quit it with SIGTERM (SDL turns
-# that into a quit event)
+# that into a quit event). A launcher that has not quit 10 s after TERM is killed (exit 137).
 run_keys() {
     local name=$1; shift
     local args; mapfile -t args < <(config_args "$name")
     rm -f "$LOG"
     "${TESTER[@]}" "$exe" "${args[@]}" -d > "$out/$name.out" 2> "$out/$name.err" &
-    local pid=$!
+    local pid=$! i
     sleep 4
     for k in "$@"; do xdotool key "$k"; sleep 1; done
-    kill -TERM "$pid" 2> /dev/null; wait "$pid"; echo $? > "$out/$name.code"
+    kill -TERM "$pid" 2> /dev/null
+    for i in $(seq 50); do kill -0 "$pid" 2> /dev/null || break; sleep 0.2; done
+    kill -KILL "$pid" 2> /dev/null
+    wait "$pid"; echo $? > "$out/$name.code"
     cp "$LOG" "$out/$name.log" 2> /dev/null || : > "$out/$name.log"
 }
 

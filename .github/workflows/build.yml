@@ -269,6 +269,8 @@ jobs:
   headless:
     name: Headless
     runs-on: ubuntu-24.04
+    # A backstop for a hang the harness helpers' own timeouts miss (GitHub's default is 6 hours)
+    timeout-minutes: 30
     steps:
       - name: Checkout Git repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
