@@ -91,6 +91,7 @@ static SDL_Surface *decode_surface = NULL;  // Its result; NULL when it failed
 static char wanted_path[BROWSER_PATH_MAX];  // What the preview should show; "" = the real background
 static char shown_path[BROWSER_PATH_MAX];   // What background_override holds
 static char broken_path[BROWSER_PATH_MAX];  // The last image that could not be decoded
+static const char CANNOT_OPEN[] = "This image cannot be opened";
 
 // A function to return the smaller of two ints
 static int min_int(int a, int b)
@@ -486,16 +487,31 @@ static void want_preview_image(const char *path)
     start_decode();
 }
 
-// A function to pick up a finished decode: show it if it is still wanted, then start the next
-static void poll_decode(void)
+// A function to say what the caption says while the browser is open: why the last OK did nothing,
+// else that the highlighted image cannot be opened, else why the highlighted row is disabled
+static const char *browser_caption(void)
 {
-    if (decode_thread == NULL || !SDL_AtomicGet(&decode_done))
+    const BrowserRow *row = browser_row(browser, browser_cursor(browser));
+    if (browser_note[0] != '\0')
+        return browser_note;
+    if (row != NULL && row->kind == BROWSER_ROW_IMAGE && strcmp(row->path, broken_path) == 0)
+        return CANNOT_OPEN;
+    return row != NULL && row->why != NULL ? row->why : "";
+}
+
+// A function to pick up a finished decode (with `wait`, the one in flight, waiting for it): show
+// it if it is still wanted, then start the next
+static void poll_decode(bool wait)
+{
+    if (decode_thread == NULL || (!wait && !SDL_AtomicGet(&decode_done)))
         return;
     SDL_WaitThread(decode_thread, NULL);
     decode_thread = NULL;
     if (decode_surface == NULL) {
         copy_string(broken_path, decode_path, sizeof(broken_path));
         log_debug("Settings: could not open %s", decode_path);
+        if (browser != NULL && strcmp(browser_caption(), CANNOT_OPEN) == 0)
+            log_debug("Settings: the caption says %s for %s", CANNOT_OPEN, decode_path);
     }
     else if (strcmp(decode_path, wanted_path) == 0) {
         SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, decode_surface);
@@ -822,8 +838,16 @@ static void handle_browser_command(const char *command)
     if (result == BROWSER_CHOSEN) {
         char chosen[BROWSER_PATH_MAX];
         copy_string(chosen, browser_chosen(browser), sizeof(chosen));
+        if (browser_slot->def->id == SET_ID_BACKGROUND_IMAGE) {
+            // OK can come before the image's decode has finished: wait for it, to know whether it
+            // opens. An image highlighted before may still be decoding, with this one next.
+            if (decode_thread != NULL && strcmp(decode_path, chosen) != 0)
+                poll_decode(true);
+            if (decode_thread != NULL && strcmp(decode_path, chosen) == 0)
+                poll_decode(true);
+        }
         if (strcmp(chosen, broken_path) == 0) {
-            snprintf(browser_note, sizeof(browser_note), "This image cannot be opened");
+            snprintf(browser_note, sizeof(browser_note), "%s", CANNOT_OPEN);
             log_debug("Settings: %s: %s", browser_note, chosen);
             return;
         }
@@ -987,11 +1011,7 @@ static void draw_caption(void)
         layout.columns, layout.rows, layout.button, titles, reduced ? " (reduced to fit the screen)" : "");
     int y = preview_rect.y + preview_rect.h + margin / 2;
     draw_text(font_small, caption, preview_rect.x, y, preview_rect.w, ALPHA_VALUE, false);
-    const char *note = settings_notice(model);
-    if (browser != NULL) {
-        const BrowserRow *row = browser_row(browser, browser_cursor(browser));
-        note = browser_note[0] != '\0' ? browser_note : (row != NULL && row->why != NULL ? row->why : "");
-    }
+    const char *note = browser != NULL ? browser_caption() : settings_notice(model);
     draw_text(font_small, note, preview_rect.x, y + TTF_FontHeight(font_small), preview_rect.w, 255, false);
 }
 
@@ -1000,7 +1020,7 @@ void settings_draw(void)
 {
     if (model == NULL)
         return;
-    poll_decode();
+    poll_decode(false);
     if (preview != NULL) {
         SDL_SetRenderTarget(renderer, preview);
         draw_scene(true);

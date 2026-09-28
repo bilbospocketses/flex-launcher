@@ -68,3 +68,14 @@ grep -q "Settings: Can't open locked: permission denied" "$out/f60-locked.log" \
     && grep -q 'Settings: nothing changed' "$out/f60-locked.log" && sanitizer_clean f60-locked && ok=0
 result "settings: a folder that cannot be opened says why" $ok
 grep -E "Settings: (browsing|Can't)" "$out/f60-locked.log" | sed 's/^/      /'
+
+# Images that only look like pictures (~/broken): the browser opens on a.png, whose failed decode
+# puts "cannot be opened" in the caption with no key pressed; Down moves to b.png, whose OK refuses
+run_keys f60-broken Menu Return Down Return Down Return Menu
+ok=1
+grep -q 'Settings: the caption says This image cannot be opened for /home/tester/broken/a.png' "$out/f60-broken.log" \
+    && grep -q 'Settings: This image cannot be opened: /home/tester/broken/b.png' "$out/f60-broken.log" \
+    && ! grep -q 'Settings: chose' "$out/f60-broken.log" && grep -q 'Settings: nothing changed' "$out/f60-broken.log" \
+    && sanitizer_clean f60-broken && ok=0
+result "settings: a broken image says so as soon as it is highlighted, and cannot be chosen" $ok
+grep -E 'Settings: (browsing|could not|the caption|This image|chose)' "$out/f60-broken.log" | sed 's/^/      /'
