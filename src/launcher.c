@@ -1399,6 +1399,7 @@ void quit(int status)
     if (config.quit_cmd != NULL) {
         execute_command(config.quit_cmd);
         free(config.quit_cmd);
+        config.quit_cmd = NULL;   // cleanup() frees it too
     }
     cleanup();
     exit(status);
