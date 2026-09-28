@@ -1,0 +1,470 @@
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include "fileio.h"
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+#else
+#include <dirent.h>
+#include <limits.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#endif
+
+static char last_error[160] = "";
+
+// A function to remember why the last call failed
+static void set_error(const char *reason)
+{
+    snprintf(last_error, sizeof(last_error), "%s", reason);
+}
+
+// A function to tell the caller why the last call failed
+const char *fileio_last_error(void)
+{
+    return last_error;
+}
+
+// A function to describe a C library error in a few words
+static void set_errno_error(int code)
+{
+    switch (code) {
+        case EACCES:
+        case EPERM:
+            set_error("permission denied");
+            break;
+#ifdef EROFS
+        case EROFS:
+            set_error("the file system is read-only");
+            break;
+#endif
+        case ENOSPC:
+            set_error("the disk is full");
+            break;
+        case ENOENT:
+        case ENOTDIR:
+            set_error("not found");
+            break;
+        default:
+            set_error(strerror(code));
+    }
+}
+
+#ifdef _WIN32
+// A function to describe a Windows error code in a few words
+static void set_windows_error(DWORD code)
+{
+    char text[64];
+    switch (code) {
+        case ERROR_ACCESS_DENIED:
+            set_error("permission denied");
+            break;
+        case ERROR_SHARING_VIOLATION:
+        case ERROR_LOCK_VIOLATION:
+            set_error("the file is in use by another program");
+            break;
+        case ERROR_DISK_FULL:
+        case ERROR_HANDLE_DISK_FULL:
+            set_error("the disk is full");
+            break;
+        case ERROR_FILE_NOT_FOUND:
+        case ERROR_PATH_NOT_FOUND:
+            set_error("not found");
+            break;
+        case ERROR_WRITE_PROTECT:
+            set_error("the disk is write-protected");
+            break;
+        default:
+            snprintf(text, sizeof(text), "Windows error %lu", (unsigned long) code);
+            set_error(text);
+    }
+}
+
+// A function to convert a UTF-8 string to a new UTF-16 one
+static wchar_t *to_wide(const char *text)
+{
+    int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, NULL, 0);
+    if (count <= 0) {
+        set_error("the path is not valid UTF-8");
+        return NULL;
+    }
+    wchar_t *wide = malloc((size_t) count * sizeof(wchar_t));
+    if (wide != NULL)
+        MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, count);
+    return wide;
+}
+
+// A function to convert a UTF-16 string to a new UTF-8 one
+static char *to_utf8(const wchar_t *wide)
+{
+    int count = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
+    if (count <= 0)
+        return NULL;
+    char *text = malloc((size_t) count);
+    if (text != NULL)
+        WideCharToMultiByte(CP_UTF8, 0, wide, -1, text, count, NULL, NULL);
+    return text;
+}
+
+// A function to give other Windows code a UTF-16 copy of a UTF-8 string, such as a command to launch
+wchar_t *fileio_wide(const char *text)
+{
+    return to_wide(text);
+}
+#endif
+
+// A function to open a file whose path is UTF-8
+FILE *fileio_open(const char *path, const char *mode)
+{
+#ifdef _WIN32
+    wchar_t *wide_path = to_wide(path);
+    wchar_t *wide_mode = to_wide(mode);
+    FILE *file = NULL;
+    if (wide_path != NULL && wide_mode != NULL) {
+        file = _wfopen(wide_path, wide_mode);
+        if (file == NULL)
+            set_errno_error(errno);
+    }
+    free(wide_path);
+    free(wide_mode);
+    return file;
+#else
+    FILE *file = fopen(path, mode);
+    if (file == NULL)
+        set_errno_error(errno);
+    return file;
+#endif
+}
+
+// A function to tell whether a file or folder exists and can be read
+bool fileio_exists(const char *path)
+{
+#ifdef _WIN32
+    wchar_t *wide = to_wide(path);
+    bool exists = wide != NULL && _waccess(wide, 4) == 0;
+    free(wide);
+    return exists;
+#else
+    return access(path, R_OK) == 0;
+#endif
+}
+
+// A function to tell whether a path is a folder
+bool fileio_is_dir(const char *path)
+{
+#ifdef _WIN32
+    wchar_t *wide = to_wide(path);
+    DWORD attributes = wide != NULL ? GetFileAttributesW(wide) : INVALID_FILE_ATTRIBUTES;
+    free(wide);
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY);
+#else
+    struct stat info;
+    return stat(path, &info) == 0 && S_ISDIR(info.st_mode);
+#endif
+}
+
+// A function to tell whether an existing file can be opened for writing
+bool fileio_is_writable(const char *path)
+{
+#ifdef _WIN32
+    wchar_t *wide = to_wide(path);
+    if (wide == NULL)
+        return false;
+    HANDLE handle = CreateFileW(wide, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    free(wide);
+    if (handle == INVALID_HANDLE_VALUE) {
+        DWORD code = GetLastError();
+
+        // Another program holding it is a moment's wait, which fileio_replace() handles
+        if (code == ERROR_SHARING_VIOLATION || code == ERROR_LOCK_VIOLATION)
+            return true;
+        set_windows_error(code);
+        return false;
+    }
+    CloseHandle(handle);
+    return true;
+#else
+    if (access(path, W_OK) == 0)
+        return true;
+    set_errno_error(errno);
+    return false;
+#endif
+}
+
+// A function to read a whole file into a new NUL-terminated buffer
+char *fileio_read_all(const char *path, size_t *length)
+{
+    FILE *file = fileio_open(path, "rb");
+    if (file == NULL)
+        return NULL;
+    size_t capacity = 4096;
+    size_t used = 0;
+    char *buffer = malloc(capacity + 1);
+    while (buffer != NULL) {
+        used += fread(buffer + used, 1, capacity - used, file);
+        if (used < capacity)
+            break;
+        capacity *= 2;
+        char *bigger = realloc(buffer, capacity + 1);
+        if (bigger == NULL) {
+            free(buffer);
+            buffer = NULL;
+        }
+        else
+            buffer = bigger;
+    }
+    bool failed = ferror(file) != 0;
+    fclose(file);
+    if (buffer == NULL || failed) {
+        free(buffer);
+        set_error(failed ? "the file could not be read" : "out of memory");
+        return NULL;
+    }
+    buffer[used] = '\0';
+    if (length != NULL)
+        *length = used;
+    return buffer;
+}
+
+// A function to write a whole file and flush it to the disk before closing it
+bool fileio_write_all(const char *path, const char *data, size_t length)
+{
+    FILE *file = fileio_open(path, "wb");
+    if (file == NULL)
+        return false;
+    bool ok = fwrite(data, 1, length, file) == length && fflush(file) == 0;
+#ifdef _WIN32
+    ok = ok && _commit(_fileno(file)) == 0;
+#else
+    ok = ok && fsync(fileno(file)) == 0;
+#endif
+    if (!ok)
+        set_errno_error(errno);
+    if (fclose(file) != 0 && ok) {
+        set_errno_error(errno);
+        ok = false;
+    }
+    return ok;
+}
+
+// A function to copy a file (config files are small, so it goes through memory)
+bool fileio_copy(const char *from, const char *to)
+{
+    size_t length = 0;
+    char *data = fileio_read_all(from, &length);
+    if (data == NULL)
+        return false;
+    bool ok = fileio_write_all(to, data, length);
+    free(data);
+    return ok;
+}
+
+// A function to put one file in place of another in a single step. On Windows, antivirus
+// scanners and indexers open a file that has just changed, and the replace is refused while
+// they hold it, so it is tried again for about a second.
+bool fileio_replace(const char *from, const char *to)
+{
+#ifdef _WIN32
+    wchar_t *wide_from = to_wide(from);
+    wchar_t *wide_to = to_wide(to);
+    bool ok = false;
+    for (int attempt = 0; wide_from != NULL && wide_to != NULL && attempt < FILEIO_REPLACE_ATTEMPTS; attempt++) {
+        if (MoveFileExW(wide_from, wide_to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            ok = true;
+            break;
+        }
+        DWORD code = GetLastError();
+        set_windows_error(code);
+        if (code != ERROR_SHARING_VIOLATION && code != ERROR_LOCK_VIOLATION && code != ERROR_ACCESS_DENIED)
+            break;
+        Sleep(FILEIO_REPLACE_WAIT_MS);
+    }
+    free(wide_from);
+    free(wide_to);
+    return ok;
+#else
+    // The new file takes the old one's permission bits
+    struct stat info;
+    if (stat(to, &info) == 0)
+        chmod(from, info.st_mode & 07777);
+    if (rename(from, to) != 0) {
+        set_errno_error(errno);
+        return false;
+    }
+    return true;
+#endif
+}
+
+// A function to delete a file
+bool fileio_remove(const char *path)
+{
+#ifdef _WIN32
+    wchar_t *wide = to_wide(path);
+    bool ok = wide != NULL && DeleteFileW(wide);
+    if (wide != NULL && !ok)
+        set_windows_error(GetLastError());
+    free(wide);
+    return ok;
+#else
+    if (remove(path) == 0)
+        return true;
+    set_errno_error(errno);
+    return false;
+#endif
+}
+
+// A function to make one folder, which may exist already
+static bool make_dir(const char *path)
+{
+#ifdef _WIN32
+    wchar_t *wide = to_wide(path);
+    bool ok = wide != NULL && (CreateDirectoryW(wide, NULL) || GetLastError() == ERROR_ALREADY_EXISTS);
+    if (wide != NULL && !ok)
+        set_windows_error(GetLastError());
+    free(wide);
+    return ok;
+#else
+    if (mkdir(path, 0755) == 0 || errno == EEXIST)
+        return true;
+    set_errno_error(errno);
+    return false;
+#endif
+}
+
+// A function to make a folder and every folder above it that is missing
+bool fileio_make_dirs(const char *path)
+{
+    size_t length = strlen(path);
+    char *buffer = malloc(length + 1);
+    if (buffer == NULL)
+        return false;
+    memcpy(buffer, path, length + 1);
+
+    // Make each parent in turn: cut the path at each separator, skipping a leading one ("/")
+    // and a drive's ("C:\")
+    for (size_t i = 1; i < length; i++) {
+        if ((buffer[i] == '/' || buffer[i] == '\\') && buffer[i - 1] != ':') {
+            char separator = buffer[i];
+            buffer[i] = '\0';
+            if (!make_dir(buffer)) {
+                free(buffer);
+                return false;
+            }
+            buffer[i] = separator;
+        }
+    }
+    bool ok = make_dir(buffer);
+    free(buffer);
+    return ok;
+}
+
+// A function to find the file a path really names: on Linux a symbolic link is followed, so a
+// save writes the file it points to and leaves the link in place
+bool fileio_real_path(const char *path, char *out, size_t size)
+{
+#ifdef _WIN32
+    snprintf(out, size, "%s", path);
+    return true;
+#else
+    char resolved[PATH_MAX];
+    if (realpath(path, resolved) == NULL) {
+        snprintf(out, size, "%s", path);
+        return false;
+    }
+    snprintf(out, size, "%s", resolved);
+    return true;
+#endif
+}
+
+// A function to add one entry to a growing list; the list takes over `name`
+static void add_entry(FileioEntry **entries, int *count, int *capacity, char *name, bool is_dir, bool hidden)
+{
+    if (name == NULL)
+        return;
+    if (*count == *capacity) {
+        int grown = *capacity ? *capacity * 2 : 32;
+        FileioEntry *bigger = realloc(*entries, (size_t) grown * sizeof(FileioEntry));
+        if (bigger == NULL) {
+            free(name);
+            return;
+        }
+        *entries = bigger;
+        *capacity = grown;
+    }
+    (*entries)[*count] = (FileioEntry) { .name = name, .is_dir = is_dir, .hidden = hidden };
+    (*count)++;
+}
+
+// A function to list a folder's files and folders, without "." and ".."
+int fileio_list(const char *folder, FileioEntry **entries)
+{
+    int count = 0;
+    int capacity = 0;
+    *entries = NULL;
+#ifdef _WIN32
+    size_t length = strlen(folder);
+    char *pattern = malloc(length + 3);
+    if (pattern == NULL)
+        return -1;
+    bool separator = length > 0 && (folder[length - 1] == '\\' || folder[length - 1] == '/');
+    snprintf(pattern, length + 3, "%s%s*", folder, separator ? "" : "\\");
+    wchar_t *wide = to_wide(pattern);
+    free(pattern);
+    if (wide == NULL)
+        return -1;
+    WIN32_FIND_DATAW data;
+    HANDLE handle = FindFirstFileW(wide, &data);
+    free(wide);
+    if (handle == INVALID_HANDLE_VALUE) {
+        DWORD code = GetLastError();
+        if (code == ERROR_FILE_NOT_FOUND)
+            return 0;
+        set_windows_error(code);
+        return -1;
+    }
+    do {
+        if (wcscmp(data.cFileName, L".") == 0 || wcscmp(data.cFileName, L"..") == 0)
+            continue;
+        add_entry(entries, &count, &capacity, to_utf8(data.cFileName),
+                  (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0,
+                  (data.dwFileAttributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)) != 0);
+    } while (FindNextFileW(handle, &data));
+    FindClose(handle);
+#else
+    DIR *dir = opendir(folder);
+    if (dir == NULL) {
+        set_errno_error(errno);
+        return -1;
+    }
+    size_t folder_length = strlen(folder);
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+
+        // d_type is DT_UNKNOWN on some file systems, and a link to a folder should open like one
+        size_t size = folder_length + strlen(entry->d_name) + 2;
+        char *full = malloc(size);
+        struct stat info;
+        bool is_dir = false;
+        if (full != NULL) {
+            snprintf(full, size, "%s/%s", folder, entry->d_name);
+            is_dir = stat(full, &info) == 0 && S_ISDIR(info.st_mode);
+            free(full);
+        }
+        add_entry(entries, &count, &capacity, strdup(entry->d_name), is_dir, entry->d_name[0] == '.');
+    }
+    closedir(dir);
+#endif
+    return count;
+}
+
+// A function to free a list from fileio_list
+void fileio_free_list(FileioEntry *entries, int count)
+{
+    for (int i = 0; i < count; i++)
+        free(entries[i].name);
+    free(entries);
+}

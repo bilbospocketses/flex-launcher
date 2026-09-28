@@ -8,6 +8,7 @@
 #include <launcher_config.h>
 #include "util.h"
 #include "debug.h"
+#include "fileio.h"
 #include "platform/platform.h"
 #ifdef __unix__
 #include "platform/unix.h"
@@ -33,7 +34,7 @@ static int init_log()
 #endif
 
     // Open log
-    log_file = fopen(log_file_path, "wb");
+    log_file = fileio_open(log_file_path, "wb");
     if (log_file == NULL) {
 #ifdef __unix__
         printf("Failed to create log file");

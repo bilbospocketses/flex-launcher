@@ -11,6 +11,7 @@
 #include <launcher_config.h>
 #include "util.h"
 #include "library.h"
+#include "fileio.h"
 #include "debug.h"
 #include "platform/platform.h"
 #include <ini.h>
@@ -119,7 +120,7 @@ void handle_arguments(int argc, char *argv[], char **config_file_path)
 // A function to parse the config file and store the settings into the config struct
 void parse_config_file(const char *config_file_path)
 {
-    FILE *file = fopen(config_file_path, "r");
+    FILE *file = fileio_open(config_file_path, "r");
     if (file == NULL)
         log_fatal("Could not open config file");
     int error = ini_parse_file(file, config_handler, NULL);

@@ -8,6 +8,11 @@ add_executable(test_utf8 test_utf8.c "${PROJECT_SOURCE_DIR}/src/utf8.c")
 target_include_directories(test_utf8 PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME utf8 COMMAND test_utf8)
 
+# Unit tests for UTF-8 file access (non-ASCII names, the replace and its retry on Windows)
+add_executable(test_fileio test_fileio.c "${PROJECT_SOURCE_DIR}/src/fileio.c")
+target_include_directories(test_fileio PRIVATE "${PROJECT_SOURCE_DIR}/src")
+add_test(NAME fileio COMMAND test_fileio)
+
 # A function to link inih the way the launcher does
 function(link_inih target)
   if (UNIX)
@@ -19,7 +24,7 @@ function(link_inih target)
 endfunction()
 
 # Unit tests for the icon library's manifest reader. library.c must stay free of SDL, so it links with inih alone.
-add_executable(test_library test_library.c "${PROJECT_SOURCE_DIR}/src/library.c")
+add_executable(test_library test_library.c "${PROJECT_SOURCE_DIR}/src/library.c" "${PROJECT_SOURCE_DIR}/src/fileio.c")
 target_include_directories(test_library PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_compile_definitions(test_library PRIVATE LIBRARY_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/library")
 link_inih(test_library)

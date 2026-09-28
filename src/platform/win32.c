@@ -12,6 +12,7 @@
 #include "platform.h"
 #include "../util.h"
 #include "../debug.h"
+#include "../fileio.h"
 #include "slideshow.h"
 
 static void parse_command(char *cmd, char *file, size_t file_size, char **params);
@@ -29,21 +30,13 @@ UINT exit_hotkey                = 0;
 // A function to determine if a file exists on the filesystem
 bool file_exists(const char *path)
 {
-    return _access(path, 4) ? false : true;
+    return fileio_exists(path);
 }
 
 // A function to determine if a directory exists on the filesystem
 bool directory_exists(const char *path)
 {
-    if (!file_exists(path))
-        return false;
-    else {
-        DWORD attributes = GetFileAttributesA(path);
-        if (attributes & FILE_ATTRIBUTE_DIRECTORY)
-            return true;
-        else
-            return false;
-    }
+    return fileio_is_dir(path);
 }
 
 // A function that parses the command string into a file and parameters
@@ -133,32 +126,46 @@ void hide_cursor(Entry *entry)
     );
 }
 
-// A function to launch an application
+// A function to launch an application. The command is UTF-8, as every string from the config is,
+// so it goes to Windows as UTF-16: the ANSI call misread any character outside the system code page.
 bool start_process(char *cmd, bool application)
 {
     bool ret = false;
     char file[MAX_PATH_CHARS + 1];
     char *params = NULL;
     int cmd_show = application ? SW_SHOWMAXIMIZED : SW_HIDE;
-    
+
     // Parse command into file and parameters strings
     parse_command(cmd, file, sizeof(file), &params);
 
-    // Set up info struct
-    SHELLEXECUTEINFOA info = {
-        .cbSize = sizeof(SHELLEXECUTEINFOA),
-        .fMask = SEE_MASK_NOCLOSEPROCESS,
-        .hwnd = NULL,
-        .lpVerb = "open",
-        .lpFile = file,
-        .lpParameters = params,
-        .lpDirectory = NULL,
-        .nShow = cmd_show,
-        .lpIDList = NULL,
-        .lpClass = NULL,
-    };
+    wchar_t *wide_file = fileio_wide(file);
+    wchar_t *wide_params = params != NULL ? fileio_wide(params) : NULL;
+    BOOL successful = FALSE;
+    if (wide_file == NULL || (params != NULL && wide_params == NULL))
+        log_error("Could not launch '%s': %s", file, fileio_last_error());
+    else {
+        // Set up info struct
+        SHELLEXECUTEINFOW info = {
+            .cbSize = sizeof(SHELLEXECUTEINFOW),
+            .fMask = SEE_MASK_NOCLOSEPROCESS,
+            .hwnd = NULL,
+            .lpVerb = L"open",
+            .lpFile = wide_file,
+            .lpParameters = wide_params,
+            .lpDirectory = NULL,
+            .nShow = cmd_show,
+            .lpIDList = NULL,
+            .lpClass = NULL,
+        };
+        successful = ShellExecuteExW(&info);
 
-    BOOL successful = ShellExecuteExA(&info);
+        // Nothing waits on the process, so the handle SEE_MASK_NOCLOSEPROCESS asked for is closed
+        if (successful && info.hProcess != NULL)
+            CloseHandle(info.hProcess);
+    }
+    free(wide_file);
+    free(wide_params);
+
     if (!application)
         ret = true;
     else {
@@ -177,32 +184,36 @@ bool start_process(char *cmd, bool application)
     return ret;
 }
 
+// A function to tell an image file by its extension, whatever its case
+static bool has_image_extension(const char *name)
+{
+    size_t length = strlen(name);
+    for (size_t i = 0; i < NUM_IMAGE_EXTENSIONS; i++) {
+        size_t extension_length = strlen(extensions[i]);
+        if (length > extension_length && SDL_strcasecmp(name + length - extension_length, extensions[i]) == 0)
+            return true;
+    }
+    return false;
+}
+
 // A function to scan the slideshow directory for image files
 void scan_slideshow_directory(Slideshow *slideshow, const char *directory)
 {
-    WIN32_FIND_DATAA data;
-    HANDLE handle;
-    char file_search[MAX_PATH_CHARS + 1];
+    FileioEntry *entries = NULL;
+    int count = fileio_list(directory, &entries);
     char file_output[MAX_PATH_CHARS + 1];
-    char extension[10];
-
-    // Generate a wildcard file search string for all supported image file extensions
-    for (int i = 0; i < NUM_IMAGE_EXTENSIONS; i++) {
-        copy_string(extension, "*", sizeof(extension));
-        strcat(extension, extensions[i]);
-        join_paths(file_search, sizeof(file_search), 2, directory, extension);
-
-        // Store every result into the slideshow struct
-        handle = FindFirstFileA(file_search, &data);
-        if (handle != INVALID_HANDLE_VALUE) {
-            do {
-                join_paths(file_output, sizeof(file_output), 2, directory, data.cFileName);
-                slideshow->images = realloc(slideshow->images, (slideshow->num_images + 1) * sizeof(char*));
-                slideshow->images[slideshow->num_images] = strdup(file_output);
-                slideshow->num_images++;
-            } while (FindNextFileA(handle, &data) != 0);
-        }
+    for (int i = 0; i < count; i++) {
+        if (entries[i].is_dir || !has_image_extension(entries[i].name))
+            continue;
+        join_paths(file_output, sizeof(file_output), 2, directory, entries[i].name);
+        char **grown = realloc(slideshow->images, (size_t) (slideshow->num_images + 1) * sizeof(char*));
+        if (grown == NULL)
+            break;
+        slideshow->images = grown;
+        slideshow->images[slideshow->num_images] = strdup(file_output);
+        slideshow->num_images++;
     }
+    fileio_free_list(entries, count);
 }
 
 // A function to get the 2 letter region code

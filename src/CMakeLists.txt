@@ -16,6 +16,8 @@ set(SOURCES
   utf8.h
   library.c
   library.h
+  fileio.c
+  fileio.h
 )
 if (UNIX)
   add_executable(${EXECUTABLE_TITLE} ${SOURCES})
