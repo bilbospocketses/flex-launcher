@@ -2727,7 +2727,7 @@ static void test_system_copy_falls_back_to_the_user_config(void)
     reset(user_config, NULL);
     set_read_only(system_config, true);
     char prefix[CONFIG_SAVE_PATH_MAX];
-    fileio_real_path(DIR "/system", prefix, sizeof(prefix) - 1);
+    CHECK(fileio_real_path(DIR "/system", prefix, sizeof(prefix) - 1));
     strcat(prefix, "/");
     ConfigEdit edit = { "Layout", "Rows", NULL, "2", INIDOC_AFTER_LAST_KEY };
     ConfigSaveResult result;
@@ -2900,7 +2900,11 @@ bool config_save(const char *loaded, const char *system_prefix, const char *user
 {
     memset(result, 0, sizeof(*result));
     char source[CONFIG_SAVE_PATH_MAX];
-    fileio_real_path(loaded, source, sizeof(source));
+    if (!fileio_real_path(loaded, source, sizeof(source))) {
+        snprintf(result->path, sizeof(result->path), "%s", loaded);
+        snprintf(result->why, sizeof(result->why), "%s", fileio_last_error());
+        return false;
+    }
     snprintf(result->path, sizeof(result->path), "%s", source);
 
     if (!fileio_is_writable(source)) {
