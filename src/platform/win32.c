@@ -118,6 +118,13 @@ void make_window_transparent()
     );
 }
 
+// A function to make the window solid again after a transparent background
+void make_window_opaque()
+{
+    HWND hwnd = wm_info.info.win.window;
+    SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) & ~WS_EX_LAYERED);
+}
+
 // When the window is transparent, we need to hide the cursor behind the non-transparent icon
 void hide_cursor(Entry *entry)
 {

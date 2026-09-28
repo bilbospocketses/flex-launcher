@@ -50,6 +50,12 @@ sleep 1
 exe=/work/build/streamflex
 TESTER_HOME=/home/tester
 LOG=$TESTER_HOME/.local/share/streamflex/streamflex.log
+
+# Pictures for the background checks: three in Pictures, one on its own, and an empty folder
+python3 "$HERE/make_images.py" "$TESTER_HOME/Pictures"
+mkdir -p "$TESTER_HOME/one" "$TESTER_HOME/empty"
+cp "$TESTER_HOME/Pictures/red.png" "$TESTER_HOME/one/"
+chown -R tester:tester "$TESTER_HOME"
 TESTER=(setpriv --reuid=tester --regid=tester --init-groups --
         env HOME=$TESTER_HOME DISPLAY=:99 ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=print_stacktrace=1
             GALLIUM_DRIVER=softpipe setarch "$(uname -m)" -R)

@@ -7,6 +7,6 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       build-essential file git cmake pkg-config \
       libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libinih-dev \
-      xvfb xauth xdotool libgl1-mesa-dri \
+      xvfb xauth xdotool libgl1-mesa-dri python3 \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --create-home tester

@@ -56,6 +56,7 @@
 #define SCMD_SHUTDOWN ":shutdown"
 #define SCMD_RESTART ":restart"
 #define SCMD_SLEEP ":sleep"
+#define SCMD_SETTINGS ":settings"
 
 typedef enum {
     MODE_SETTING_BACKGROUND,
@@ -299,6 +300,7 @@ typedef struct {
     char *gamepad_mappings_file;
     bool debug;
     char *exe_path;
+    char *config_path; // The file the settings were read from
     Menu *first_menu;
     size_t num_menus;
     bool clock_enabled;
@@ -325,3 +327,13 @@ void quit(int status);
 void print_version(FILE *stream);
 int compute_menu_layout(const Menu *menu, LayoutGeometry *geometry, char *why, size_t why_size);
 void describe_titles(const LayoutGeometry *geometry, char *out, size_t size);
+
+extern ModeBackground background_shown;
+void draw_scene(void);
+void present_frame(void);
+void reload_background(void);
+void update_slideshow_timing(void);
+void reload_titles(void);
+void refresh_layout(void);
+int show_menu(Menu *menu);
+void show_home(void);
