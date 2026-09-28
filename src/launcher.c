@@ -25,6 +25,7 @@ static int load_menu(Menu *menu, bool set_back_menu, bool reset_position);
 static int load_menu_by_name(const char *menu_name, bool set_back_menu, bool reset_position);
 static void update_slideshow(void);
 static void resume_slideshow(void);
+static void fall_back_from_slideshow(SDL_Surface *surface);
 static void update_screensaver(void);
 static void update_clock(bool block);
 static void init_slideshow(void);
@@ -495,6 +496,35 @@ void quit_slideshow()
     slideshow = NULL;
 }
 
+// A function to stop a slideshow that can no longer show two images, on the main thread: show the
+// one image that still loads (surface, the same image as the one on show), or the colour when none
+// does. The Mode setting stays Slideshow, so the folder is tried again when the background is next
+// set up.
+static void fall_back_from_slideshow(SDL_Surface *surface)
+{
+    if (surface != NULL) {
+        log_error("Could only load one image from slideshow directory %s, showing it as a single image",
+            config.slideshow_directory
+        );
+        SDL_FreeSurface(surface);
+        background_shown = BACKGROUND_IMAGE;
+    }
+    else {
+        log_error("Could not load any image from slideshow directory %s, showing the background color",
+            config.slideshow_directory
+        );
+        if (background_texture != NULL) {
+            SDL_DestroyTexture(background_texture);
+            background_texture = NULL;
+        }
+        background_shown = BACKGROUND_COLOR;
+    }
+    if (slideshow->transition_texture != NULL)
+        SDL_DestroyTexture(slideshow->transition_texture);
+    quit_slideshow();
+    set_draw_color();
+}
+
 // A function to scan the slideshow folder. What is shown falls back to the colour, or to a single
 // image, when the folder is missing or holds fewer than two images; the settings are left alone.
 static void init_slideshow()
@@ -516,7 +546,8 @@ static void init_slideshow()
         .transition_alpha = 0.f,
         .transition_change_rate = 0.f,
         .images = NULL,
-        .order = NULL
+        .order = NULL,
+        .only_one = false
     };
     scan_slideshow_directory(slideshow, config.slideshow_directory);
     if (!slideshow->num_images) {
@@ -641,14 +672,12 @@ void reload_background()
         init_slideshow();
         if (background_shown == BACKGROUND_SLIDESHOW) {
             SDL_Surface *surface = load_next_slideshow_background(slideshow, false);
-
-            // With one loadable image it made its own texture as well; this one replaces it
             if (surface != NULL) {
-                if (background_texture != NULL)
-                    SDL_DestroyTexture(background_texture);
                 background_texture = load_texture(surface);
+                ticks.slideshow_load = ticks.main;
             }
-            ticks.slideshow_load = ticks.main;
+            else
+                fall_back_from_slideshow(NULL);
         }
     }
     update_slideshow_timing();
@@ -1201,6 +1230,13 @@ static void update_slideshow()
         else if (state.slideshow_background_ready) {
             SDL_WaitThread(Slideshowhread, NULL);
             Slideshowhread = NULL;
+
+            // The loader found no image that loads, or only the one on show: stop the slideshow
+            if (slideshow->transition_surface == NULL || slideshow->only_one) {
+                state.slideshow_background_ready = false;
+                fall_back_from_slideshow(slideshow->transition_surface);
+                return;
+            }
             if (config.slideshow_transition_time > 0) {
                 slideshow->transition_texture = load_texture(slideshow->transition_surface);
                 SDL_SetTextureAlphaMod(slideshow->transition_texture, 0);

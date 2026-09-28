@@ -82,20 +82,21 @@ void title_fonts_free(void)
     title_font_count = 0;
 }
 
-// A function to load the next slideshow background from the struct
+// A function to load the next slideshow image that loads. It also runs on the slideshow thread, so
+// it touches nothing but the slideshow: textures, the draw colour and what is shown belong to the
+// main thread. It returns NULL when no image in the folder loads, and sets slideshow->only_one when
+// the only one that does is the image already on show; the main thread falls back from either.
 SDL_Surface *load_next_slideshow_background(Slideshow *slideshow, bool transition)
 {
     SDL_Surface *surface = NULL;
     int initial_index = slideshow->i;
-    int attempts = 0;
-    do {
-        // Increment slideshow background index and load background
-        (slideshow->i)++;
-        if (slideshow->i >= slideshow->num_images)
-            slideshow->i = 0;
+
+    // Try each image once at most, starting after the one on show (i is -1 before the first)
+    for (int attempts = 0; surface == NULL && attempts < slideshow->num_images; attempts++) {
+        slideshow->i = (slideshow->i + 1) % slideshow->num_images;
         surface = IMG_Load(slideshow->images[slideshow->order[slideshow->i]]);
-        
-        // If the loaded image has no alpha channel (e.g. JPEG), create one 
+
+        // If the loaded image has no alpha channel (e.g. JPEG), create one
         // so that we can have transparency for the background transition
         if (surface != NULL && surface->format->format == SDL_PIXELFORMAT_RGB24 && transition) {
             SDL_Surface *tmp = SDL_CreateRGBSurfaceWithFormat(0,
@@ -104,38 +105,16 @@ SDL_Surface *load_next_slideshow_background(Slideshow *slideshow, bool transitio
                                    32,
                                    SDL_PIXELFORMAT_ARGB8888
                                 );
-            Uint32 color = SDL_MapRGBA(tmp->format, 0, 0, 0, 0xFF);
-            SDL_FillRect(tmp, NULL, color);
-            SDL_BlitSurface(surface, NULL, tmp, NULL);
-            SDL_FreeSurface(surface);
-            surface = tmp;
-            attempts++;
-        } 
-    } while (surface == NULL && slideshow->i != initial_index && attempts < slideshow->num_images);
-    
-    // Switch to color background mode if we failed to load any image from the array
-    if (surface == NULL) {
-        log_error(
-            "Could not load any image from slideshow directory %s\n"
-            "Changing background to color mode", 
-            config.slideshow_directory
-        );
-        quit_slideshow();
-        config.background_mode = BACKGROUND_COLOR;
-        set_draw_color();
+            if (tmp != NULL) {
+                Uint32 color = SDL_MapRGBA(tmp->format, 0, 0, 0, 0xFF);
+                SDL_FillRect(tmp, NULL, color);
+                SDL_BlitSurface(surface, NULL, tmp, NULL);
+                SDL_FreeSurface(surface);
+                surface = tmp;
+            }
+        }
     }
-
-    // If only one image in the entire slideshow array was valid, switch to
-    // single image background mode
-    else if (slideshow->i == initial_index && surface != NULL) {
-        log_error(
-            "Could only load one image from slideshow directory %s\n"
-            "Changing background to single image mode",
-            config.slideshow_directory
-        );
-        background_texture = SDL_CreateTextureFromSurface(renderer, surface);
-        config.background_mode = BACKGROUND_IMAGE;
-    }
+    slideshow->only_one = surface != NULL && slideshow->i == initial_index;
     return surface;
 }
 

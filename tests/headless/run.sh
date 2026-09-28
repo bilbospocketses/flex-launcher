@@ -55,6 +55,12 @@ LOG=$TESTER_HOME/.local/share/streamflex/streamflex.log
 python3 "$HERE/make_images.py" "$TESTER_HOME/Pictures"
 mkdir -p "$TESTER_HOME/one" "$TESTER_HOME/empty"
 cp "$TESTER_HOME/Pictures/red.png" "$TESTER_HOME/one/"
+# Slideshow folders that fail: two files that only look like pictures, and one picture beside one
+mkdir -p "$TESTER_HOME/broken" "$TESTER_HOME/mixed"
+printf 'not a picture\n' > "$TESTER_HOME/broken/a.png"
+printf 'not a picture\n' > "$TESTER_HOME/broken/b.png"
+cp "$TESTER_HOME/Pictures/red.png" "$TESTER_HOME/mixed/"
+printf 'not a picture\n' > "$TESTER_HOME/mixed/broken.png"
 chown -R tester:tester "$TESTER_HOME"
 TESTER=(setpriv --reuid=tester --regid=tester --init-groups --
         env HOME=$TESTER_HOME DISPLAY=:99 ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=print_stacktrace=1

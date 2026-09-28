@@ -229,6 +229,7 @@ typedef struct {
     float transition_change_rate;
     SDL_Surface *transition_surface;
     SDL_Texture *transition_texture;
+    bool only_one;   // Set by the loader: the only image that loads is the one already on show
 } Slideshow;
 
 // Screensaver
