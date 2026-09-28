@@ -20,6 +20,8 @@ set(SOURCES
   fileio.h
   inidoc.c
   inidoc.h
+  config_save.c
+  config_save.h
 )
 if (UNIX)
   add_executable(${EXECUTABLE_TITLE} ${SOURCES})

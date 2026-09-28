@@ -19,6 +19,12 @@ target_include_directories(test_inidoc PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_compile_definitions(test_inidoc PRIVATE SAMPLE_CONFIG="${PROJECT_BINARY_DIR}/config.ini")
 add_test(NAME inidoc COMMAND test_inidoc)
 
+# Unit tests for the settings screen's save: fresh read, edits, backup, replace and the Linux fallback
+add_executable(test_config_save test_config_save.c "${PROJECT_SOURCE_DIR}/src/config_save.c"
+  "${PROJECT_SOURCE_DIR}/src/inidoc.c" "${PROJECT_SOURCE_DIR}/src/fileio.c")
+target_include_directories(test_config_save PRIVATE "${PROJECT_SOURCE_DIR}/src")
+add_test(NAME config_save COMMAND test_config_save)
+
 # A function to link inih the way the launcher does
 function(link_inih target)
   if (UNIX)
