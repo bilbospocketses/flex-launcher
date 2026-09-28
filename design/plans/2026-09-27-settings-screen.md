@@ -32,7 +32,7 @@ Each of these was a wrong or loose assumption about the code. The plan follows t
    - The parser's name is `Truncated` (`mode_settings` in `src/util.c`), while the docs and the spec say `Truncate`.
    - The sample config ships `OversizeMode=Shrink`, which gives one menu several title sizes. That is exactly what the approved title rule ("every title in a menu is the same size") replaces.
    - So the parser accepts both names, and the sample config ships `Truncate`.
-   - **This changes the sample config; the user may veto it at plan review.**
+   - This changes the sample config. The user approved it on 2026-09-28.
 5. **The exact-integer title fit is a binary search** over the button size, not a closed form followed by pixel steps. It gives the same largest fitting button, is simpler, and is exact by construction.
 6. **A value on entry stays in its row's steps for the whole visit.** The spec says a custom colour or fixed title size appears "until the user steps off it". Keeping it reachable means the user can always step back to it without Discard, and the rule is the same for every type.
 7. **The title font cache is bounded (16 sizes) and evicts the oldest,** instead of pruning when settings close. Memory stays bounded either way, and nothing depends on which menus happen to be loaded.
@@ -43,6 +43,20 @@ Each of these was a wrong or loose assumption about the code. The plan follows t
 12. **Grid summaries read columns × rows** (`6 × 3`), matching the launcher's log (`6 x 3 grid`), not the mockup's `3 × 6`.
 13. **The preview keeps the screen's own shape,** not a fixed 16:9. The preview is the whole screen scaled down, so a 16:10 or ultra-wide display would be distorted if it were forced into 16:9. On a 16:9 screen the two are the same.
 14. **The caption says "(reduced to fit the screen)"** when `layout_compute()` shrank a grid, instead of naming the new column count. The grid it shows is already the reduced one (`9 × 3`), so the count would say the same thing twice.
+
+## Existing bugs fixed on the way
+
+Planning turned up three bugs in code this branch works next to. The user chose, on 2026-09-28, to fix them in this branch rather than file them. Writing the fixes turned up two more in the same functions, a hang and a crash, and they are fixed with them. Each fix lives in the task that already touches its code, with a harness check that fails before it and passes after, except the first, which only Windows can show.
+
+| Bug | What happens today | Fixed in |
+|---|---|---|
+| `start_process()` (`src/platform/win32.c`) launches through `ShellExecuteExA` | On Windows, a command or file path with a character outside the system code page fails to launch. Task 2 moves every other path to UTF-8. | Task 2, Step 7 |
+| `load_next_slideshow_background()` (`src/image.c`) falls back on the slideshow thread | When a running slideshow's folder has one loadable image left, the loader thread creates a texture (SDL textures belong to the main thread). When it has none, the thread frees the slideshow and then writes into it, a use-after-free. | Task 9, Steps 10-14 |
+| The same function's loop | At startup, a slideshow folder whose files all fail to load (two files that only look like pictures, say) hangs the launcher forever: the loop's stop test waits for an index of -1 it never reaches, and its attempt counter only counts converted images. | Task 9, Steps 10-14 |
+| `config_handler()` (`src/util.c`) keeps its menu cursor on the last menu read | When a menu's section appears a second time after another menu, its later entries and grid keys land in the menu between. | Task 1, Steps 15-19 |
+| The same function's entry parsing | An empty entry (`Entry2=`) in a menu that already has an entry frees the entry before it and then dereferences NULL, so the launcher crashes at startup. | Task 1, Steps 15-19 |
+
+Three smaller faults in the same functions are fixed with them: `start_process()` never closed the process handle it asked for, a refused entry leaked its strings, and the slideshow's alpha conversion used a surface without checking that it was created.
 
 ## Global Constraints
 
@@ -117,23 +131,23 @@ These five input classes are the most likely to bite someone using this, and not
 |---|---|---|
 | `tests/headless/Dockerfile` | new | The harness image: CI's Debian build dependencies, Xvfb, xdotool, Mesa, python3, a `tester` user |
 | `tests/headless/run.sh` | new | Builds with ASan and UBSan, starts Xvfb, provides the run helpers, sources `checks/*.sh`, exits non-zero on any failure |
-| `tests/headless/checks/*.sh` | new | One file per area: grid items (10), refresh rate (20), backgrounds (30), titles (40), settings (50, 60) |
+| `tests/headless/checks/*.sh` | new | One file per area: grid items (10), refresh rate (20), menu parsing (25), backgrounds (30), titles (40), settings (50, 60) |
 | `tests/headless/fixtures/*.ini` | new | The fixture configs |
 | `tests/headless/make_images.py` | new | Writes small solid-colour PNGs for the background checks |
 | `.gitattributes` | new | Keeps the harness scripts LF on a Windows checkout |
-| `src/fileio.h`, `src/fileio.c` | new | UTF-8 file access on every platform, the safe replace, folder listing, places |
+| `src/fileio.h`, `src/fileio.c` | new | UTF-8 file access on every platform, the safe replace, folder listing, places; a UTF-16 copy for other Windows calls |
 | `src/inidoc.h`, `src/inidoc.c` | new | `config.ini` as editable lines |
 | `src/config_save.h`, `src/config_save.c` | new | The save: fresh read, edits, backup, temp file, replace, the Linux fallback |
 | `src/settings.h`, `src/settings.c` | new | The settings table, parse/format/step/describe, and the page model |
 | `src/browser.h`, `src/browser.c` | new | The folder browser's model |
 | `src/settings_screen.h`, `src/settings_screen.c` | new | The SDL settings screen |
 | `src/layout.h`, `src/layout.c` | modify | Title sizing with the button; title size and padding parsers |
-| `src/launcher.h`, `src/launcher.c` | modify | Item 22; the reloadable background; the scene/present split; config path; `:settings`; routing; title fields |
-| `src/util.c`, `src/util.h` | modify | Table keys parsed through `settings.c`; `Truncate`; percentage `FontSize`/`Padding`; defaults for Start |
-| `src/image.h`, `src/image.c` | modify | Title font cache; Shrink with a floor and no leak; the default font's path |
+| `src/launcher.h`, `src/launcher.c` | modify | Item 22; the reloadable background; the slideshow's fall-back on the main thread; the scene/present split; config path; `:settings`; routing; title fields |
+| `src/util.c`, `src/util.h` | modify | Menu sections read twice; empty entries; table keys parsed through `settings.c`; `Truncate`; percentage `FontSize`/`Padding`; defaults for Start |
+| `src/image.h`, `src/image.c` | modify | The slideshow loader touches only the slideshow; title font cache; Shrink with a floor and no leak; the default font's path |
 | `src/debug.c` | modify | Log file through `fileio`; title settings and sizes in the debug output |
 | `src/library.c` | modify | Manifest and probe through `fileio` |
-| `src/platform/platform.h`, `win32.c` | modify | `make_window_opaque`; UTF-8 existence checks and slideshow scan |
+| `src/platform/platform.h`, `win32.c` | modify | `make_window_opaque`; UTF-8 existence checks, slideshow scan and launching |
 | `src/CMakeLists.txt` | modify | New sources; `shell32`/`ole32` on Windows |
 | `tests/CMakeLists.txt` | modify | `test_fileio`, `test_inidoc`, `test_config_save`, `test_settings`, `test_browser`; `test_library` links `fileio.c` |
 | `tests/test_*.c` | new/modify | The unit tests named above; `test_layout.c` gains title sizing |
@@ -143,15 +157,18 @@ These five input classes are the most likely to bite someone using this, and not
 
 ---
 
-### Task 1: The headless harness in the repo and in CI, and the 0 Hz refresh rate (item 22)
+### Task 1: The headless harness in the repo and in CI, the 0 Hz refresh rate (item 22), and two menu parsing bugs
 
 The harness exists today only in `C:/Users/jscha/ClaudeScratch/streamflex-docker/` (scratch), where it patches its copy of the source so that Xvfb's 0 Hz refresh rate does not crash the launcher. This task moves it into the repo **without** that patch. The first run is therefore RED on item 22. The fix makes it GREEN, and CI then runs the harness on every PR.
 
+With the harness in place, Steps 15-19 fix two bugs in how `config_handler()` reads menu sections (see **Existing bugs fixed on the way**), each pinned by a check that fails first. They are a separate commit.
+
 **Files:**
-- Create: `tests/headless/Dockerfile`, `tests/headless/run.sh`, `tests/headless/checks/10-grid.sh`, `tests/headless/checks/20-refresh.sh`
-- Create: `tests/headless/fixtures/f11-scroll.ini`, `f12-padding.ini`, `f13-selfsub.ini`, `f14-junk.ini`, `f15-limits.ini`, `f16-debuglayout.ini`, `f17-once.ini`, `f22-refresh.ini`
+- Create: `tests/headless/Dockerfile`, `tests/headless/run.sh`, `tests/headless/checks/10-grid.sh`, `tests/headless/checks/20-refresh.sh`, `tests/headless/checks/25-menus.sh`
+- Create: `tests/headless/fixtures/f11-scroll.ini`, `f12-padding.ini`, `f13-selfsub.ini`, `f14-junk.ini`, `f15-limits.ini`, `f16-debuglayout.ini`, `f17-once.ini`, `f22-refresh.ini`, `f25-split.ini`, `f25-empty.ini`
 - Create: `.gitattributes`
 - Modify: `src/launcher.h` (a constant), `src/launcher.c:215-218` (`init_sdl`)
+- Modify: `src/util.c:417-487` (`config_handler()`'s menu branch)
 - Modify: `.github/workflows/build.yml` (new `headless` job; `build-and-test` needs it), `.github/dependabot.yml`
 
 **Interfaces:**
@@ -265,12 +282,13 @@ config_args() {
     [ "$cfg" = none ] || printf '%s\n' -c "$cfg"
 }
 
-# A config whose StartupCmd quits by itself
+# A config whose StartupCmd quits by itself. One that hangs gets TERM after 30 s, and KILL 5 s
+# later: SDL turns TERM into a quit event, which a launcher stuck in a loop never reads.
 run_quick() {
     local name=$1
     local args; mapfile -t args < <(config_args "$name")
     rm -f "$LOG"
-    timeout -s TERM 30 "${TESTER[@]}" "$exe" "${args[@]}" -d > "$out/$name.out" 2> "$out/$name.err"
+    timeout -k 5 -s TERM 30 "${TESTER[@]}" "$exe" "${args[@]}" -d > "$out/$name.out" 2> "$out/$name.err"
     echo $? > "$out/$name.code"
     cp "$LOG" "$out/$name.log" 2> /dev/null || : > "$out/$name.log"
 }
@@ -631,17 +649,184 @@ git -C C:/Users/jscha/source/repos/streamflex add .gitattributes tests/headless 
 git -C C:/Users/jscha/source/repos/streamflex commit -m "fix: survive a display that reports 0 Hz; run the headless harness in CI (item 22)"
 ```
 
+- [ ] **Step 15: Write the menu parsing checks.** Create `tests/headless/checks/25-menus.sh`:
+
+```bash
+# How menu sections are read. A section can appear twice with another menu between (configs
+# assembled from pieces do this), and an entry can be left empty.
+
+# The second [Main] block's entry and Rows belong to Main, not to Games, the menu read before it
+run_quick f25-split
+ok=1
+grep -A2 'Menu Name: Main' "$out/f25-split.log" | grep -qE 'Number of Entries: 2$' \
+    && grep -A2 'Menu Name: Main' "$out/f25-split.log" | grep -qE 'Rows 2, ' \
+    && grep -A2 'Menu Name: Games' "$out/f25-split.log" | grep -qE 'Number of Entries: 1$' \
+    && grep -A2 'Menu Name: Games' "$out/f25-split.log" | grep -qE 'Rows 0, ' \
+    && sanitizer_clean f25-split && ok=0
+result "a menu section that appears twice keeps its own entries and grid" $ok
+
+# Entry2= is skipped with a log line; the entries either side of it stay
+run_quick f25-empty
+ok=1
+[ "$(cat "$out/f25-empty.code")" = 0 ] && grep -q "Menu 'Main': 'Entry2' is empty, ignoring it" "$out/f25-empty.log" \
+    && grep -A1 'Menu Name: Main' "$out/f25-empty.log" | grep -qE 'Number of Entries: 2$' \
+    && sanitizer_clean f25-empty && ok=0
+result "an empty entry is skipped instead of crashing (exit $(cat "$out/f25-empty.code"))" $ok
+grep -m2 -E 'runtime error|AddressSanitizer' "$out/f25-empty.err" | sed 's/^/      /'
+```
+
+Create `tests/headless/fixtures/f25-split.ini`:
+
+```ini
+[General]
+DefaultMenu=Main
+StartupCmd=:quit
+
+[Main]
+Entry1=One;apps;:quit
+
+[Games]
+Entry1=Solo;games;:quit
+
+[Main]
+Entry2=Two;apps;:quit
+Rows=2
+```
+
+and `tests/headless/fixtures/f25-empty.ini`:
+
+```ini
+[General]
+DefaultMenu=Main
+StartupCmd=:quit
+
+[Main]
+Entry1=One;apps;:quit
+Entry2=
+Entry3=Three;apps;:quit
+```
+
+- [ ] **Step 16: Run the harness and watch both fail**
+
+Expected:
+- `FAIL  a menu section that appears twice keeps its own entries and grid`: the log shows Main with 1 entry and Games with 2, and Games has `Rows 2`.
+- `FAIL  an empty entry is skipped instead of crashing (exit 1)`, with `AddressSanitizer: SEGV` in `config_handler` under it: `Entry2=` freed `Entry1` and then wrote through a NULL `previous_entry`.
+- Every other line still passes.
+
+- [ ] **Step 17: Fix the menu branch.** In `src/util.c`, `config_handler()`, replace the start of the menu branch:
+
+```c
+    // Parse menus/entries
+    else {
+        Entry *previous_entry = NULL;
+
+        // Check if menu struct exists for current section
+        if (config.first_menu == NULL) {
+            config.first_menu = create_menu(section, &config.num_menus);
+            menu = config.first_menu;
+        }
+        else {
+            bool menu_exists = false;
+            for (Menu *tmp = config.first_menu; tmp != NULL;
+            tmp = tmp->next) {
+                if (MATCH(tmp->name,section)) {
+                    menu_exists = true;
+                    break;
+                }
+            }
+
+        // Create menu if it doesn't already exist
+            if (menu_exists == false) {
+                menu->next = create_menu(section, &config.num_menus);
+                menu = menu->next;
+            }
+        }
+```
+
+with:
+
+```c
+    // Parse menus/entries
+    else {
+        Entry *previous_entry = NULL;
+
+        // Point the menu and entry cursors at this section's menu, adding it to the end of the list
+        // when it is new. A section can appear twice with another menu between, so the cursors move
+        // back to it, and to its last entry, rather than staying on the last menu read.
+        Menu *section_menu = NULL;
+        Menu *last_menu = NULL;
+        for (Menu *tmp = config.first_menu; tmp != NULL; tmp = tmp->next) {
+            if (section_menu == NULL && MATCH(tmp->name, section))
+                section_menu = tmp;
+            last_menu = tmp;
+        }
+        if (section_menu == NULL) {
+            section_menu = create_menu(section, &config.num_menus);
+            if (last_menu == NULL)
+                config.first_menu = section_menu;
+            else
+                last_menu->next = section_menu;
+        }
+        if (section_menu != menu) {
+            menu = section_menu;
+            entry = menu->first_entry;
+            while (entry != NULL && entry->next != NULL)
+                entry = entry->next;
+        }
+```
+
+The new menu goes on the end of the list, not after `menu`: once the cursor can move back to an earlier menu, `menu->next = ...` would cut off every menu after it.
+
+Further down, after `token = strtok(string, delimiter);`, add:
+
+```c
+        if (token == NULL) {
+            log_error("Menu '%s': '%s' is empty, ignoring it", section, name);
+            return 0;
+        }
+```
+
+(the `if (token != NULL)` block that follows is left as it is). Then in `// Delete entry if parse failed to find 3 valid tokens`, free the refused entry's strings before the entry itself. Replace:
+
+```c
+        if (i != 3 || MATCH(":select", entry->cmd)) {
+            if (menu->num_entries == 0) {
+```
+
+with:
+
+```c
+        if (i != 3 || MATCH(":select", entry->cmd)) {
+            free(entry->title);
+            free(entry->icon_path);
+            free(entry->cmd);
+            if (menu->num_entries == 0) {
+```
+
+(`entry` is the refused one in both branches below it, and it came from `calloc`, so any field never set is NULL.)
+
+- [ ] **Step 18: Run the harness again**
+
+Expected: both `25-menus` lines pass, every other line still passes, `0 failed`. Then the Windows build and unit tests as in Step 13: `100% tests passed, 0 tests failed out of 4`, and no new warnings.
+
+- [ ] **Step 19: Commit**
+
+```powershell
+git -C C:/Users/jscha/source/repos/streamflex add src/util.c tests/headless/checks/25-menus.sh tests/headless/fixtures/f25-split.ini tests/headless/fixtures/f25-empty.ini
+git -C C:/Users/jscha/source/repos/streamflex commit -m "fix: a menu section read twice keeps its entries, and an empty entry no longer crashes"
+```
+
 ---
 
 ### Task 2: UTF-8 file access on every platform (`fileio`)
 
-On Windows, `fopen()` and the `A` APIs read a path in the system code page, while SDL hands out UTF-8. This task adds one small pure module that takes UTF-8 paths everywhere and uses the wide APIs on Windows, and moves the launcher's file access onto it. The later tasks' writer and browser build on it.
+On Windows, `fopen()` and the `A` APIs read a path in the system code page, while SDL hands out UTF-8. This task adds one small pure module that takes UTF-8 paths everywhere and uses the wide APIs on Windows, and moves the launcher's file access onto it. The later tasks' writer and browser build on it. It also moves `start_process()` from `ShellExecuteExA` to `ShellExecuteExW`, so a command with a non-ASCII path launches (see **Existing bugs fixed on the way**).
 
 **Files:**
 - Create: `src/fileio.h`, `src/fileio.c`, `tests/test_fileio.c`
 - Modify: `src/CMakeLists.txt`, `tests/CMakeLists.txt`
 - Modify: `src/util.c:122` (config file), `src/debug.c:36` (log file), `src/library.c:141,174` (manifest, probe)
-- Modify: `src/platform/win32.c:29-47` (`file_exists`, `directory_exists`), `:180-206` (`scan_slideshow_directory`)
+- Modify: `src/platform/win32.c:29-47` (`file_exists`, `directory_exists`), `:136-178` (`start_process`), `:180-206` (`scan_slideshow_directory`)
 
 **Interfaces:**
 - Produces (every later task uses these exact names):
@@ -667,6 +852,9 @@ bool fileio_real_path(const char *path, char *out, size_t size);  // follows sym
 int fileio_list(const char *folder, FileioEntry **entries); // count, or -1
 void fileio_free_list(FileioEntry *entries, int count);
 const char *fileio_last_error(void);             // why the last call failed, in a few words
+#ifdef _WIN32
+wchar_t *fileio_wide(const char *text);          // Windows: a new UTF-16 copy, or NULL; caller frees
+#endif
 ```
 
 - [ ] **Step 1: Write the failing test.** Create `tests/test_fileio.c`:
@@ -826,6 +1014,16 @@ static void test_replace_waits_for_a_held_file(void)
     CHECK(text != NULL && strcmp(text, "new") == 0);
     free(text);
 }
+
+// A function to test the UTF-16 copy that start_process() launches commands with
+static void test_wide(void)
+{
+    wchar_t *wide = fileio_wide("caf\xC3\xA9 \"x\"");
+    CHECK(wide != NULL && wcscmp(wide, L"café \"x\"") == 0);
+    free(wide);
+    CHECK(fileio_wide("bad \xC3") == NULL);   // A lead byte with nothing after it
+    CHECK(strstr(fileio_last_error(), "UTF-8") != NULL);
+}
 #endif
 
 int main(void)
@@ -837,6 +1035,7 @@ int main(void)
     test_hidden();
 #ifdef _WIN32
     test_replace_waits_for_a_held_file();
+    test_wide();
 #endif
     return check_report();
 }
@@ -896,6 +1095,11 @@ bool fileio_real_path(const char *path, char *out, size_t size);
 int fileio_list(const char *folder, FileioEntry **entries);
 void fileio_free_list(FileioEntry *entries, int count);
 const char *fileio_last_error(void);
+
+#ifdef _WIN32
+#include <wchar.h>
+wchar_t *fileio_wide(const char *text);   // For other Windows calls that take a path or command
+#endif
 
 #endif
 ```
@@ -1010,6 +1214,12 @@ static char *to_utf8(const wchar_t *wide)
     if (text != NULL)
         WideCharToMultiByte(CP_UTF8, 0, wide, -1, text, count, NULL, NULL);
     return text;
+}
+
+// A function to give other Windows code a UTF-16 copy of a UTF-8 string, such as a command to launch
+wchar_t *fileio_wide(const char *text)
+{
+    return to_wide(text);
 }
 #endif
 
@@ -1451,6 +1661,70 @@ void scan_slideshow_directory(Slideshow *slideshow, const char *directory)
 }
 ```
 
+Replace `start_process()` with the version below. `parse_command()` stays as it is: it splits on `"` and spaces, which never occur inside a UTF-8 multi-byte character, so it is safe on UTF-8 bytes.
+
+```c
+// A function to launch an application. The command is UTF-8, as every string from the config is,
+// so it goes to Windows as UTF-16: the ANSI call misread any character outside the system code page.
+bool start_process(char *cmd, bool application)
+{
+    bool ret = false;
+    char file[MAX_PATH_CHARS + 1];
+    char *params = NULL;
+    int cmd_show = application ? SW_SHOWMAXIMIZED : SW_HIDE;
+
+    // Parse command into file and parameters strings
+    parse_command(cmd, file, sizeof(file), &params);
+
+    wchar_t *wide_file = fileio_wide(file);
+    wchar_t *wide_params = params != NULL ? fileio_wide(params) : NULL;
+    BOOL successful = FALSE;
+    if (wide_file == NULL || (params != NULL && wide_params == NULL))
+        log_error("Could not launch '%s': %s", file, fileio_last_error());
+    else {
+        // Set up info struct
+        SHELLEXECUTEINFOW info = {
+            .cbSize = sizeof(SHELLEXECUTEINFOW),
+            .fMask = SEE_MASK_NOCLOSEPROCESS,
+            .hwnd = NULL,
+            .lpVerb = L"open",
+            .lpFile = wide_file,
+            .lpParameters = wide_params,
+            .lpDirectory = NULL,
+            .nShow = cmd_show,
+            .lpIDList = NULL,
+            .lpClass = NULL,
+        };
+        successful = ShellExecuteExW(&info);
+
+        // Nothing waits on the process, so the handle SEE_MASK_NOCLOSEPROCESS asked for is closed
+        if (successful && info.hProcess != NULL)
+            CloseHandle(info.hProcess);
+    }
+    free(wide_file);
+    free(wide_params);
+
+    if (!application)
+        ret = true;
+    else {
+        // Go down in the window stack so the launched application can take focus
+        if (successful) {
+            HWND hwnd = wm_info.info.win.window;
+            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOREDRAW | SWP_NOSIZE | SWP_NOMOVE);
+            ret = true;
+        }
+        else {
+            log_debug("Failed to launch command");
+            ret = false;
+        }
+    }
+    free(params);
+    return ret;
+}
+```
+
+Nothing but a Windows desktop can show a launch, so the harness cannot pin this; `test_wide` pins the conversion, and Task 13's hands-on check launches a non-ASCII path.
+
 - [ ] **Step 8: Build and run every test**
 
 ```powershell
@@ -1465,7 +1739,7 @@ Expected: `100% tests passed, 0 tests failed out of 5`, and no new warnings in t
 
 ```powershell
 git -C C:/Users/jscha/source/repos/streamflex add src/fileio.h src/fileio.c tests/test_fileio.c src/CMakeLists.txt tests/CMakeLists.txt src/util.c src/debug.c src/library.c src/platform/win32.c
-git -C C:/Users/jscha/source/repos/streamflex commit -m "fix: open files by their UTF-8 path on Windows"
+git -C C:/Users/jscha/source/repos/streamflex commit -m "fix: open files and launch commands by their UTF-8 path on Windows"
 ```
 
 ---
@@ -6581,10 +6855,12 @@ This task refactors all three without changing what the launcher does:
 - `main()` sets the background up through the same `reload_background()` the screen will call.
 - Pinned by new harness checks of every background startup path, including a crash they found (`Mode=Slideshow` with no `SlideshowDirectory` passed `NULL` to `directory_exists()`).
 
+Steps 10-14 then fix the slideshow loader, as a separate commit (see **Existing bugs fixed on the way**). It runs on its own thread, yet when it runs out of images it falls back there: it makes a texture, frees the slideshow and then writes into it. At startup it can also loop forever. After the fix the loader only loads and reports, and the main thread falls back.
+
 **Files:**
 - Modify: `src/launcher.h`, `src/launcher.c`, `src/image.c`, `src/platform/platform.h`, `src/platform/win32.c`
 - Modify: `tests/headless/Dockerfile` (python3), `tests/headless/run.sh` (the test pictures)
-- Create: `tests/headless/make_images.py`, `tests/headless/checks/30-backgrounds.sh`; fixtures `f30-image.ini`, `f30-missing.ini`, `f30-slideshow.ini`, `f30-one.ini`, `f30-empty.ini`, `f30-nodir.ini`
+- Create: `tests/headless/make_images.py`, `tests/headless/checks/30-backgrounds.sh`; fixtures `f30-image.ini`, `f30-missing.ini`, `f30-slideshow.ini`, `f30-one.ini`, `f30-empty.ini`, `f30-nodir.ini`, `f30-broken.ini`, `f30-mixed.ini`, `f30-vanish.ini`
 
 **Interfaces:**
 - Produces (Tasks 10 and 11 call these; declare them in `launcher.h`):
@@ -6600,10 +6876,11 @@ void refresh_layout(void);               // lay the menu on show out again
 int show_menu(Menu *menu);               // show a menu, keeping its back link and position (0 = shown)
 void show_home(void);                    // what :home does
 // Config gains: char *config_path;      // the file the settings were read from
+// Slideshow gains: bool only_one;        // set by the loader: the only image that loads is the one on show
 // platform.h: void make_window_transparent(void); void make_window_opaque(void);
 ```
 
-- Harness: `run.sh` leaves `/home/tester/Pictures` (`blue.png`, `green.png`, `red.png`), `/home/tester/one` (one image) and `/home/tester/empty` for the checks to use.
+- Harness: `run.sh` leaves `/home/tester/Pictures` (`blue.png`, `green.png`, `red.png`), `/home/tester/one` (one image), `/home/tester/empty`, `/home/tester/broken` (two files that only look like pictures) and `/home/tester/mixed` (one picture and one of those) for the checks to use.
 
 - [ ] **Step 1: Give the harness pictures.** In `tests/headless/Dockerfile`, add `python3` to the `apt-get install` line after `libgl1-mesa-dri`. Create `tests/headless/make_images.py`:
 
@@ -6823,23 +7100,7 @@ static void init_slideshow()
 }
 ```
 
-In `src/image.c`, add `extern ModeBackground background_shown;` after `extern SDL_Texture *background_texture;`. In `load_next_slideshow_background()`, replace:
-
-```c
-        quit_slideshow();
-        config.background_mode = BACKGROUND_COLOR;
-        set_draw_color();
-```
-
-with:
-
-```c
-        quit_slideshow();
-        background_shown = BACKGROUND_COLOR;
-        set_draw_color();
-```
-
-and `config.background_mode = BACKGROUND_IMAGE;` with `background_shown = BACKGROUND_IMAGE;`.
+Leave `load_next_slideshow_background()` in `src/image.c` alone in this step: Step 12 replaces it whole.
 
 - [ ] **Step 5: `reload_background()` and the timing.** In `src/launcher.c`, add after `resume_slideshow()`:
 
@@ -7072,8 +7333,258 @@ Expected: no new warnings (MSVC no longer sees an undeclared `make_window_transp
 - [ ] **Step 9: Commit**
 
 ```powershell
-git -C C:/Users/jscha/source/repos/streamflex add src/launcher.h src/launcher.c src/image.c src/platform/platform.h src/platform/win32.c tests/headless/Dockerfile tests/headless/run.sh tests/headless/make_images.py tests/headless/checks/30-backgrounds.sh tests/headless/fixtures/f30-image.ini tests/headless/fixtures/f30-missing.ini tests/headless/fixtures/f30-slideshow.ini tests/headless/fixtures/f30-one.ini tests/headless/fixtures/f30-empty.ini tests/headless/fixtures/f30-nodir.ini
+git -C C:/Users/jscha/source/repos/streamflex add src/launcher.h src/launcher.c src/platform/platform.h src/platform/win32.c tests/headless/Dockerfile tests/headless/run.sh tests/headless/make_images.py tests/headless/checks/30-backgrounds.sh tests/headless/fixtures/f30-image.ini tests/headless/fixtures/f30-missing.ini tests/headless/fixtures/f30-slideshow.ini tests/headless/fixtures/f30-one.ini tests/headless/fixtures/f30-empty.ini tests/headless/fixtures/f30-nodir.ini
 git -C C:/Users/jscha/source/repos/streamflex commit -m "refactor: reload the background at any time, and draw the scene apart from the frame"
+```
+
+- [ ] **Step 10: Write the slideshow loader checks.** In `tests/headless/run.sh`, in the block Step 1 added, insert before `chown -R tester:tester "$TESTER_HOME"`:
+
+```bash
+# Slideshow folders that fail: two files that only look like pictures, and one picture beside one
+mkdir -p "$TESTER_HOME/broken" "$TESTER_HOME/mixed"
+printf 'not a picture\n' > "$TESTER_HOME/broken/a.png"
+printf 'not a picture\n' > "$TESTER_HOME/broken/b.png"
+cp "$TESTER_HOME/Pictures/red.png" "$TESTER_HOME/mixed/"
+printf 'not a picture\n' > "$TESTER_HOME/mixed/broken.png"
+```
+
+Append to `tests/headless/checks/30-backgrounds.sh`:
+
+```bash
+# The slideshow loader. It runs on its own thread, so when its folder stops giving it two pictures
+# it only reports, and the main thread falls back: to the one picture that still loads, or to the
+# colour. The Mode setting stays Slideshow.
+
+# A function to run a slideshow fixture that keeps running: wait until its first picture is up,
+# run the rest of the arguments as a command (which may take the pictures away), then give the
+# loader time to try the next picture (the fixtures change every 5 s, the shortest allowed)
+# before quitting it. A launcher that hangs is killed.
+run_slideshow() {
+    local name=$1; shift
+    local pid i
+    rm -f "$LOG"
+    "${TESTER[@]}" "$exe" -c "$FX/$name.ini" -d > "$out/$name.out" 2> "$out/$name.err" &
+    pid=$!
+    for i in $(seq 100); do grep -q 'Background set up: Slideshow' "$LOG" 2> /dev/null && break; sleep 0.2; done
+    "$@"
+    sleep 8
+    kill -TERM "$pid" 2> /dev/null
+    for i in $(seq 50); do kill -0 "$pid" 2> /dev/null || break; sleep 0.2; done
+    kill -KILL "$pid" 2> /dev/null
+    wait "$pid"; echo $? > "$out/$name.code"
+    cp "$LOG" "$out/$name.log" 2> /dev/null || : > "$out/$name.log"
+}
+
+# At startup: no file in the folder loads
+run_quick f30-broken
+ok=1
+[ "$(cat "$out/f30-broken.code")" = 0 ] \
+    && grep -q "Could not load any image from slideshow directory /home/tester/broken" "$out/f30-broken.log" \
+    && grep -q "Background set up: Color" "$out/f30-broken.log" \
+    && sanitizer_clean f30-broken && ok=0
+result "a slideshow whose files all fail to load falls back to the colour instead of hanging (exit $(cat "$out/f30-broken.code"))" $ok
+
+# While running: the only picture that loads is the one on show
+run_slideshow f30-mixed true
+ok=1
+[ "$(cat "$out/f30-mixed.code")" = 0 ] \
+    && grep -q "Could only load one image from slideshow directory /home/tester/mixed, showing it as a single image" "$out/f30-mixed.log" \
+    && sanitizer_clean f30-mixed && ok=0
+result "a running slideshow left with one picture shows it as a single image (exit $(cat "$out/f30-mixed.code"))" $ok
+
+# While running: the pictures vanish (a network share dropping, say)
+mkdir -p "$TESTER_HOME/vanish"
+cp "$TESTER_HOME/Pictures/blue.png" "$TESTER_HOME/Pictures/green.png" "$TESTER_HOME/vanish/"
+chown -R tester:tester "$TESTER_HOME/vanish"
+run_slideshow f30-vanish rm -f "$TESTER_HOME/vanish/blue.png" "$TESTER_HOME/vanish/green.png"
+ok=1
+[ "$(cat "$out/f30-vanish.code")" = 0 ] \
+    && grep -q "Could not load any image from slideshow directory /home/tester/vanish" "$out/f30-vanish.log" \
+    && sanitizer_clean f30-vanish && ok=0
+result "a running slideshow whose pictures vanish falls back to the colour (exit $(cat "$out/f30-vanish.code"))" $ok
+grep -m2 -E 'runtime error|AddressSanitizer' "$out/f30-vanish.err" | sed 's/^/      /'
+```
+
+Create the fixtures. `f30-broken.ini` is `f30-slideshow.ini` with `SlideshowDirectory=/home/tester/broken`. `f30-mixed.ini` keeps running, so it has no `StartupCmd`:
+
+```ini
+[General]
+DefaultMenu=Main
+
+[Background]
+Mode=Slideshow
+SlideshowDirectory=/home/tester/mixed
+SlideshowImageDuration=5
+SlideshowTransitionTime=0
+
+[Main]
+Entry1=One;apps;:quit
+```
+
+`f30-vanish.ini` is the same with `SlideshowDirectory=/home/tester/vanish`.
+
+`f30-mixed` does not depend on the random order: whichever of its two files comes first, the loader's next attempt fails on `broken.png` and comes back round to `red.png`, the image on show.
+
+- [ ] **Step 11: Rebuild the harness image, run it and watch the three fail**
+
+Expected:
+- `f30-broken` fails with exit 137, after about 35 s: the startup load loops forever, so `timeout`'s TERM at 30 s is only queued as a quit event, and its KILL 5 s later ends it.
+- `f30-vanish` fails with a non-zero exit, and `AddressSanitizer: heap-use-after-free` under it: the loader thread freed the slideshow and then stored its result in it.
+- `f30-mixed` fails on its log line: today's reads "Changing background to single image mode", logged from the loader thread after it made a texture there. The harness cannot see which thread made a texture; this check pins the fall-back's behaviour, and the task's review checks the thread rule by reading.
+- Every other line still passes.
+
+- [ ] **Step 12: The loader only loads; the main thread falls back.** In `src/launcher.h`, add to `Slideshow`, after `SDL_Texture *transition_texture;`:
+
+```c
+    bool only_one;   // Set by the loader: the only image that loads is the one already on show
+```
+
+In `src/image.c`, replace `load_next_slideshow_background()` whole with:
+
+```c
+// A function to load the next slideshow image that loads. It also runs on the slideshow thread, so
+// it touches nothing but the slideshow: textures, the draw colour and what is shown belong to the
+// main thread. It returns NULL when no image in the folder loads, and sets slideshow->only_one when
+// the only one that does is the image already on show; the main thread falls back from either.
+SDL_Surface *load_next_slideshow_background(Slideshow *slideshow, bool transition)
+{
+    SDL_Surface *surface = NULL;
+    int initial_index = slideshow->i;
+
+    // Try each image once at most, starting after the one on show (i is -1 before the first)
+    for (int attempts = 0; surface == NULL && attempts < slideshow->num_images; attempts++) {
+        slideshow->i = (slideshow->i + 1) % slideshow->num_images;
+        surface = IMG_Load(slideshow->images[slideshow->order[slideshow->i]]);
+
+        // If the loaded image has no alpha channel (e.g. JPEG), create one
+        // so that we can have transparency for the background transition
+        if (surface != NULL && surface->format->format == SDL_PIXELFORMAT_RGB24 && transition) {
+            SDL_Surface *tmp = SDL_CreateRGBSurfaceWithFormat(0,
+                                   surface->w,
+                                   surface->h,
+                                   32,
+                                   SDL_PIXELFORMAT_ARGB8888
+                                );
+            if (tmp != NULL) {
+                Uint32 color = SDL_MapRGBA(tmp->format, 0, 0, 0, 0xFF);
+                SDL_FillRect(tmp, NULL, color);
+                SDL_BlitSurface(surface, NULL, tmp, NULL);
+                SDL_FreeSurface(surface);
+                surface = tmp;
+            }
+        }
+    }
+    slideshow->only_one = surface != NULL && slideshow->i == initial_index;
+    return surface;
+}
+```
+
+In `src/launcher.c`:
+- Add `.only_one = false` to `init_slideshow()`'s compound literal, after `.order = NULL` (which gains a comma).
+- Add `static void fall_back_from_slideshow(SDL_Surface *surface);` after `static void resume_slideshow(void);` at the top.
+- After `quit_slideshow()`, add:
+
+  ```c
+  // A function to stop a slideshow that can no longer show two images, on the main thread: show the
+  // one image that still loads (surface, the same image as the one on show), or the colour when none
+  // does. The Mode setting stays Slideshow, so the folder is tried again when the background is next
+  // set up.
+  static void fall_back_from_slideshow(SDL_Surface *surface)
+  {
+      if (surface != NULL) {
+          log_error("Could only load one image from slideshow directory %s, showing it as a single image",
+              config.slideshow_directory
+          );
+          SDL_FreeSurface(surface);
+          background_shown = BACKGROUND_IMAGE;
+      }
+      else {
+          log_error("Could not load any image from slideshow directory %s, showing the background color",
+              config.slideshow_directory
+          );
+          if (background_texture != NULL) {
+              SDL_DestroyTexture(background_texture);
+              background_texture = NULL;
+          }
+          background_shown = BACKGROUND_COLOR;
+      }
+      if (slideshow->transition_texture != NULL)
+          SDL_DestroyTexture(slideshow->transition_texture);
+      quit_slideshow();
+      set_draw_color();
+  }
+  ```
+
+- In `update_slideshow()`, replace:
+
+  ```c
+          else if (state.slideshow_background_ready) {
+              SDL_WaitThread(Slideshowhread, NULL);
+              Slideshowhread = NULL;
+              if (config.slideshow_transition_time > 0) {
+  ```
+
+  with:
+
+  ```c
+          else if (state.slideshow_background_ready) {
+              SDL_WaitThread(Slideshowhread, NULL);
+              Slideshowhread = NULL;
+
+              // The loader found no image that loads, or only the one on show: stop the slideshow
+              if (slideshow->transition_surface == NULL || slideshow->only_one) {
+                  state.slideshow_background_ready = false;
+                  fall_back_from_slideshow(slideshow->transition_surface);
+                  return;
+              }
+              if (config.slideshow_transition_time > 0) {
+  ```
+
+- In `reload_background()`, replace:
+
+  ```c
+              SDL_Surface *surface = load_next_slideshow_background(slideshow, false);
+
+              // With one loadable image it made its own texture as well; this one replaces it
+              if (surface != NULL) {
+                  if (background_texture != NULL)
+                      SDL_DestroyTexture(background_texture);
+                  background_texture = load_texture(surface);
+              }
+              ticks.slideshow_load = ticks.main;
+  ```
+
+  with:
+
+  ```c
+              SDL_Surface *surface = load_next_slideshow_background(slideshow, false);
+              if (surface != NULL) {
+                  background_texture = load_texture(surface);
+                  ticks.slideshow_load = ticks.main;
+              }
+              else
+                  fall_back_from_slideshow(NULL);
+  ```
+
+  At startup `only_one` is never set (nothing is on show yet), so only the no-image case can happen here.
+
+`image.c` no longer calls `quit_slideshow()` or `set_draw_color()`, and no longer reads `config.slideshow_directory`.
+
+- [ ] **Step 13: Build and run everything**
+
+```powershell
+$env:Path += ";C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
+cmake --build C:/Users/jscha/source/repos/streamflex/build --config Release
+ctest --test-dir C:/Users/jscha/source/repos/streamflex/build -C Release --output-on-failure
+```
+
+Expected: no new warnings, and `100% tests passed, 0 tests failed out of 9`. Then run the harness. Expected: the three new lines pass, every earlier line still passes, `0 failed`.
+
+- [ ] **Step 14: Commit**
+
+```powershell
+git -C C:/Users/jscha/source/repos/streamflex add src/launcher.h src/launcher.c src/image.c tests/headless/run.sh tests/headless/checks/30-backgrounds.sh tests/headless/fixtures/f30-broken.ini tests/headless/fixtures/f30-mixed.ini tests/headless/fixtures/f30-vanish.ini
+git -C C:/Users/jscha/source/repos/streamflex commit -m "fix: fall back from a failing slideshow on the main thread, and stop its startup loop hanging"
 ```
 
 ---
@@ -8928,6 +9439,7 @@ Compare-Object (Get-Content C:/Users/jscha/ClaudeScratch/streamflex-headless-out
   6. Back out to the top level and press Back: settings close. Quit StreamFlex, and diff `config.ini` against the zip's original. Expect only the changed lines, a `config.ini.bak` next to it, and every comment intact.
   7. Start StreamFlex again: the background, grids and titles are as saved.
   8. Make `config.ini` read-only, change a setting and press Back: the failure rows say "permission denied"; *Leave without saving* closes.
+  9. **Launching a non-ASCII path** (Task 2's `start_process()` fix, which only Windows can show). Make the config writable again, create `C:\Users\Public\Été\café.txt`, and add `Entry9=Café;apps;"C:\Users\Public\Été\café.txt"` to `[Main]` in `config.ini`, saved as UTF-8. Start StreamFlex and press Café: Notepad opens the file, and the log has no `Failed to launch command`.
 
 - [ ] **Step 5: A whole-branch review** on the most capable model, as for sub-projects 1 and 2, before the PR is armed. Every Critical or Important finding is fixed on the branch before merging. Minors become todo entries only at the user's word.
 
@@ -8954,6 +9466,7 @@ Checked against the spec after writing:
   - hands-on testing: Task 13.
 
   The deviations from the spec's letter are listed under **Spec corrections found while planning**, each with its reason.
+- **Existing bugs.** The five under **Existing bugs fixed on the way** are fixed in Tasks 1, 2 and 9, each pinned by a check: harness checks `25-menus` and the three new `30-backgrounds` lines, `test_wide`, and hands-on step 9 in Task 13.
 - **Placeholders.** None, apart from two deliberate interim states:
   - Task 9 Step 6 moves existing drawing code verbatim; its `...` names the blocks to move.
   - Task 10's `SETTINGS_EVENT_BROWSE` case does nothing until Task 11 replaces it.
