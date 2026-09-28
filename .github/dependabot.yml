@@ -5,8 +5,8 @@
 #
 # github-actions maintains the SHA-pinned action refs in .github/workflows/, and docker the
 # headless test image's pinned base in tests/headless/Dockerfile.
-# Without it Dependabot would never bump our pins and we would drift on
-# security fixes shipped in the actions themselves.
+# Without them Dependabot would never bump our pins, and we would drift on security fixes
+# shipped in the actions and the image.
 #
 # The C dependencies (SDL2, SDL2_image, SDL2_ttf, inih, getopt) come from
 # vcpkg on Windows via the VCPKG_COMMITTISH pin in build.yml, and from distro
@@ -33,3 +33,8 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 2
+    # One group, so the auto-merge workflow can recognise the digest bumps by name
+    groups:
+      docker:
+        patterns:
+          - "*"
