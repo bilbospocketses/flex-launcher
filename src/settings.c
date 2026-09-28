@@ -132,7 +132,7 @@ bool setting_parse(const SettingDef *def, const char *text, SettingValue *value)
             break;
         case SET_TYPE_MILLIS: {
             double seconds = atof(text);
-            if (!(seconds >= 0.0) || seconds * 1000.0 > (double) def->max + 0.5)
+            if (!(seconds >= 0.0) || seconds * 1000.0 >= (double) def->max + 0.5)
                 return false;
             v.number = (int) (seconds * 1000.0 + 0.5);
             break;

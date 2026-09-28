@@ -83,6 +83,8 @@ static void test_round_trips(void)
     CHECK_INT(value.number, 700);
     value = parsed(SET_ID_SLIDESHOW_FADE, "1.2346");
     CHECK_INT(value.number, 1235);                                             // Rounded to the ms
+    value = parsed(SET_ID_SLIDESHOW_FADE, "2.9995");
+    CHECK_INT(value.number, 3000);                                             // Rounds up to the maximum
 
     // Following the default writes nothing: the key is removed
     SettingValue inherit;
@@ -108,6 +110,8 @@ static void test_rejects(void)
     CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_DURATION), "3601", &value));
     CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "-1", &value));
     CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "3.5", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "3.0005", &value));   // Would round past the maximum
+    CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "-0.0004", &value));  // Negative, though it rounds to 0
     CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "nan", &value));
     CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "inf", &value));
     CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "-inf", &value));
