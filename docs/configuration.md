@@ -53,12 +53,12 @@ The settings are in a column on the left; the rest of the screen is a live previ
 - **Left and Right** change the highlighted value.
 - **OK** opens a row marked ›, or does what the row says, such as *Discard changes*.
 - **Back** goes back a page. On the first page, it saves your changes and closes settings.
-- **Menu** (or Start) closes settings from any page, saving your changes. A `:home` command does the same, then shows the menu set by `DefaultMenu`.
+- **Menu** (or Start) closes settings from any page, saving your changes, except the *Couldn't save* page, where you choose *Try again* or *Leave without saving*. A `:home` command does the same, then shows the menu set by `DefaultMenu`.
 
 While settings are open, a hotkey or gamepad control works only when its command is one of the keys above (`:up`, `:down`, `:left`, `:right`, `:select`, `:back`, `:home` or `:settings`). Any other command, such as `:quit`, is ignored. The screensaver does not start while settings are open.
 
 ### What it changes
-- **Background:** a colour (one of ten presets), an image, a slideshow of a folder of images, or transparent. A slideshow also has *Change every*, from 5 seconds to 60 minutes, and *Fade*, from 0 to 3 seconds.
+- **Background:** a colour (one of ten presets; a colour of your own from the config file stays among the choices, shown as *Custom*), an image, a slideshow of a folder of images, or transparent. A slideshow also has *Change every*, from 5 seconds to 60 minutes, and *Fade*, from 0 to 3 seconds.
 - **Menus:** the grid of every menu (*All menus*, which is the `[Layout]` section) and of each menu on its own: rows (1 to 10), columns (1 to 12) and the largest a button may grow (64 to 1024 px; on *All menus*, *Fill* lets buttons grow as large as the grid allows). On a menu's own page, the lowest step, *All menus*, makes that menu follow the shared grid again. A menu with no entries cannot be shown in the preview, but its grid can still be changed.
 - **Titles:** Small, Medium or Large. Titles scale with each menu's buttons; see [FontSize](#fontsize). A fixed size from your config file stays among the choices, shown as *Fixed*.
 
@@ -70,7 +70,7 @@ Choosing an image or a slideshow folder opens a folder browser. It starts in the
 - **OK** opens a folder, or chooses the highlighted image, or *Use this folder* for a slideshow.
 - **Back** goes up a folder. Past the top it shows the places, and from the places it closes the browser without choosing.
 
-The preview shows each image as you move over it, and the first image of a highlighted folder. The browser lists JPEG, PNG and WebP images. A slideshow folder needs at least two images; the Background page shows the chosen folder's name and how many images it holds. An image that cannot be opened, or a path too long for one line of the config file, is shown but cannot be chosen, and the browser says why. Network drives and shares, and on Linux what is mounted in `/media` and `/mnt`, are listed without being opened, so a server that is off does not hold up opening the browser; one that cannot be reached says so when you open it.
+The preview shows each image as you move over it, and the first image of a highlighted folder. The browser lists JPEG, PNG and WebP images. A slideshow folder needs at least two images; the Background page shows the chosen folder's name and how many images it holds. An image that cannot be opened, or a path too long for one line of the config file, is shown but cannot be chosen, and the browser says why. Network drives and shares, and on Linux what is mounted in `/media` and `/mnt`, are listed without being opened, so a server that is off does not hold up the list of places; opening one that cannot be reached waits for the network to give up, then says so. The same wait applies when your current image or slideshow folder is on such a share, since the browser starts there.
 
 ### Saving
 - Only the settings you changed are written. Everything else in your config file stays as it was: comments, blank lines and order included. Setting a menu back to *All menus* removes its line.
@@ -517,7 +517,7 @@ Put the computer to sleep.<sup>1</sup>
 <sup>1</sup> *Linux: Works in systemd-based distros only. Non-systemd distro users need to implement the command manually for their init system.*
 
 #### :settings
-Opens the [settings screen](#the-settings-screen). Running it again while settings are open saves your changes and closes them.
+Opens the [settings screen](#the-settings-screen). Running it again while settings are open saves your changes and closes them (on the *Couldn't save* page it does nothing).
 
 ### Desktop Files (Linux Only)
 If the application you want to launch was installed via your distro's package manager, a .desktop file was most likely provided. The command to launch a Linux application can simply be the path to its .desktop file, and StreamFlex will run the Exec command that the developers have specified in the file. Desktop files are located in /usr/share/applications.

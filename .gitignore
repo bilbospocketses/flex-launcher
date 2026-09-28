@@ -1,5 +1,7 @@
 # Out-of-source build directory used by docs/compilation.md
 /build/
+# Results of the headless checks, as CONTRIBUTING.md runs them
+/headless-out/
 docs/Gemfile.lock
 docs/_site
 docs/.jekyll-cache

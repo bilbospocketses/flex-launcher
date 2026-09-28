@@ -6,7 +6,14 @@ This repository is an independent project. It started from complexlogic's Flex L
 
 ## Building
 
-Build instructions for Windows (Visual Studio + vcpkg) and Linux (CMake + distro packages) are in [`docs/compilation.md`](docs/compilation.md). The CI workflow in [`.github/workflows/build.yml`](.github/workflows/build.yml) is the authoritative, always-exercised recipe for all four targets: Windows, Debian, Raspberry Pi, and Arch Linux. After building, run the unit tests with `ctest --test-dir build -C Release --output-on-failure`. The icon library's tooling has Python tests of its own, and its README says how to run them and `check-library.py`; see [`branding/library/README.md`](branding/library/README.md). The headless checks run in Docker: build the image from `tests/headless` and run `run.sh` in it with the repository mounted, as the `Headless` job in `build.yml` does; `run.sh` says how at its top.
+Build instructions for Windows (Visual Studio + vcpkg) and Linux (CMake + distro packages) are in [`docs/compilation.md`](docs/compilation.md). The CI workflow in [`.github/workflows/build.yml`](.github/workflows/build.yml) is the authoritative, always-exercised recipe for all four targets: Windows, Debian, Raspberry Pi, and Arch Linux. After building, run the unit tests with `ctest --test-dir build -C Release --output-on-failure`. The icon library's tooling has Python tests of its own, and its README says how to run them and `check-library.py`; see [`branding/library/README.md`](branding/library/README.md).
+
+The headless checks run in Docker, as the `Headless` job in `build.yml` does: build the image from `tests/headless`, then run `run.sh` in it with the repository mounted read-only and a folder for the results, with the seccomp profile off (ASan needs it):
+
+    docker build -t streamflex-test tests/headless
+    docker run --rm --security-opt seccomp=unconfined -v "$PWD:/src:ro" -v "$PWD/headless-out:/out" streamflex-test bash /src/tests/headless/run.sh local
+
+It prints one `PASS` or `FAIL` line per check, then `N failed`, and keeps each check's config, log and output under `headless-out/local/`.
 
 ## Project Structure
 
