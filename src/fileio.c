@@ -502,10 +502,10 @@ void fileio_free_list(FileioEntry *entries, int count)
     free(entries);
 }
 
-// A function to add a starting place when its folder exists
-static void add_place(FileioPlace **places, int *count, const char *label, const char *path)
+// A function to add a starting place without looking at its folder
+static void append_place(FileioPlace **places, int *count, const char *label, const char *path)
 {
-    if (path == NULL || !fileio_is_dir(path))
+    if (path == NULL)
         return;
     FileioPlace *grown = realloc(*places, (size_t) (*count + 1) * sizeof(FileioPlace));
     if (grown == NULL)
@@ -514,6 +514,37 @@ static void add_place(FileioPlace **places, int *count, const char *label, const
     (*places)[*count].label = strdup(label);
     (*places)[*count].path = strdup(path);
     (*count)++;
+}
+
+#ifdef _WIN32
+// A function to tell a path on a network share: a UNC path ("\\server\share") or a drive letter
+// mapped to one. GetDriveTypeW answers for a drive's root from the drive map, without touching the
+// drive, so it cannot wait on the network.
+static bool is_network_path(const char *path)
+{
+    if ((path[0] == '\\' || path[0] == '/') && (path[1] == '\\' || path[1] == '/'))
+        return true;
+    if (path[0] == '\0' || path[1] != ':')
+        return false;
+    wchar_t root[4] = { (wchar_t) (unsigned char) path[0], L':', L'\\', L'\0' };
+    return GetDriveTypeW(root) == DRIVE_REMOTE;
+}
+#endif
+
+// A function to add a starting place when its folder exists. On Windows a folder on a network share
+// is added without looking, because looking can wait for the network (see fileio_places).
+static void add_place(FileioPlace **places, int *count, const char *label, const char *path)
+{
+    if (path == NULL)
+        return;
+#ifdef _WIN32
+    if (!is_network_path(path) && !fileio_is_dir(path))
+        return;
+#else
+    if (!fileio_is_dir(path))
+        return;
+#endif
+    append_place(places, count, label, path);
 }
 
 #ifndef _WIN32
@@ -538,35 +569,57 @@ static void add_places_under(FileioPlace **places, int *count, const char *folde
 #endif
 
 // A function to list where the folder browser can start: Pictures first, then Home, then the
-// drives (Windows) or the file system's root and its mounted drives (elsewhere)
+// drives (Windows) or the file system's root and its mounted drives (elsewhere). On Windows a
+// network drive, or a known folder on a network share, is listed without being looked at: when its
+// server is off, looking makes Windows try to reconnect, which blocks for the network timeout, and
+// the browser asks for its places each time it opens. One that cannot be listed later is refused
+// when chosen, like any other folder the browser cannot list.
 int fileio_places(FileioPlace **places)
 {
     int count = 0;
     *places = NULL;
 #ifdef _WIN32
+    // An empty card reader or DVD drive must not pop up "There is no disk in the drive"
+    UINT old_mode = SetErrorMode(SEM_FAILCRITICALERRORS);
+
+    // Without KF_FLAG_DONT_VERIFY the shell looks for the folder itself, network or not;
+    // add_place() looks only when the folder is local
     PWSTR wide = NULL;
-    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Pictures, 0, NULL, &wide))) {
+    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Pictures, (DWORD) KF_FLAG_DONT_VERIFY, NULL, &wide))) {
         char *path = to_utf8(wide);
         add_place(places, &count, "Pictures", path);
         free(path);
     }
     CoTaskMemFree(wide);
     wide = NULL;
-    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Profile, 0, NULL, &wide))) {
+    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Profile, (DWORD) KF_FLAG_DONT_VERIFY, NULL, &wide))) {
         char *path = to_utf8(wide);
         add_place(places, &count, "Home", path);
         free(path);
     }
     CoTaskMemFree(wide);
 
-    // An empty card reader or DVD drive must not pop up "There is no disk in the drive"
-    UINT old_mode = SetErrorMode(SEM_FAILCRITICALERRORS);
+    // The drive map tells each drive's kind without touching it. Only a card reader or DVD drive is
+    // looked at, to leave out an empty one.
     DWORD drives = GetLogicalDrives();
     for (int i = 0; i < 26; i++) {
-        if (drives & (1u << i)) {
-            char path[4] = { (char) ('A' + i), ':', '\\', '\0' };
-            char label[3] = { (char) ('A' + i), ':', '\0' };
-            add_place(places, &count, label, path);
+        if ((drives & (1u << i)) == 0)
+            continue;
+        char path[4] = { (char) ('A' + i), ':', '\\', '\0' };
+        char label[3] = { (char) ('A' + i), ':', '\0' };
+        wchar_t root[4] = { (wchar_t) (L'A' + i), L':', L'\\', L'\0' };
+        switch (GetDriveTypeW(root)) {
+            case DRIVE_FIXED:
+            case DRIVE_RAMDISK:
+            case DRIVE_REMOTE:
+                append_place(places, &count, label, path);
+                break;
+            case DRIVE_REMOVABLE:
+            case DRIVE_CDROM:
+                add_place(places, &count, label, path);
+                break;
+            default:   // DRIVE_NO_ROOT_DIR or DRIVE_UNKNOWN
+                break;
         }
     }
     SetErrorMode(old_mode);

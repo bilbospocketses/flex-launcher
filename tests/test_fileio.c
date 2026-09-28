@@ -223,6 +223,21 @@ static void test_places(void)
         CHECK(places[i].label != NULL && places[i].label[0] != '\0');
         CHECK(fileio_is_dir(places[i].path));
     }
+#ifdef _WIN32
+    // A drive is listed only when the drive map knows its kind: never one with no root or of an
+    // unknown kind. The system drive is always listed, so this runs at least once.
+    int drives = 0;
+    for (int i = 0; i < count; i++) {
+        const char *path = places[i].path;
+        if (path[0] == '\0' || path[1] != ':' || path[2] != '\\' || path[3] != '\0')
+            continue;
+        wchar_t root[4] = { (wchar_t) (unsigned char) path[0], L':', L'\\', L'\0' };
+        UINT type = GetDriveTypeW(root);
+        CHECK(type != DRIVE_NO_ROOT_DIR && type != DRIVE_UNKNOWN);
+        drives++;
+    }
+    CHECK(drives >= 1);
+#endif
     fileio_free_places(places, count);
 }
 
