@@ -291,10 +291,10 @@ int render_scroll_indicators(Scroll *scroll, int height, Geometry *geo)
                           &scroll->rect_right
                       );
     free(buffer);
-    scroll->rect_left.w = scroll->rect_right.w;
-    scroll->rect_left.h = scroll->rect_right.h;
     if (scroll->texture == NULL)
         return 1;
+    scroll->rect_left.w = scroll->rect_right.w;
+    scroll->rect_left.h = scroll->rect_right.h;
 
     // Calculate screen position
     scroll->rect_right.y = geo->screen_height - geo->screen_margin - scroll->rect_right.h;

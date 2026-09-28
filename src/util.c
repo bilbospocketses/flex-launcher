@@ -1010,8 +1010,10 @@ void validate_settings(Geometry *geo)
     geo->vcenter = vcenter;
 
     // Max highlight outline
-    int max_highlight_outline_size = (config.highlight_hpadding < config.highlight_vpadding) 
+    int max_highlight_outline_size = (config.highlight_hpadding < config.highlight_vpadding)
                                      ? config.highlight_hpadding : config.highlight_vpadding;
+    if (max_highlight_outline_size < 0)
+        max_highlight_outline_size = 0;
     if (config.highlight_outline_size > max_highlight_outline_size)
         config.highlight_outline_size = max_highlight_outline_size;
 
