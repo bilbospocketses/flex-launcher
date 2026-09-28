@@ -5,7 +5,7 @@
 # A function to give the test user a copy of a fixture it can write; prints its path
 writable_config() {
     mkdir -p "$TESTER_HOME/cfg"
-    rm -f "$TESTER_HOME/cfg/$1.ini" "$TESTER_HOME/cfg/$1.ini.bak" "$TESTER_HOME/cfg/$1.ini.tmp"
+    rm -f "$TESTER_HOME/cfg/$1.ini" "$TESTER_HOME/cfg/$1.ini.bak" "$TESTER_HOME/cfg/$1.ini.tmp" "$TESTER_HOME/cfg/$1.ini.bak.tmp"
     cp "$FX/$1.ini" "$TESTER_HOME/cfg/$1.ini"
     chown -R tester:tester "$TESTER_HOME/cfg"
     chmod 644 "$TESTER_HOME/cfg/$1.ini"
@@ -99,13 +99,33 @@ grep -q 'Settings opened' "$out/f50-quitcmd.log" \
     && ! grep -q 'Settings: ignoring' "$out/f50-quitcmd.log" && sanitizer_clean f50-quitcmd && ok=0
 result "settings: quitting while they are open still runs the QuitCmd" $ok
 
-# A screensaver already on when settings open goes off with the key that opened them, not later
-run_keys f50-screensaver Menu BackSpace
+# A screensaver already on when settings open goes off with the key that opened them, not later.
+# Startup time varies, so the keys wait for the screensaver to come on rather than for a clock.
+
+# A function to run a config until its log shows a line (up to 20 s), then send the keys a second
+# apart and quit it as run_keys does
+run_after_line() {
+    local name=$1 line=$2; shift 2
+    local args; mapfile -t args < <(config_args "$name")
+    rm -f "$LOG"
+    "${TESTER[@]}" "$exe" "${args[@]}" -d > "$out/$name.out" 2> "$out/$name.err" &
+    local pid=$! i
+    for i in $(seq 100); do grep -q "$line" "$LOG" 2> /dev/null && break; sleep 0.2; done
+    for k in "$@"; do xdotool key "$k"; sleep 1; done
+    kill -TERM "$pid" 2> /dev/null
+    for i in $(seq 50); do kill -0 "$pid" 2> /dev/null || break; sleep 0.2; done
+    kill -KILL "$pid" 2> /dev/null
+    wait "$pid"; echo $? > "$out/$name.code"
+    cp "$LOG" "$out/$name.log" 2> /dev/null || : > "$out/$name.log"
+}
+
+run_after_line f50-screensaver 'Screensaver on' Menu BackSpace
 ok=1
-sed -n '/Settings opened/,/Settings closed/p' "$out/f50-screensaver.log" | grep -q 'Screensaver off' \
+sed -n '1,/Settings opened/p' "$out/f50-screensaver.log" | grep -q 'Screensaver on' \
+    && sed -n '/Settings opened/,/Settings closed/p' "$out/f50-screensaver.log" | grep -q 'Screensaver off' \
     && sanitizer_clean f50-screensaver && ok=0
 result "settings: a screensaver on when they open goes off as they open" $ok
-grep -E 'Screensaver off|Settings (opened|closed)' "$out/f50-screensaver.log" | sed 's/^/      /'
+grep -E 'Screensaver o(n|ff)|Settings (opened|closed)' "$out/f50-screensaver.log" | sed 's/^/      /'
 
 # A menu with no entries cannot be previewed: the preview stays put, and its grid still saves
 cfg=$(writable_config f50-empty)

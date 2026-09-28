@@ -1325,6 +1325,7 @@ static void update_screensaver()
 {
     // Activate the screensaver if the launcher has been idle for the required time
     if (!state.screensaver_active && ticks.main - ticks.last_input > config.screensaver_idle_time) {
+        log_debug("Screensaver on");
         state.screensaver_active = true;
         state.screensaver_transition = true;
         if (background_shown == BACKGROUND_SLIDESHOW && config.screensaver_pause_slideshow)
