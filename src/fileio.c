@@ -4,6 +4,8 @@
 #include "fileio.h"
 #ifdef _WIN32
 #include <windows.h>
+#include <shlobj.h>
+#include <knownfolders.h>
 #include <io.h>
 #else
 #include <dirent.h>
@@ -498,4 +500,99 @@ void fileio_free_list(FileioEntry *entries, int count)
     for (int i = 0; i < count; i++)
         free(entries[i].name);
     free(entries);
+}
+
+// A function to add a starting place when its folder exists
+static void add_place(FileioPlace **places, int *count, const char *label, const char *path)
+{
+    if (path == NULL || !fileio_is_dir(path))
+        return;
+    FileioPlace *grown = realloc(*places, (size_t) (*count + 1) * sizeof(FileioPlace));
+    if (grown == NULL)
+        return;
+    *places = grown;
+    (*places)[*count].label = strdup(label);
+    (*places)[*count].path = strdup(path);
+    (*count)++;
+}
+
+#ifndef _WIN32
+// A function to add each folder inside a folder as a place: mounted drives under /media and /mnt
+static void add_places_under(FileioPlace **places, int *count, const char *folder)
+{
+    FileioEntry *entries = NULL;
+    int found = fileio_list(folder, &entries);
+    for (int i = 0; i < found; i++) {
+        if (!entries[i].is_dir || entries[i].hidden)
+            continue;
+        size_t size = strlen(folder) + strlen(entries[i].name) + 2;
+        char *path = malloc(size);
+        if (path != NULL) {
+            snprintf(path, size, "%s/%s", folder, entries[i].name);
+            add_place(places, count, entries[i].name, path);
+            free(path);
+        }
+    }
+    fileio_free_list(entries, found);
+}
+#endif
+
+// A function to list where the folder browser can start: Pictures first, then Home, then the
+// drives (Windows) or the file system's root and its mounted drives (elsewhere)
+int fileio_places(FileioPlace **places)
+{
+    int count = 0;
+    *places = NULL;
+#ifdef _WIN32
+    PWSTR wide = NULL;
+    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Pictures, 0, NULL, &wide))) {
+        char *path = to_utf8(wide);
+        add_place(places, &count, "Pictures", path);
+        free(path);
+    }
+    CoTaskMemFree(wide);
+    wide = NULL;
+    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Profile, 0, NULL, &wide))) {
+        char *path = to_utf8(wide);
+        add_place(places, &count, "Home", path);
+        free(path);
+    }
+    CoTaskMemFree(wide);
+
+    // An empty card reader or DVD drive must not pop up "There is no disk in the drive"
+    UINT old_mode = SetErrorMode(SEM_FAILCRITICALERRORS);
+    DWORD drives = GetLogicalDrives();
+    for (int i = 0; i < 26; i++) {
+        if (drives & (1u << i)) {
+            char path[4] = { (char) ('A' + i), ':', '\\', '\0' };
+            char label[3] = { (char) ('A' + i), ':', '\0' };
+            add_place(places, &count, label, path);
+        }
+    }
+    SetErrorMode(old_mode);
+#else
+    const char *home = getenv("HOME");
+    const char *pictures = getenv("XDG_PICTURES_DIR");
+    char buffer[4096];
+    if (pictures == NULL && home != NULL) {
+        snprintf(buffer, sizeof(buffer), "%s/Pictures", home);
+        pictures = buffer;
+    }
+    add_place(places, &count, "Pictures", pictures);
+    add_place(places, &count, "Home", home);
+    add_place(places, &count, "/", "/");
+    add_places_under(places, &count, "/media");
+    add_places_under(places, &count, "/mnt");
+#endif
+    return count;
+}
+
+// A function to free a list from fileio_places
+void fileio_free_places(FileioPlace *places, int count)
+{
+    for (int i = 0; i < count; i++) {
+        free(places[i].label);
+        free(places[i].path);
+    }
+    free(places);
 }

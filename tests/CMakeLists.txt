@@ -8,21 +8,31 @@ add_executable(test_utf8 test_utf8.c "${PROJECT_SOURCE_DIR}/src/utf8.c")
 target_include_directories(test_utf8 PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME utf8 COMMAND test_utf8)
 
+# fileio.c finds the Windows places (Pictures, drives) through the shell
+function(link_fileio target)
+  if (WIN32)
+    target_link_libraries(${target} shell32 ole32 uuid)
+  endif ()
+endfunction()
+
 # Unit tests for UTF-8 file access (non-ASCII names, the replace and its retry on Windows)
 add_executable(test_fileio test_fileio.c "${PROJECT_SOURCE_DIR}/src/fileio.c")
 target_include_directories(test_fileio PRIVATE "${PROJECT_SOURCE_DIR}/src")
+link_fileio(test_fileio)
 add_test(NAME fileio COMMAND test_fileio)
 
 # Unit tests for editing config.ini line by line; the shipped sample config must survive a round trip
 add_executable(test_inidoc test_inidoc.c "${PROJECT_SOURCE_DIR}/src/inidoc.c" "${PROJECT_SOURCE_DIR}/src/fileio.c")
 target_include_directories(test_inidoc PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_compile_definitions(test_inidoc PRIVATE SAMPLE_CONFIG="${PROJECT_BINARY_DIR}/config.ini")
+link_fileio(test_inidoc)
 add_test(NAME inidoc COMMAND test_inidoc)
 
 # Unit tests for the settings screen's save: fresh read, edits, backup, replace and the Linux fallback
 add_executable(test_config_save test_config_save.c "${PROJECT_SOURCE_DIR}/src/config_save.c"
   "${PROJECT_SOURCE_DIR}/src/inidoc.c" "${PROJECT_SOURCE_DIR}/src/fileio.c")
 target_include_directories(test_config_save PRIVATE "${PROJECT_SOURCE_DIR}/src")
+link_fileio(test_config_save)
 add_test(NAME config_save COMMAND test_config_save)
 
 # Unit tests for the settings table and the settings screen's pages; settings.c reads counts and
@@ -30,6 +40,12 @@ add_test(NAME config_save COMMAND test_config_save)
 add_executable(test_settings test_settings.c "${PROJECT_SOURCE_DIR}/src/settings.c" "${PROJECT_SOURCE_DIR}/src/layout.c")
 target_include_directories(test_settings PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME settings COMMAND test_settings)
+
+# Unit tests for the folder browser's model, over a pretend file system
+add_executable(test_browser test_browser.c "${PROJECT_SOURCE_DIR}/src/browser.c" "${PROJECT_SOURCE_DIR}/src/fileio.c")
+target_include_directories(test_browser PRIVATE "${PROJECT_SOURCE_DIR}/src")
+link_fileio(test_browser)
+add_test(NAME browser COMMAND test_browser)
 
 # A function to link inih the way the launcher does
 function(link_inih target)
@@ -46,6 +62,7 @@ add_executable(test_library test_library.c "${PROJECT_SOURCE_DIR}/src/library.c"
 target_include_directories(test_library PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_compile_definitions(test_library PRIVATE LIBRARY_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/library")
 link_inih(test_library)
+link_fileio(test_library)
 add_test(NAME library COMMAND test_library)
 
 # Every generic icon in the shipped library must parse with nanosvg, the launcher's own SVG parser

@@ -24,6 +24,8 @@ set(SOURCES
   config_save.h
   settings.c
   settings.h
+  browser.c
+  browser.h
 )
 if (UNIX)
   add_executable(${EXECUTABLE_TITLE} ${SOURCES})
@@ -59,6 +61,9 @@ else ()
 	${INIH}
   ${GETOPT}
 	PowrProf
+	shell32
+	ole32
+	uuid
   )
   target_include_directories(${EXECUTABLE_TITLE} PUBLIC ${INIH_INCLUDE_DIR} ${GETOPT_INCLUDE_DIR})
 endif ()

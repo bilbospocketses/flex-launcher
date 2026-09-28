@@ -213,6 +213,19 @@ static void test_wide(void)
 }
 #endif
 
+// A function to test the starting places: at least one, and every one a folder that exists
+static void test_places(void)
+{
+    FileioPlace *places = NULL;
+    int count = fileio_places(&places);
+    CHECK(count >= 1);
+    for (int i = 0; i < count; i++) {
+        CHECK(places[i].label != NULL && places[i].label[0] != '\0');
+        CHECK(fileio_is_dir(places[i].path));
+    }
+    fileio_free_places(places, count);
+}
+
 int main(void)
 {
     test_non_ascii_round_trip();
@@ -226,5 +239,6 @@ int main(void)
     test_replace_keeps_a_hidden_target_hidden();
     test_wide();
 #endif
+    test_places();
     return check_report();
 }

@@ -37,4 +37,12 @@ const char *fileio_last_error(void);
 wchar_t *fileio_wide(const char *text);   // For other Windows calls that take a path or command
 #endif
 
+typedef struct {
+    char *label;  // What the browser shows: "Pictures", "Home", "C:", "/", a mount's name
+    char *path;
+} FileioPlace;
+
+int fileio_places(FileioPlace **places);
+void fileio_free_places(FileioPlace *places, int count);
+
 #endif
