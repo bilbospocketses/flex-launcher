@@ -13,6 +13,12 @@ add_executable(test_fileio test_fileio.c "${PROJECT_SOURCE_DIR}/src/fileio.c")
 target_include_directories(test_fileio PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME fileio COMMAND test_fileio)
 
+# Unit tests for editing config.ini line by line; the shipped sample config must survive a round trip
+add_executable(test_inidoc test_inidoc.c "${PROJECT_SOURCE_DIR}/src/inidoc.c" "${PROJECT_SOURCE_DIR}/src/fileio.c")
+target_include_directories(test_inidoc PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_compile_definitions(test_inidoc PRIVATE SAMPLE_CONFIG="${PROJECT_BINARY_DIR}/config.ini")
+add_test(NAME inidoc COMMAND test_inidoc)
+
 # A function to link inih the way the launcher does
 function(link_inih target)
   if (UNIX)

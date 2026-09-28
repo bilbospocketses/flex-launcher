@@ -3,6 +3,7 @@
 #define CHECK_H
 
 #include <stdio.h>
+#include <string.h>
 
 static int check_count = 0;
 static int check_failures = 0;
@@ -22,6 +23,17 @@ static int check_failures = 0;
     if (actual_ != expected_) { \
         check_failures++; \
         fprintf(stderr, "%s:%d: %s is %d, expected %d\n", __FILE__, __LINE__, #actual, actual_, expected_); \
+    } \
+} while (0)
+
+#define CHECK_STR(actual, expected) do { \
+    const char *actual_ = (actual); \
+    const char *expected_ = (expected); \
+    check_count++; \
+    if (actual_ == NULL || strcmp(actual_, expected_) != 0) { \
+        check_failures++; \
+        fprintf(stderr, "%s:%d: %s is \"%s\", expected \"%s\"\n", __FILE__, __LINE__, #actual, \
+            actual_ != NULL ? actual_ : "(null)", expected_); \
     } \
 } while (0)
 

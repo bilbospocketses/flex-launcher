@@ -18,6 +18,8 @@ set(SOURCES
   library.h
   fileio.c
   fileio.h
+  inidoc.c
+  inidoc.h
 )
 if (UNIX)
   add_executable(${EXECUTABLE_TITLE} ${SOURCES})
