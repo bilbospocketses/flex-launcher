@@ -1,0 +1,456 @@
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+#include "check.h"
+#include "settings.h"
+
+#define ARROW " \xE2\x80\xBA "   // U+203A with a space either side, between pages in the page path
+#define TIMES "\xC3\x97"         // U+00D7, the multiplication sign
+#define ELLIPSIS "\xE2\x80\xA6"  // U+2026, the ellipsis
+
+// A function to parse a value, failing the check when the parser refuses it
+static SettingValue parsed(SettingId id, const char *text)
+{
+    SettingValue value;
+    memset(&value, 0, sizeof(value));
+    CHECK(setting_parse(setting_def(id), text, &value));
+    return value;
+}
+
+// A function to write a value back out as config.ini would hold it
+static const char *formatted(SettingId id, const SettingValue *value)
+{
+    static char text[SETTING_TEXT_MAX];
+    setting_format(setting_def(id), value, text, sizeof(text));
+    return text;
+}
+
+// A function to describe a value as the screen shows it
+static const char *described(SettingId id, const SettingValue *value, const SettingValue *inherited)
+{
+    static char text[256];
+    setting_describe(setting_def(id), value, inherited, text, sizeof(text));
+    return text;
+}
+
+// A function to step a value several times one way
+static SettingValue stepped(SettingId id, SettingValue value, const SettingValue *entry, int direction, int times)
+{
+    for (int i = 0; i < times; i++)
+        value = setting_step(setting_def(id), &value, entry, direction);
+    return value;
+}
+
+// A function to test that every type reads what the parser reads and writes it back unchanged
+static void test_round_trips(void)
+{
+    static const struct { SettingId id; const char *text; } cases[] = {
+        { SET_ID_LAYOUT_ROWS, "3" },
+        { SET_ID_LAYOUT_COLUMNS, "12" },
+        { SET_ID_LAYOUT_ROWS, "999999" },
+        { SET_ID_LAYOUT_ICON_SIZE, "256" },
+        { SET_ID_MENU_ICON_SIZE, "1024" },
+        { SET_ID_BACKGROUND_MODE, "Slideshow" },
+        { SET_ID_BACKGROUND_COLOR, "#1A2B3C" },
+        { SET_ID_BACKGROUND_IMAGE, "C:\\My Pictures\\sunset.jpg" },
+        { SET_ID_SLIDESHOW_DIRECTORY, "/home/me/Pictures" },
+        { SET_ID_SLIDESHOW_DURATION, "30" },
+        { SET_ID_SLIDESHOW_DURATION, "3600" },
+        { SET_ID_SLIDESHOW_FADE, "0" },
+        { SET_ID_SLIDESHOW_FADE, "0.5" },
+        { SET_ID_SLIDESHOW_FADE, "1" },
+        { SET_ID_SLIDESHOW_FADE, "1.5" },
+        { SET_ID_SLIDESHOW_FADE, "2.5" },
+        { SET_ID_SLIDESHOW_FADE, "3" },
+        { SET_ID_SLIDESHOW_FADE, "1.25" },
+        { SET_ID_SLIDESHOW_FADE, "0.123" },
+        { SET_ID_TITLE_SIZE, "14%" },
+        { SET_ID_TITLE_SIZE, "36" }
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        SettingValue value = parsed(cases[i].id, cases[i].text);
+        CHECK_STR(formatted(cases[i].id, &value), cases[i].text);
+    }
+
+    // What the parser reads from files written other ways
+    SettingValue value = parsed(SET_ID_BACKGROUND_COLOR, "#1a2b3c");
+    CHECK_STR(formatted(SET_ID_BACKGROUND_COLOR, &value), "#1A2B3C");
+    value = parsed(SET_ID_BACKGROUND_IMAGE, "\"C:\\My Pictures\\a.png\"");     // Quotes dropped, as clean_path does
+    CHECK_STR(value.text, "C:\\My Pictures\\a.png");
+    value = parsed(SET_ID_SLIDESHOW_DURATION, "30s");                          // atoi, as before
+    CHECK_INT(value.number, 30);
+    value = parsed(SET_ID_SLIDESHOW_FADE, "0.7");
+    CHECK_INT(value.number, 700);
+    value = parsed(SET_ID_SLIDESHOW_FADE, "1.2346");
+    CHECK_INT(value.number, 1235);                                             // Rounded to the ms
+
+    // Following the default writes nothing: the key is removed
+    SettingValue inherit;
+    memset(&inherit, 0, sizeof(inherit));
+    inherit.inherit = true;
+    CHECK_STR(formatted(SET_ID_MENU_ROWS, &inherit), "");
+}
+
+// A function to test the values the parser refuses
+static void test_rejects(void)
+{
+    SettingValue value;
+    CHECK(!setting_parse(setting_def(SET_ID_LAYOUT_ROWS), "0", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_LAYOUT_ROWS), "3x", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_LAYOUT_ICON_SIZE), "31", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_LAYOUT_ICON_SIZE), "200px", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_BACKGROUND_MODE), "color", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_BACKGROUND_COLOR), "#12345G", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_BACKGROUND_COLOR), "123456", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_BACKGROUND_COLOR), "#1234567", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_BACKGROUND_IMAGE), "", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_DURATION), "4", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_DURATION), "3601", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "-1", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "3.5", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_TITLE_SIZE), "0%", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_TITLE_SIZE), "abc", &value));
+}
+
+// A function to test how Left and Right step each type
+static void test_steps(void)
+{
+    // Rows stop at their ends, and a value from the file past the last step stays reachable
+    SettingValue one = parsed(SET_ID_LAYOUT_ROWS, "1");
+    CHECK_INT(stepped(SET_ID_LAYOUT_ROWS, one, &one, -1, 1).number, 1);
+    CHECK_INT(stepped(SET_ID_LAYOUT_ROWS, one, &one, 1, 1).number, 2);
+    CHECK_INT(stepped(SET_ID_LAYOUT_ROWS, one, &one, 1, 20).number, 10);
+    SettingValue big = parsed(SET_ID_LAYOUT_ROWS, "25");
+    SettingValue ten = stepped(SET_ID_LAYOUT_ROWS, big, &big, -1, 1);
+    CHECK_INT(ten.number, 10);
+    CHECK_INT(stepped(SET_ID_LAYOUT_ROWS, ten, &big, 1, 1).number, 25);
+
+    // A menu's lowest step follows All menus
+    SettingValue three = parsed(SET_ID_MENU_ROWS, "3");
+    SettingValue value = stepped(SET_ID_MENU_ROWS, three, &three, -1, 3);
+    CHECK(value.inherit);
+    value = stepped(SET_ID_MENU_ROWS, value, &three, 1, 1);
+    CHECK(!value.inherit);
+    CHECK_INT(value.number, 1);
+
+    // IconSize: Fill, then the steps, with a value from the file in its sorted place
+    SettingValue fill;
+    memset(&fill, 0, sizeof(fill));
+    fill.inherit = true;
+    CHECK_INT(stepped(SET_ID_LAYOUT_ICON_SIZE, fill, &fill, 1, 1).number, 64);
+    SettingValue odd = parsed(SET_ID_LAYOUT_ICON_SIZE, "200");
+    SettingValue below = parsed(SET_ID_LAYOUT_ICON_SIZE, "192");
+    CHECK_INT(stepped(SET_ID_LAYOUT_ICON_SIZE, below, &odd, 1, 1).number, 200);
+    CHECK_INT(stepped(SET_ID_LAYOUT_ICON_SIZE, odd, &odd, 1, 1).number, 256);
+
+    // Colours: a custom colour from the file first, then the presets in order
+    SettingValue custom = parsed(SET_ID_BACKGROUND_COLOR, "#123456");
+    value = stepped(SET_ID_BACKGROUND_COLOR, custom, &custom, 1, 1);
+    CHECK_STR(formatted(SET_ID_BACKGROUND_COLOR, &value), "#000000");
+    value = stepped(SET_ID_BACKGROUND_COLOR, value, &custom, 1, 1);
+    CHECK_STR(formatted(SET_ID_BACKGROUND_COLOR, &value), "#1E1E1E");
+    value = stepped(SET_ID_BACKGROUND_COLOR, value, &custom, -1, 2);
+    CHECK_STR(formatted(SET_ID_BACKGROUND_COLOR, &value), "#123456");
+    SettingValue black = parsed(SET_ID_BACKGROUND_COLOR, "#000000");
+    value = stepped(SET_ID_BACKGROUND_COLOR, black, &black, -1, 1);
+    CHECK_STR(formatted(SET_ID_BACKGROUND_COLOR, &value), "#000000");
+    value = stepped(SET_ID_BACKGROUND_COLOR, black, &black, 1, 20);
+    CHECK_STR(formatted(SET_ID_BACKGROUND_COLOR, &value), "#4A1520");
+
+    // Title size: a fixed size from the file, then Small, Medium and Large
+    SettingValue fixed = parsed(SET_ID_TITLE_SIZE, "36");
+    value = stepped(SET_ID_TITLE_SIZE, fixed, &fixed, 1, 1);
+    CHECK_STR(formatted(SET_ID_TITLE_SIZE, &value), "11%");
+    value = stepped(SET_ID_TITLE_SIZE, value, &fixed, 1, 5);
+    CHECK_STR(formatted(SET_ID_TITLE_SIZE, &value), "17%");
+    value = stepped(SET_ID_TITLE_SIZE, value, &fixed, -1, 5);
+    CHECK_STR(formatted(SET_ID_TITLE_SIZE, &value), "36");
+
+    // Durations and fades follow their step lists
+    SettingValue thirty = parsed(SET_ID_SLIDESHOW_DURATION, "30");
+    CHECK_INT(stepped(SET_ID_SLIDESHOW_DURATION, thirty, &thirty, 1, 1).number, 60);
+    SettingValue fade = parsed(SET_ID_SLIDESHOW_FADE, "1.5");
+    CHECK_INT(stepped(SET_ID_SLIDESHOW_FADE, fade, &fade, 1, 1).number, 2000);
+
+    // The mode stops at both ends; a path never steps
+    SettingValue mode = parsed(SET_ID_BACKGROUND_MODE, "Color");
+    CHECK_INT(stepped(SET_ID_BACKGROUND_MODE, mode, &mode, -1, 1).number, 0);
+    CHECK_INT(stepped(SET_ID_BACKGROUND_MODE, mode, &mode, 1, 9).number, 3);
+    SettingValue path = parsed(SET_ID_BACKGROUND_IMAGE, "/a.png");
+    SettingValue same = stepped(SET_ID_BACKGROUND_IMAGE, path, &path, 1, 1);
+    CHECK_STR(same.text, "/a.png");
+}
+
+// A function to test how values are described on screen
+static void test_descriptions(void)
+{
+    SettingValue inherit;
+    memset(&inherit, 0, sizeof(inherit));
+    inherit.inherit = true;
+    SettingValue four = parsed(SET_ID_LAYOUT_ROWS, "4");
+    CHECK_STR(described(SET_ID_MENU_ROWS, &inherit, &four), "All menus (4)");
+    SettingValue value = parsed(SET_ID_MENU_ROWS, "3");
+    CHECK_STR(described(SET_ID_MENU_ROWS, &value, &four), "3");
+    CHECK_STR(described(SET_ID_LAYOUT_ICON_SIZE, &inherit, NULL), "Fill");
+    CHECK_STR(described(SET_ID_MENU_ICON_SIZE, &inherit, &inherit), "All menus (Fill)");
+    SettingValue cap = parsed(SET_ID_LAYOUT_ICON_SIZE, "256");
+    CHECK_STR(described(SET_ID_MENU_ICON_SIZE, &inherit, &cap), "All menus (256 px)");
+    CHECK_STR(described(SET_ID_LAYOUT_ICON_SIZE, &cap, NULL), "256 px");
+    value = parsed(SET_ID_BACKGROUND_MODE, "Color");
+    CHECK_STR(described(SET_ID_BACKGROUND_MODE, &value, NULL), "Colour");
+    value = parsed(SET_ID_BACKGROUND_COLOR, "#1E1E1E");
+    CHECK_STR(described(SET_ID_BACKGROUND_COLOR, &value, NULL), "Charcoal");
+    value = parsed(SET_ID_BACKGROUND_COLOR, "#123456");
+    CHECK_STR(described(SET_ID_BACKGROUND_COLOR, &value, NULL), "Custom #123456");
+    value = parsed(SET_ID_BACKGROUND_IMAGE, "C:\\Pics\\sunset.jpg");
+    CHECK_STR(described(SET_ID_BACKGROUND_IMAGE, &value, NULL), "sunset.jpg");
+    value = parsed(SET_ID_SLIDESHOW_DIRECTORY, "/home/me/Pictures/");
+    CHECK_STR(described(SET_ID_SLIDESHOW_DIRECTORY, &value, NULL), "Pictures");
+    memset(&value, 0, sizeof(value));
+    CHECK_STR(described(SET_ID_BACKGROUND_IMAGE, &value, NULL), "Choose" ELLIPSIS);
+    value = parsed(SET_ID_SLIDESHOW_DURATION, "30");
+    CHECK_STR(described(SET_ID_SLIDESHOW_DURATION, &value, NULL), "30 s");
+    value = parsed(SET_ID_SLIDESHOW_DURATION, "120");
+    CHECK_STR(described(SET_ID_SLIDESHOW_DURATION, &value, NULL), "2 min");
+    value = parsed(SET_ID_SLIDESHOW_DURATION, "90");
+    CHECK_STR(described(SET_ID_SLIDESHOW_DURATION, &value, NULL), "90 s");
+    value = parsed(SET_ID_SLIDESHOW_FADE, "1.5");
+    CHECK_STR(described(SET_ID_SLIDESHOW_FADE, &value, NULL), "1.5 s");
+    value = parsed(SET_ID_TITLE_SIZE, "11%");
+    CHECK_STR(described(SET_ID_TITLE_SIZE, &value, NULL), "Small");
+    value = parsed(SET_ID_TITLE_SIZE, "14%");
+    CHECK_STR(described(SET_ID_TITLE_SIZE, &value, NULL), "Medium");
+    value = parsed(SET_ID_TITLE_SIZE, "17%");
+    CHECK_STR(described(SET_ID_TITLE_SIZE, &value, NULL), "Large");
+    value = parsed(SET_ID_TITLE_SIZE, "12%");
+    CHECK_STR(described(SET_ID_TITLE_SIZE, &value, NULL), "12%");
+    value = parsed(SET_ID_TITLE_SIZE, "36");
+    CHECK_STR(described(SET_ID_TITLE_SIZE, &value, NULL), "Fixed 36");
+}
+
+// A function to open a model over two menus, with the values a typical config gives
+static SettingsState *open_model(void)
+{
+    static const char *const names[] = { "Main", "Games" };
+    SettingsState *state = settings_create(names, 2);
+    SettingValue value;
+    value = parsed(SET_ID_BACKGROUND_MODE, "Color");
+    settings_set_entry(state, SET_ID_BACKGROUND_MODE, -1, &value);
+    value = parsed(SET_ID_BACKGROUND_COLOR, "#000000");
+    settings_set_entry(state, SET_ID_BACKGROUND_COLOR, -1, &value);
+    memset(&value, 0, sizeof(value));
+    settings_set_entry(state, SET_ID_BACKGROUND_IMAGE, -1, &value);
+    settings_set_entry(state, SET_ID_SLIDESHOW_DIRECTORY, -1, &value);
+    value = parsed(SET_ID_SLIDESHOW_DURATION, "30");
+    settings_set_entry(state, SET_ID_SLIDESHOW_DURATION, -1, &value);
+    value = parsed(SET_ID_SLIDESHOW_FADE, "1.5");
+    settings_set_entry(state, SET_ID_SLIDESHOW_FADE, -1, &value);
+    value = parsed(SET_ID_LAYOUT_ROWS, "1");
+    settings_set_entry(state, SET_ID_LAYOUT_ROWS, -1, &value);
+    value = parsed(SET_ID_LAYOUT_COLUMNS, "4");
+    settings_set_entry(state, SET_ID_LAYOUT_COLUMNS, -1, &value);
+    memset(&value, 0, sizeof(value));
+    value.inherit = true;
+    settings_set_entry(state, SET_ID_LAYOUT_ICON_SIZE, -1, &value);
+    value = parsed(SET_ID_TITLE_SIZE, "14%");
+    settings_set_entry(state, SET_ID_TITLE_SIZE, -1, &value);
+    value = parsed(SET_ID_MENU_ROWS, "3");
+    settings_set_entry(state, SET_ID_MENU_ROWS, 1, &value);
+    value = parsed(SET_ID_MENU_COLUMNS, "6");
+    settings_set_entry(state, SET_ID_MENU_COLUMNS, 1, &value);
+    return state;
+}
+
+// A function to test the top level, the Menus page, one menu's page and Discard
+static void test_top_and_menus(void)
+{
+    SettingsState *state = open_model();
+    SettingsRow rows[SETTINGS_MAX_ROWS];
+    char path[256];
+    int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 5);
+    CHECK_STR(rows[0].label, "Background");
+    CHECK_STR(rows[0].value, "Colour");
+    CHECK_STR(rows[1].label, "Menus");
+    CHECK_STR(rows[1].value, "2 menus");
+    CHECK_STR(rows[2].label, "Titles");
+    CHECK_STR(rows[2].value, "Medium");
+    CHECK_INT(rows[3].kind, SETTINGS_ROW_DIVIDER);
+    CHECK_STR(rows[4].label, "Discard changes");
+    CHECK(!rows[4].enabled);
+    CHECK_INT(settings_cursor(state), 0);
+    CHECK_INT(settings_command(state, SETTINGS_DOWN).kind, SETTINGS_EVENT_MOVED);
+    CHECK_INT(settings_command(state, SETTINGS_DOWN).kind, SETTINGS_EVENT_MOVED);
+    CHECK_INT(settings_command(state, SETTINGS_DOWN).kind, SETTINGS_EVENT_NONE);   // Discard is greyed
+    CHECK_INT(settings_cursor(state), 2);
+    settings_command(state, SETTINGS_UP);
+
+    // Menus: All menus, a divider, then each menu with its grid as columns x rows
+    CHECK_INT(settings_command(state, SETTINGS_OK).kind, SETTINGS_EVENT_MOVED);
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_MENUS);
+    settings_path(state, path, sizeof(path));
+    CHECK_STR(path, "Settings" ARROW "Menus");
+    count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 4);
+    CHECK_STR(rows[0].label, "All menus");
+    CHECK_STR(rows[0].value, "4 " TIMES " 1");
+    CHECK_STR(rows[2].label, "Main");
+    CHECK_STR(rows[2].value, "All menus");
+    CHECK_STR(rows[3].label, "Games");
+    CHECK_STR(rows[3].value, "6 " TIMES " 3");
+    CHECK_INT(settings_preview_menu(state), -1);
+    settings_command(state, SETTINGS_DOWN);                  // Over the divider, onto Main
+    CHECK_INT(settings_cursor(state), 2);
+    CHECK_INT(settings_preview_menu(state), 0);
+    settings_command(state, SETTINGS_DOWN);
+    CHECK_INT(settings_preview_menu(state), 1);
+
+    // Games' page: its own rows and columns, and IconSize following All menus
+    settings_command(state, SETTINGS_OK);
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_MENU);
+    CHECK_INT(settings_preview_menu(state), 1);
+    settings_path(state, path, sizeof(path));
+    CHECK_STR(path, "Settings" ARROW "Menus" ARROW "Games");
+    settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_STR(rows[0].value, "3");
+    CHECK_STR(rows[1].value, "6");
+    CHECK_STR(rows[2].value, "All menus (Fill)");
+
+    // Rows 3 -> 2 -> 1 -> All menus (1)
+    SettingsEvent event = settings_command(state, SETTINGS_LEFT);
+    CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
+    CHECK(event.slot == settings_slot(state, SET_ID_MENU_ROWS, 1));
+    CHECK_INT(event.before.number, 3);
+    settings_command(state, SETTINGS_LEFT);
+    settings_command(state, SETTINGS_LEFT);
+    settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_STR(rows[0].value, "All menus (1)");
+    CHECK(settings_changed(settings_slot(state, SET_ID_MENU_ROWS, 1)));
+    CHECK_INT(settings_command(state, SETTINGS_LEFT).kind, SETTINGS_EVENT_NONE);
+
+    // Back at the top, Discard is offered; it puts every value back and greys out again
+    settings_command(state, SETTINGS_BACK);
+    settings_command(state, SETTINGS_BACK);
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_TOP);
+    CHECK_INT(settings_cursor(state), 1);                    // Where it was
+    settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK(rows[4].enabled);
+    settings_command(state, SETTINGS_DOWN);
+    settings_command(state, SETTINGS_DOWN);
+    CHECK_INT(settings_cursor(state), 4);
+    CHECK_INT(settings_command(state, SETTINGS_OK).kind, SETTINGS_EVENT_DISCARD);
+    CHECK_INT(settings_slot(state, SET_ID_MENU_ROWS, 1)->value.number, 3);
+    CHECK(!settings_any_changed(state));
+    CHECK_INT(settings_cursor(state), 2);
+
+    CHECK_INT(settings_command(state, SETTINGS_BACK).kind, SETTINGS_EVENT_CLOSE);
+    CHECK_INT(settings_command(state, SETTINGS_HOME).kind, SETTINGS_EVENT_CLOSE_HOME);
+    CHECK_INT(settings_command(state, SETTINGS_CLOSE).kind, SETTINGS_EVENT_CLOSE);
+    settings_free(state);
+}
+
+// A function to test the Background page: its rows per mode, and the incomplete-mode rule
+static void test_background_page(void)
+{
+    SettingsState *state = open_model();
+    SettingsRow rows[SETTINGS_MAX_ROWS];
+    settings_command(state, SETTINGS_OK);
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_BACKGROUND);
+    int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 2);
+    CHECK_STR(rows[0].value, "Colour");
+    CHECK_STR(rows[1].label, "Colour");
+    CHECK_STR(rows[1].value, "Black");
+
+    // Image with none chosen: Back puts the mode back, and says why
+    settings_command(state, SETTINGS_RIGHT);
+    count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 2);
+    CHECK_INT(rows[1].kind, SETTINGS_ROW_BROWSE);
+    CHECK_STR(rows[1].value, "Choose" ELLIPSIS);
+    SettingsEvent event = settings_command(state, SETTINGS_BACK);
+    CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
+    CHECK(event.slot == settings_slot(state, SET_ID_BACKGROUND_MODE, -1));
+    CHECK_INT(event.slot->value.number, 0);
+    CHECK(strstr(settings_notice(state), "No image was chosen") != NULL);
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_TOP);
+    CHECK(!settings_any_changed(state));
+
+    // Image chosen in the browser: Back keeps it
+    settings_command(state, SETTINGS_OK);
+    settings_command(state, SETTINGS_RIGHT);
+    settings_command(state, SETTINGS_DOWN);
+    event = settings_command(state, SETTINGS_OK);
+    CHECK_INT(event.kind, SETTINGS_EVENT_BROWSE);
+    CHECK(event.slot == settings_slot(state, SET_ID_BACKGROUND_IMAGE, -1));
+    SettingSlot *image = event.slot;
+    CHECK_INT(settings_choose(state, image, "/pics/a.png").kind, SETTINGS_EVENT_CHANGED);
+    CHECK_INT(settings_choose(state, image, "/pics/a.png").kind, SETTINGS_EVENT_NONE);
+    CHECK_INT(settings_command(state, SETTINGS_BACK).kind, SETTINGS_EVENT_MOVED);
+    CHECK_INT(settings_slot(state, SET_ID_BACKGROUND_MODE, -1)->value.number, 1);
+
+    // Slideshow: a folder, how long each image shows, and the fade
+    settings_command(state, SETTINGS_OK);
+    settings_command(state, SETTINGS_RIGHT);
+    count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 4);
+    CHECK_STR(rows[1].label, "Folder");
+    CHECK_STR(rows[2].value, "30 s");
+    CHECK_STR(rows[3].value, "1.5 s");
+
+    // Transparent: a note in place of rows
+    settings_command(state, SETTINGS_RIGHT);
+    count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 2);
+    CHECK_INT(rows[1].kind, SETTINGS_ROW_NOTE);
+    CHECK(rows[1].note != NULL && strstr(rows[1].note, "compositor") != NULL);
+
+    // Closing from the page with Slideshow and no folder puts back the mode the page opened with
+    settings_command(state, SETTINGS_LEFT);
+    event = settings_command(state, SETTINGS_CLOSE);
+    CHECK_INT(event.kind, SETTINGS_EVENT_CLOSE);
+    CHECK(event.slot == settings_slot(state, SET_ID_BACKGROUND_MODE, -1));
+    CHECK_INT(event.slot->value.number, 1);
+    settings_free(state);
+}
+
+// A function to test the page a failed save shows
+static void test_save_failed_page(void)
+{
+    SettingsState *state = open_model();
+    SettingsRow rows[SETTINGS_MAX_ROWS];
+    settings_show_save_failed(state, "Couldn't save to /x/config.ini: permission denied");
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_SAVE_FAILED);
+    int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 3);
+    CHECK_INT(rows[0].kind, SETTINGS_ROW_NOTE);
+    CHECK(strstr(rows[0].note, "permission denied") != NULL);
+    CHECK_STR(rows[1].label, "Try again");
+    CHECK_STR(rows[2].label, "Leave without saving");
+    CHECK_INT(settings_cursor(state), 1);
+    CHECK_INT(settings_command(state, SETTINGS_HOME).kind, SETTINGS_EVENT_NONE);
+    CHECK_INT(settings_command(state, SETTINGS_CLOSE).kind, SETTINGS_EVENT_NONE);
+    CHECK_INT(settings_command(state, SETTINGS_OK).kind, SETTINGS_EVENT_RETRY);
+
+    // A retry that fails again stays on the same page, with the new reason
+    settings_show_save_failed(state, "Couldn't save to /x/config.ini: the disk is full");
+    settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK(strstr(rows[0].note, "disk is full") != NULL);
+    settings_command(state, SETTINGS_DOWN);
+    CHECK_INT(settings_command(state, SETTINGS_OK).kind, SETTINGS_EVENT_LEAVE);
+    CHECK_INT(settings_command(state, SETTINGS_BACK).kind, SETTINGS_EVENT_MOVED);
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_TOP);
+    settings_free(state);
+}
+
+int main(void)
+{
+    test_round_trips();
+    test_rejects();
+    test_steps();
+    test_descriptions();
+    test_top_and_menus();
+    test_background_page();
+    test_save_failed_page();
+    return check_report();
+}

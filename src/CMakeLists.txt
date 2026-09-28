@@ -22,6 +22,8 @@ set(SOURCES
   inidoc.h
   config_save.c
   config_save.h
+  settings.c
+  settings.h
 )
 if (UNIX)
   add_executable(${EXECUTABLE_TITLE} ${SOURCES})

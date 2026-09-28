@@ -25,6 +25,12 @@ add_executable(test_config_save test_config_save.c "${PROJECT_SOURCE_DIR}/src/co
 target_include_directories(test_config_save PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME config_save COMMAND test_config_save)
 
+# Unit tests for the settings table and the settings screen's pages; settings.c reads counts and
+# sizes through layout.c's parsers
+add_executable(test_settings test_settings.c "${PROJECT_SOURCE_DIR}/src/settings.c" "${PROJECT_SOURCE_DIR}/src/layout.c")
+target_include_directories(test_settings PRIVATE "${PROJECT_SOURCE_DIR}/src")
+add_test(NAME settings COMMAND test_settings)
+
 # A function to link inih the way the launcher does
 function(link_inih target)
   if (UNIX)

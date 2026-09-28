@@ -12,6 +12,7 @@
 #include "util.h"
 #include "library.h"
 #include "fileio.h"
+#include "settings.h"
 #include "debug.h"
 #include "platform/platform.h"
 #include <ini.h>
@@ -22,6 +23,7 @@ static Menu *create_menu(const char *menu_name, size_t *num_menus);
 static bool gamepad_command_mapped(const char *cmd);
 static bool gamepad_control_mapped(const char *label);
 static void add_default_controls(const char *cmd, const char *const *labels, size_t count);
+static void store_background_setting(SettingId id, const SettingValue *value);
 
 extern Config          config;
 extern GamepadControl  *gamepad_controls;
@@ -130,6 +132,37 @@ void parse_config_file(const char *config_file_path)
         log_fatal("Could not parse config file");
 }
 
+// A function to store a [Background] setting read through the settings table
+static void store_background_setting(SettingId id, const SettingValue *value)
+{
+    switch (id) {
+        case SET_ID_BACKGROUND_MODE:
+            config.background_mode = (ModeBackground) value->number;
+            break;
+        case SET_ID_BACKGROUND_COLOR:
+            config.background_color.r = value->color.r;
+            config.background_color.g = value->color.g;
+            config.background_color.b = value->color.b;
+            break;
+        case SET_ID_BACKGROUND_IMAGE:
+            free(config.background_image);
+            config.background_image = strdup(value->text);
+            break;
+        case SET_ID_SLIDESHOW_DIRECTORY:
+            free(config.slideshow_directory);
+            config.slideshow_directory = strdup(value->text);
+            break;
+        case SET_ID_SLIDESHOW_DURATION:
+            config.slideshow_image_duration = (Uint32) value->number * 1000;
+            break;
+        case SET_ID_SLIDESHOW_FADE:
+            config.slideshow_transition_time = (Uint32) value->number;
+            break;
+        default:
+            break;
+    }
+}
+
 // A function to handle config file parsing
 int config_handler(void *user, const char *section, const char *name, const char *value)
 {
@@ -169,30 +202,30 @@ int config_handler(void *user, const char *section, const char *name, const char
     }
 
     else if (MATCH(section, "Layout")) {
-        int count;
+        SettingValue parsed;
         if (MATCH(name, SETTING_MAX_BUTTONS)) {
-            if (!layout_parse_count(value, &count))
+            if (!setting_parse(setting_def(SET_ID_LAYOUT_COLUMNS), value, &parsed))
                 log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_MAX_BUTTONS, value);
             else if (!columns_set)
-                config.max_buttons = (unsigned int) count;
+                config.max_buttons = (unsigned int) parsed.number;
         }
         else if (MATCH(name, SETTING_COLUMNS)) {
-            if (layout_parse_count(value, &count)) {
-                config.max_buttons = (unsigned int) count;
+            if (setting_parse(setting_def(SET_ID_LAYOUT_COLUMNS), value, &parsed)) {
+                config.max_buttons = (unsigned int) parsed.number;
                 columns_set = true;
             }
             else
                 log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_COLUMNS, value);
         }
         else if (MATCH(name, SETTING_ROWS)) {
-            if (layout_parse_count(value, &count))
-                config.rows = (unsigned int) count;
+            if (setting_parse(setting_def(SET_ID_LAYOUT_ROWS), value, &parsed))
+                config.rows = (unsigned int) parsed.number;
             else
                 log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_ROWS, value);
         }
         else if (MATCH(name, SETTING_ICON_SIZE)) {
-            if (layout_parse_icon_size(value, &count))
-                config.icon_size = (Uint16) count;
+            if (setting_parse(setting_def(SET_ID_LAYOUT_ICON_SIZE), value, &parsed))
+                config.icon_size = (Uint16) parsed.number;
             else
                 log_error("Invalid %s value '%s' in [Layout] (use a whole number from %i to %i), ignoring it",
                     SETTING_ICON_SIZE, value, MIN_ICON_SIZE, MAX_ICON_SIZE);
@@ -213,28 +246,25 @@ int config_handler(void *user, const char *section, const char *name, const char
     }
 
     else if (MATCH(section, "Background")) {
+        SettingId id = SET_ID_COUNT;
         if (MATCH(name, SETTING_BACKGROUND_MODE))
-            parse_mode_setting(MODE_SETTING_BACKGROUND, value, (int*) &config.background_mode);
+            id = SET_ID_BACKGROUND_MODE;
         else if (MATCH(name, SETTING_BACKGROUND_COLOR))
-            hex_to_color(value, &config.background_color);
-        else if (MATCH(name, SETTING_BACKGROUND_IMAGE)) {
-            config.background_image = strdup(value);
-            clean_path(config.background_image);
-        }
-        else if (MATCH(name, SETTING_SLIDESHOW_DIRECTORY)) {
-            config.slideshow_directory = strdup(value);
-            clean_path(config.slideshow_directory);
-        }
-        else if (MATCH(name, SETTING_SLIDESHOW_IMAGE_DURATION)) {
-            Uint32 slideshow_image_duration = ((Uint32) atoi(value))*1000;
-            if (slideshow_image_duration >= MIN_SLIDESHOW_IMAGE_DURATION && 
-            slideshow_image_duration <= MAX_SLIDESHOW_IMAGE_DURATION)
-                config.slideshow_image_duration = slideshow_image_duration;
-        }
-        else if (MATCH(name, SETTING_SLIDESHOW_TRANSITION_TIME)) {
-            Uint32 slideshow_transition_time = (Uint32) (atof(value)*1000.0f);
-            if (slideshow_transition_time <= MAX_SLIDESHOW_TRANSITION_TIME)
-                config.slideshow_transition_time = slideshow_transition_time;
+            id = SET_ID_BACKGROUND_COLOR;
+        else if (MATCH(name, SETTING_BACKGROUND_IMAGE))
+            id = SET_ID_BACKGROUND_IMAGE;
+        else if (MATCH(name, SETTING_SLIDESHOW_DIRECTORY))
+            id = SET_ID_SLIDESHOW_DIRECTORY;
+        else if (MATCH(name, SETTING_SLIDESHOW_IMAGE_DURATION))
+            id = SET_ID_SLIDESHOW_DURATION;
+        else if (MATCH(name, SETTING_SLIDESHOW_TRANSITION_TIME))
+            id = SET_ID_SLIDESHOW_FADE;
+        if (id != SET_ID_COUNT) {
+            SettingValue parsed;
+            if (setting_parse(setting_def(id), value, &parsed))
+                store_background_setting(id, &parsed);
+            else
+                log_error("Invalid %s value '%s' in [Background], ignoring it", name, value);
         }
         else if (MATCH(name, SETTING_CHROMA_KEY_COLOR))
             hex_to_color(value, &config.chroma_key_color);
@@ -448,17 +478,17 @@ int config_handler(void *user, const char *section, const char *name, const char
         bool layout_key = MATCH(name, SETTING_ROWS) || MATCH(name, SETTING_COLUMNS) ||
                           MATCH(name, SETTING_ICON_SIZE);
         if (layout_key && strchr(value, ';') == NULL) {
-            int count = 0;
-            bool valid = MATCH(name, SETTING_ICON_SIZE) ? layout_parse_icon_size(value, &count)
-                                                        : layout_parse_count(value, &count);
-            if (!valid)
+            SettingId id = MATCH(name, SETTING_ROWS) ? SET_ID_MENU_ROWS
+                         : MATCH(name, SETTING_COLUMNS) ? SET_ID_MENU_COLUMNS : SET_ID_MENU_ICON_SIZE;
+            SettingValue parsed;
+            if (!setting_parse(setting_def(id), value, &parsed))
                 log_error("Invalid %s value '%s' in menu '%s', ignoring it", name, value, section);
-            else if (MATCH(name, SETTING_ROWS))
-                menu->overrides.rows = count;
-            else if (MATCH(name, SETTING_COLUMNS))
-                menu->overrides.columns = count;
+            else if (id == SET_ID_MENU_ROWS)
+                menu->overrides.rows = parsed.number;
+            else if (id == SET_ID_MENU_COLUMNS)
+                menu->overrides.columns = parsed.number;
             else
-                menu->overrides.icon_cap = count;
+                menu->overrides.icon_cap = parsed.number;
             return 0;
         }
         if (layout_key)
