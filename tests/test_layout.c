@@ -80,7 +80,15 @@ static const LayoutArea SCREEN_1080 = { 0, 54, 1920, 972, 540 };
 
 static LayoutParams params(int rows, int columns, int icon_cap)
 {
-    LayoutParams p = { rows, columns, icon_cap, 96, 60, 30, 30 };
+    LayoutParams p = {
+        .rows        = rows,
+        .columns     = columns,
+        .icon_cap    = icon_cap,
+        .spacing     = 96,
+        .title_block = 60,
+        .hpad        = 30,
+        .vpad        = 30
+    };
     return p;
 }
 
@@ -240,6 +248,150 @@ static void test_compute_clock_band(void)
     CHECK_INT(g.y_origin, 180);  // 150 + 30
 }
 
+// Titles that scale: FontSize 14% and Padding 8% of the button, never below 22 pt, with a font
+// whose line height per point is exactly 1, so a title's line is its size + 1
+static LayoutParams scaled(int rows, int columns, int icon_cap)
+{
+    LayoutParams p = params(rows, columns, icon_cap);
+    p.title_block = 0;
+    p.title_size_pct = 14;
+    p.title_padding_pct = 8;
+    p.title_min_size = 22;
+    p.title_line_pm = 1000;
+    return p;
+}
+
+// A function to test FontSize and Padding values: a percentage of the button, or a fixed size
+static void test_parse_title_values(void)
+{
+    int n = -7;
+    bool percent = false;
+    CHECK(layout_parse_title_size("14%", &n, &percent));
+    CHECK_INT(n, 14);
+    CHECK(percent);
+    CHECK(layout_parse_title_size("36", &n, &percent));
+    CHECK_INT(n, 36);
+    CHECK(!percent);
+    CHECK(layout_parse_title_size("100%", &n, &percent));
+    CHECK(!layout_parse_title_size("0%", &n, &percent));
+    CHECK(!layout_parse_title_size("101%", &n, &percent));
+    CHECK(!layout_parse_title_size("0", &n, &percent));
+    CHECK(!layout_parse_title_size("513", &n, &percent));
+    CHECK(!layout_parse_title_size("14 %", &n, &percent));
+    CHECK(!layout_parse_title_size("%", &n, &percent));
+    CHECK(!layout_parse_title_size("12pt", &n, &percent));
+    CHECK(!layout_parse_title_size("", &n, &percent));
+    CHECK(!layout_parse_title_size(NULL, &n, &percent));
+    CHECK_INT(n, 100); // A rejected value leaves the output alone
+
+    CHECK(layout_parse_title_padding("8%", &n, &percent));
+    CHECK_INT(n, 8);
+    CHECK(percent);
+    CHECK(layout_parse_title_padding("0%", &n, &percent));
+    CHECK_INT(n, 0);
+    CHECK(layout_parse_title_padding("20", &n, &percent));
+    CHECK_INT(n, 20);
+    CHECK(!percent);
+    CHECK(layout_parse_title_padding("0", &n, &percent));
+    CHECK(!layout_parse_title_padding("51%", &n, &percent));
+    CHECK(!layout_parse_title_padding("1025", &n, &percent));
+    CHECK(!layout_parse_title_padding("-1", &n, &percent));
+    CHECK(!layout_parse_title_padding("20px", &n, &percent));
+}
+
+// A function to test scaled titles on a width-limited strip
+static void test_titles_scale_on_a_strip(void)
+{
+    LayoutParams p = scaled(1, 4, 0);
+    LayoutGeometry g;
+    CHECK_INT(layout_compute(&p, &SCREEN_1080, 6, &g, NULL, 0), 0);
+    CHECK_INT(g.button, 393);       // (1920 - 3*96 - 2*30) / 4, as with fixed titles
+    CHECK_INT(g.title_size, 55);    // round(393 * 0.14)
+    CHECK_INT(g.title_padding, 31); // round(393 * 0.08)
+    CHECK_INT(g.title_block, 87);   // 55 + 1 + 31
+    CHECK_INT(g.y_advance, 576);    // 393 + 87 + 96
+    CHECK_INT(g.y_origin, 300);     // 540 - (393 + 87) / 2
+}
+
+// A function to test that the button and its growing title block are solved together: 3 rows
+// have 720 px, so b + block(b) <= 240, which 196 meets exactly (27 pt, 28 px line, 16 px padding)
+// and 197 misses (28 pt, 29 px, 16 px: 242)
+static void test_titles_solved_with_the_button(void)
+{
+    LayoutParams p = scaled(3, 6, 0);
+    LayoutGeometry g;
+    CHECK_INT(layout_compute(&p, &SCREEN_1080, 18, &g, NULL, 0), 0);
+    CHECK_INT(g.button, 196);
+    CHECK_INT(g.title_size, 27);
+    CHECK_INT(g.title_padding, 16);
+    CHECK_INT(g.title_block, 44);
+    CHECK_INT(g.x_origin, 132);     // (1920 - (6*196 + 5*96)) / 2
+    CHECK_INT(g.y_origin, 84);      // the 912 px block fills the area: 54 + 30
+    CHECK_INT(g.y_advance, 336);    // 196 + 44 + 96
+}
+
+// A function to test item 19's dense end: 8 x 4 buttons are small enough that 14% would be
+// unreadable, so titles stop at the 22 pt minimum and the buttons shrink to make room
+static void test_titles_stop_at_the_minimum(void)
+{
+    LayoutParams p = scaled(4, 8, 0);
+    LayoutGeometry g;
+    CHECK_INT(layout_compute(&p, &SCREEN_1080, 32, &g, NULL, 0), 0);
+    CHECK_INT(g.button, 123);       // 4 rows have 624 px: 123 + 23 + 10 = 156 fits, 124 needs 157
+    CHECK_INT(g.title_size, 22);    // round(123 * 0.14) is 17, below the minimum
+    CHECK_INT(g.title_block, 33);
+}
+
+// A function to test item 19's large end: 1024 px buttons at 5120 x 2160 get titles to match
+static void test_titles_grow_with_large_buttons(void)
+{
+    LayoutArea screen_5k = { 0, 108, 5120, 1944, 1080 };
+    LayoutParams p = scaled(1, 4, 1024);
+    p.spacing = 256;
+    LayoutGeometry g;
+    CHECK_INT(layout_compute(&p, &screen_5k, 4, &g, NULL, 0), 0);
+    CHECK_INT(g.button, 1024);
+    CHECK_INT(g.title_size, 143);   // round(1024 * 0.14); a fixed 36 looked tiny here
+    CHECK_INT(g.title_padding, 82); // item 18: the padding follows the button too
+}
+
+// A function to test fixed titles: a fixed FontSize's line height arrives as title_block, a
+// fixed Padding is capped at half the button (item 18), and a percentage Padding still scales
+static void test_fixed_titles(void)
+{
+    LayoutArea narrow = { 0, 0, 300, 972, 486 };
+    LayoutParams p = params(1, 6, 0);
+    LayoutGeometry g;
+    p.title_block = 30;
+    p.title_padding = 100;
+    CHECK_INT(layout_compute(&p, &narrow, 6, &g, NULL, 0), 0);
+    CHECK_INT(g.button, 72);        // Two columns fit, as in test_compute_reduces_overflowing_axis
+    CHECK_INT(g.title_size, 0);
+    CHECK_INT(g.title_padding, 36); // 100 px capped at half of 72
+    CHECK_INT(g.title_block, 66);
+
+    p = params(1, 4, 0);
+    p.title_block = 37;
+    p.title_padding_pct = 8;
+    CHECK_INT(layout_compute(&p, &SCREEN_1080, 6, &g, NULL, 0), 0);
+    CHECK_INT(g.button, 393);
+    CHECK_INT(g.title_padding, 31);
+    CHECK_INT(g.title_block, 68);
+}
+
+// A function to test titles turned off: nothing sits under the buttons
+static void test_no_titles(void)
+{
+    LayoutParams p = params(1, 4, 0);
+    LayoutGeometry g;
+    p.title_block = 0;
+    CHECK_INT(layout_compute(&p, &SCREEN_1080, 6, &g, NULL, 0), 0);
+    CHECK_INT(g.title_block, 0);
+    CHECK_INT(g.title_padding, 0);
+    CHECK_INT(g.y_origin, 344);     // 540 - 393 / 2
+    CHECK_INT(g.y_advance, 489);    // 393 + 96
+}
+
 static LayoutGeometry shape(int rows, int columns)
 {
     LayoutGeometry g = { 0 };
@@ -370,6 +522,13 @@ int main(void)
     test_compute_centring();
     test_compute_vcenter_clamp();
     test_compute_clock_band();
+    test_parse_title_values();
+    test_titles_scale_on_a_strip();
+    test_titles_solved_with_the_button();
+    test_titles_stop_at_the_minimum();
+    test_titles_grow_with_large_buttons();
+    test_fixed_titles();
+    test_no_titles();
     test_strip_moves();
     test_strip_slots_and_scroll();
     test_grid_moves();
