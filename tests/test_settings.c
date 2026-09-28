@@ -108,6 +108,9 @@ static void test_rejects(void)
     CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_DURATION), "3601", &value));
     CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "-1", &value));
     CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "3.5", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "nan", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "inf", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_SLIDESHOW_FADE), "-inf", &value));
     CHECK(!setting_parse(setting_def(SET_ID_TITLE_SIZE), "0%", &value));
     CHECK(!setting_parse(setting_def(SET_ID_TITLE_SIZE), "abc", &value));
 }

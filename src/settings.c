@@ -132,7 +132,7 @@ bool setting_parse(const SettingDef *def, const char *text, SettingValue *value)
             break;
         case SET_TYPE_MILLIS: {
             double seconds = atof(text);
-            if (seconds < 0.0 || seconds * 1000.0 > (double) def->max + 0.5)
+            if (!(seconds >= 0.0) || seconds * 1000.0 > (double) def->max + 0.5)
                 return false;
             v.number = (int) (seconds * 1000.0 + 0.5);
             break;
@@ -484,8 +484,13 @@ SettingsState *settings_create(const char *const *menu_names, int menu_count)
         settings_free(state);
         return NULL;
     }
-    for (int i = 0; i < menu_count; i++)
+    for (int i = 0; i < menu_count; i++) {
         state->names[i] = strdup(menu_names[i]);
+        if (state->names[i] == NULL) {
+            settings_free(state);
+            return NULL;
+        }
+    }
     for (int id = 0; id < SET_ID_GLOBAL_COUNT; id++) {
         state->slots[id].def = &DEFS[id];
         state->slots[id].menu = -1;
