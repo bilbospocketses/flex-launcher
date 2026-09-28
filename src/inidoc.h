@@ -1,6 +1,9 @@
 // config.ini held as its lines, for changing single settings without disturbing anything else:
 // comments, blank lines, order, spacing and line endings all survive. Each line is read the way
 // inih reads it, so a key found here is the key the launcher reads. Pure: no SDL, no globals.
+// A key's continuation lines (indented lines after it, which inih reads as its value again) go
+// with it: setting or removing the key removes them, and a new key is never placed where a line
+// would become its continuation.
 #ifndef INIDOC_H
 #define INIDOC_H
 

@@ -153,6 +153,38 @@ static void test_edits(void)
     check_edit(__LINE__, "[Background]\n", "Background", "Image", ";x", INIDOC_AFTER_LAST_KEY, false, "[Background]\n");
 }
 
+// A function to test that a key is edited together with its continuation lines. inih reads each
+// indented line after a key as that key's value again, even past blank, comment and unreadable
+// lines, and the launcher keeps the last one.
+static void test_continuations(void)
+{
+    // Setting an existing key removes its continuation lines, so it reads exactly the new value
+    check_edit(__LINE__, "[Layout]\nRows=2\n  4\n", "Layout", "Rows", "3", INIDOC_AFTER_LAST_KEY, true,
+               "[Layout]\nRows=3\n");
+    check_edit(__LINE__, "[Layout]\nRows=2\n\n; note\n  4\nColumns=5\n", "Layout", "Rows", "3", INIDOC_AFTER_LAST_KEY, true,
+               "[Layout]\nRows=3\n\n; note\nColumns=5\n");
+    check_edit(__LINE__, "[Layout]\nRows=2\n  4", "Layout", "Rows", "3", INIDOC_AFTER_LAST_KEY, true,
+               "[Layout]\nRows=3");
+    const char *text = "[Layout]\nRows=2\n  4\n";
+    IniDoc *doc = inidoc_parse(text, strlen(text));
+    CHECK(inidoc_set(doc, "Layout", "Rows", "3", INIDOC_AFTER_LAST_KEY));
+    CHECK_STR(inidoc_get(doc, "Layout", "Rows"), "3");
+    inidoc_free(doc);
+
+    // A new key that would take an indented line as its continuation is refused, and the file left alone
+    check_edit(__LINE__, "[Games]\n   junk", "Games", "Rows", "3", INIDOC_UNDER_HEADER, false, "[Games]\n   junk");
+
+    // A new key goes after the last key's continuation lines, even one past a blank line
+    check_edit(__LINE__, "[Layout]\nRows=1\n\n  more\n", "Layout", "Columns", "4", INIDOC_AFTER_LAST_KEY, true,
+               "[Layout]\nRows=1\n\n  more\nColumns=4\n");
+
+    // Removing a key removes its continuation lines, leaving none to join the key before it
+    check_edit(__LINE__, "[Layout]\nColumns=4\nRows=2\n  4\n", "Layout", "Rows", NULL, INIDOC_AFTER_LAST_KEY, true,
+               "[Layout]\nColumns=4\n");
+    check_edit(__LINE__, "[Layout]\nColumns=4\nRows=2\n\n  4\n", "Layout", "Rows", NULL, INIDOC_AFTER_LAST_KEY, true,
+               "[Layout]\nColumns=4\n\n");
+}
+
 // A function to test inih's 199-byte line limit: a longer line would be misread
 static void test_line_limit(void)
 {
@@ -239,6 +271,7 @@ int main(void)
     test_round_trip_is_identical();
     test_get_reads_like_inih();
     test_edits();
+    test_continuations();
     test_line_limit();
     test_long_section_name();
     test_check();

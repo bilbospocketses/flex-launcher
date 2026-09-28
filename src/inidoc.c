@@ -7,7 +7,8 @@ typedef enum {
     LINE_OTHER,          // Blank, a comment, or a line inih cannot read
     LINE_SECTION,
     LINE_KEY,
-    LINE_CONTINUATION    // Indented after a key: inih reads it as more of that key's value
+    LINE_CONTINUATION    // Indented after a key, even past blank, comment or unreadable lines: inih reads
+                         // it as that key's value again, and the launcher keeps the last one read
 } LineKind;
 
 typedef struct {
@@ -262,12 +263,28 @@ static int find_header(const IniDoc *doc, const char *section)
     return -1;
 }
 
-// A function to find a key's last line: the key itself, or its last continuation line
+// A function to find a key's last line: the key itself, or its last continuation line. inih
+// keeps reading indented lines as the key's value past blank, comment and unreadable lines, up
+// to the next key or section header.
 static int end_of_key(const IniDoc *doc, int i)
 {
-    while (i + 1 < doc->count && doc->lines[i + 1].kind == LINE_CONTINUATION)
-        i++;
-    return i;
+    int end = i;
+    for (int k = i + 1; k < doc->count && doc->lines[k].kind != LINE_KEY && doc->lines[k].kind != LINE_SECTION; k++) {
+        if (doc->lines[k].kind == LINE_CONTINUATION)
+            end = k;
+    }
+    return end;
+}
+
+// A function to remove a key's continuation lines, leaving any blank, comment or unreadable lines
+// among them. It works from the last one up: a line is read from the lines before it, so the ones
+// still to go keep their places and their kinds.
+static void remove_continuations(IniDoc *doc, int i)
+{
+    for (int k = end_of_key(doc, i); k > i; k--) {
+        if (doc->lines[k].kind == LINE_CONTINUATION)
+            remove_line(doc, k);
+    }
 }
 
 // A function to count the keys, to prove an insert made exactly one more
@@ -349,7 +366,9 @@ char *inidoc_serialize(const IniDoc *doc, size_t *length)
     return out;
 }
 
-// A function to read a key's value, as the parser would get it
+// A function to read the value on a key's own line, as inih reads it. inih would then read any
+// continuation lines after the key as its value instead; inidoc's edits leave none after a key
+// they set.
 const char *inidoc_get(const IniDoc *doc, const char *section, const char *key)
 {
     int i = find_key(doc, section, key);
@@ -376,7 +395,9 @@ const char *inidoc_check(const char *key, const char *value)
     return NULL;
 }
 
-// A function to put a new value into an existing key's line, keeping everything around it
+// A function to put a new value into an existing key's line, keeping everything around it, and to
+// remove the key's continuation lines, which inih would read as its value instead. Only the new
+// line can fail, and it does before anything changes; removing lines cannot.
 static bool replace_value(IniDoc *doc, int i, const char *section, const char *key, const char *value)
 {
     Line *line = &doc->lines[i];
@@ -410,6 +431,7 @@ static bool replace_value(IniDoc *doc, int i, const char *section, const char *k
         return false;
     }
     free_line(&old);
+    remove_continuations(doc, i);
     return true;
 }
 
@@ -447,7 +469,8 @@ bool inidoc_set(IniDoc *doc, const char *section, const char *key, const char *v
         at = doc->count;
     }
     else {
-        // Under the header, unless the line there is indented: it would become the new key's continuation
+        // Under the header, unless the line there is indented: it would become the new key's continuation.
+        // The proof below refuses a place where any other line would.
         at = header + 1;
         const char *next = at < doc->count ? doc->lines[at].text : "";
         if (placement == INIDOC_AFTER_LAST_KEY || is_space(next[0])) {
@@ -461,9 +484,11 @@ bool inidoc_set(IniDoc *doc, const char *section, const char *key, const char *v
     bool inserted = ok && insert_line(doc, at, text);
     free(text);
 
-    // Prove the file now holds exactly one more key, reading as intended
+    // Prove the file now holds exactly one more key, reading as intended, with no continuation line
+    // after it that inih would read as its value instead
     const char *read_back = inserted ? inidoc_get(doc, section, key) : NULL;
-    ok = inserted && count_keys(doc) == keys_before + 1 && read_back != NULL && strcmp(read_back, value) == 0;
+    ok = inserted && count_keys(doc) == keys_before + 1 && end_of_key(doc, at) == at && read_back != NULL &&
+         strcmp(read_back, value) == 0;
 
     // On failure take back every line added: the key, then a missing section's header and blank line
     if (!ok) {
@@ -475,14 +500,15 @@ bool inidoc_set(IniDoc *doc, const char *section, const char *key, const char *v
     return ok;
 }
 
-// A function to remove every line that sets a key in a section, with any continuation lines
+// A function to remove every line that sets a key in a section, with its continuation lines, so
+// none is left for inih to read as the value of the key before it
 bool inidoc_remove(IniDoc *doc, const char *section, const char *key)
 {
     bool removed = false;
     int i;
     while ((i = find_key(doc, section, key)) >= 0) {
-        for (int k = end_of_key(doc, i); k >= i; k--)
-            remove_line(doc, k);
+        remove_continuations(doc, i);
+        remove_line(doc, i);
         removed = true;
     }
     return removed;
