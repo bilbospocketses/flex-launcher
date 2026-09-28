@@ -360,21 +360,33 @@ bool fileio_make_dirs(const char *path)
     return ok;
 }
 
+// A function to copy a path into the caller's buffer. One that does not fit is refused and left
+// empty, so a caller that ignores the result never uses a shorter path naming a different file.
+static bool copy_path(char *out, size_t size, const char *path)
+{
+    int written = snprintf(out, size, "%s", path);
+    if (written < 0 || written >= (int) size) {
+        if (size > 0)
+            out[0] = '\0';
+        set_error("the path is too long");
+        return false;
+    }
+    return true;
+}
+
 // A function to find the file a path really names: on Linux a symbolic link is followed, so a
 // save writes the file it points to and leaves the link in place
 bool fileio_real_path(const char *path, char *out, size_t size)
 {
 #ifdef _WIN32
-    snprintf(out, size, "%s", path);
-    return true;
+    return copy_path(out, size, path);
 #else
     char resolved[PATH_MAX];
     if (realpath(path, resolved) == NULL) {
-        snprintf(out, size, "%s", path);
+        copy_path(out, size, path);
         return false;
     }
-    snprintf(out, size, "%s", resolved);
-    return true;
+    return copy_path(out, size, resolved);
 #endif
 }
 

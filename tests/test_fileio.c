@@ -126,6 +126,28 @@ static void test_hidden(void)
 #endif
 }
 
+// A function to test the real path (absolute on Linux, the path as given on Windows), and that
+// one too long for its buffer is refused and left empty rather than cut short
+static void test_real_path(void)
+{
+    CHECK(fileio_write_all(DIR "/" CAFE, "x", 1));
+    char out[1024];
+    CHECK(fileio_real_path(DIR "/" CAFE, out, sizeof(out)));
+#ifndef _WIN32
+    CHECK(out[0] == '/');
+    size_t length = strlen(out);
+    size_t name_length = strlen(CAFE);
+    CHECK(length > name_length && strcmp(out + length - name_length, CAFE) == 0);
+#else
+    CHECK(strcmp(out, DIR "/" CAFE) == 0);   // Only Linux follows links: Windows keeps the path as given
+#endif
+
+    char too_small[8];
+    CHECK(!fileio_real_path(DIR "/" CAFE, too_small, sizeof(too_small)));
+    CHECK(strstr(fileio_last_error(), "too long") != NULL);
+    CHECK(too_small[0] == '\0');
+}
+
 #ifdef _WIN32
 // A function run on a thread: keep the file open, as an antivirus scan does, then let it go
 static DWORD WINAPI hold_file(LPVOID handle)
@@ -171,6 +193,7 @@ int main(void)
     test_failures();
     test_writable();
     test_hidden();
+    test_real_path();
 #ifdef _WIN32
     test_replace_waits_for_a_held_file();
     test_wide();
