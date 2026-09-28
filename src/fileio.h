@@ -44,5 +44,8 @@ typedef struct {
 
 int fileio_places(FileioPlace **places);
 void fileio_free_places(FileioPlace *places, int count);
+#ifndef _WIN32
+int fileio_places_under(const char *folder, FileioPlace **places);   // /media's mounts, none looked at
+#endif
 
 #endif

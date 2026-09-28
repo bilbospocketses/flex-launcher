@@ -241,6 +241,33 @@ static void test_places(void)
     fileio_free_places(places, count);
 }
 
+#ifndef _WIN32
+// A function to test that the folders in a mount root such as /media are listed without being looked
+// at: a folder, and a link to a folder that is not there (as a dead network mount is), are both
+// listed; a file and a hidden folder are not
+static void test_places_under(void)
+{
+    CHECK(fileio_make_dirs(DIR "/media/usb"));
+    CHECK(fileio_make_dirs(DIR "/media/.hidden"));
+    CHECK(fileio_write_all(DIR "/media/notes.txt", "x", 1));
+    unlink(DIR "/media/nas");   // A run stopped halfway may have left it
+    CHECK(symlink("/streamflex-no-such-folder", DIR "/media/nas") == 0);
+    FileioPlace *places = NULL;
+    int count = fileio_places_under(DIR "/media", &places);
+    CHECK_INT(count, 2);
+    bool usb = false, nas = false;
+    for (int i = 0; i < count; i++) {
+        if (strcmp(places[i].label, "usb") == 0 && strcmp(places[i].path, DIR "/media/usb") == 0)
+            usb = true;
+        if (strcmp(places[i].label, "nas") == 0 && strcmp(places[i].path, DIR "/media/nas") == 0)
+            nas = true;
+    }
+    CHECK(usb);
+    CHECK(nas);
+    fileio_free_places(places, count);
+}
+#endif
+
 int main(void)
 {
     test_non_ascii_round_trip();
@@ -255,5 +282,8 @@ int main(void)
     test_wide();
 #endif
     test_places();
+#ifndef _WIN32
+    test_places_under();
+#endif
     return check_report();
 }

@@ -10,6 +10,7 @@
 #else
 #include <dirent.h>
 #include <limits.h>
+#include <mntent.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #endif
@@ -529,51 +530,113 @@ static bool is_network_path(const char *path)
     wchar_t root[4] = { (wchar_t) (unsigned char) path[0], L':', L'\\', L'\0' };
     return GetDriveTypeW(root) == DRIVE_REMOTE;
 }
+#else
+// File systems whose server can be switched off. Any FUSE one counts too, since its daemon can hang.
+static const char *const NETWORK_TYPES[] = {
+    "nfs", "nfs4", "cifs", "smb3", "smbfs", "ncpfs", "afs", "9p", "ceph", "glusterfs", "davfs", "autofs"
+};
+
+// A function to tell whether a path is a folder or inside it: "/mnt" and "/mnt/nas" are in "/mnt",
+// "/mntx" is not
+static bool is_in(const char *path, const char *folder)
+{
+    size_t length = strlen(folder);
+    if (length == 0 || strncmp(path, folder, length) != 0)
+        return false;
+    return folder[length - 1] == '/' || path[length] == '\0' || path[length] == '/';
+}
+
+// A function to tell a path on a network file system, from the mount table: the type of the mount
+// with the longest path that holds it. Reading /proc/self/mounts touches none of the mounts.
+static bool on_network_mount(const char *path)
+{
+    FILE *table = setmntent("/proc/self/mounts", "r");
+    if (table == NULL)
+        return false;
+    struct mntent mount;
+    char buffer[4096];
+    size_t longest = 0;
+    bool network = false;
+    while (getmntent_r(table, &mount, buffer, (int) sizeof(buffer)) != NULL) {
+        size_t length = strlen(mount.mnt_dir);
+        if (length < longest || !is_in(path, mount.mnt_dir))
+            continue;
+        longest = length;   // On a tie the later mount wins: it hides the earlier one
+        network = strncmp(mount.mnt_type, "fuse.", 5) == 0;
+        for (size_t i = 0; !network && i < sizeof(NETWORK_TYPES) / sizeof(NETWORK_TYPES[0]); i++)
+            network = strcmp(mount.mnt_type, NETWORK_TYPES[i]) == 0;
+    }
+    endmntent(table);
+    return network;
+}
+
+// A function to tell a path that may be on a network share: in /media or /mnt, where drives and
+// shares are mounted, or on a network file system
+static bool is_network_path(const char *path)
+{
+    return is_in(path, "/media") || is_in(path, "/mnt") || on_network_mount(path);
+}
 #endif
 
-// A function to add a starting place when its folder exists. On Windows a folder on a network share
-// is added without looking, because looking can wait for the network (see fileio_places).
+// A function to add a starting place when its folder exists. A folder on a network share is added
+// without looking, because looking can wait for the network (see fileio_places).
 static void add_place(FileioPlace **places, int *count, const char *label, const char *path)
 {
-    if (path == NULL)
+    if (path == NULL || (!is_network_path(path) && !fileio_is_dir(path)))
         return;
-#ifdef _WIN32
-    if (!is_network_path(path) && !fileio_is_dir(path))
-        return;
-#else
-    if (!fileio_is_dir(path))
-        return;
-#endif
     append_place(places, count, label, path);
 }
 
 #ifndef _WIN32
-// A function to add each folder inside a folder as a place: mounted drives under /media and /mnt
+// A function to add each folder in a folder as a place: the drives and shares mounted in /media and
+// /mnt. Only the folder itself is read, never anything in it, not even with stat(): on a network
+// mount whose server is off that blocks, and on a hard NFS mount it never returns. So a name the
+// folder lists as a folder, a link or of unknown kind is taken on trust. A folder that is itself a
+// network mount is listed whole, unread.
 static void add_places_under(FileioPlace **places, int *count, const char *folder)
 {
-    FileioEntry *entries = NULL;
-    int found = fileio_list(folder, &entries);
-    for (int i = 0; i < found; i++) {
-        if (!entries[i].is_dir || entries[i].hidden)
+    if (on_network_mount(folder)) {
+        append_place(places, count, folder, folder);
+        return;
+    }
+    DIR *dir = opendir(folder);
+    if (dir == NULL)
+        return;
+    size_t folder_length = strlen(folder);
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.')   // ".", ".." and hidden folders
             continue;
-        size_t size = strlen(folder) + strlen(entries[i].name) + 2;
+        if (entry->d_type != DT_DIR && entry->d_type != DT_LNK && entry->d_type != DT_UNKNOWN)
+            continue;
+        size_t size = folder_length + strlen(entry->d_name) + 2;
         char *path = malloc(size);
         if (path != NULL) {
-            snprintf(path, size, "%s/%s", folder, entries[i].name);
-            add_place(places, count, entries[i].name, path);
+            snprintf(path, size, "%s/%s", folder, entry->d_name);
+            append_place(places, count, entry->d_name, path);
             free(path);
         }
     }
-    fileio_free_list(entries, found);
+    closedir(dir);
+}
+
+// A function to list each folder in a folder as a place, the way /media and /mnt are listed
+int fileio_places_under(const char *folder, FileioPlace **places)
+{
+    int count = 0;
+    *places = NULL;
+    add_places_under(places, &count, folder);
+    return count;
 }
 #endif
 
 // A function to list where the folder browser can start: Pictures first, then Home, then the
-// drives (Windows) or the file system's root and its mounted drives (elsewhere). On Windows a
-// network drive, or a known folder on a network share, is listed without being looked at: when its
-// server is off, looking makes Windows try to reconnect, which blocks for the network timeout, and
-// the browser asks for its places each time it opens. One that cannot be listed later is refused
-// when chosen, like any other folder the browser cannot list.
+// drives (Windows) or the file system's root and what is mounted in /media and /mnt (elsewhere).
+// A network drive or share, or a known folder on one, is listed without being looked at: when its
+// server is off, looking blocks until the network times out (Windows tries to reconnect), and on a
+// hard NFS mount it never returns, while the browser asks for its places each time it opens. This
+// is deliberate: one that cannot be listed is refused only when chosen, like any other folder the
+// browser cannot list.
 int fileio_places(FileioPlace **places)
 {
     int count = 0;
