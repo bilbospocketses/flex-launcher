@@ -8,7 +8,14 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+### Added
+- **A settings screen.** Press the Menu key on the remote, Start on a gamepad, or run the new `:settings` command, and change the background, each menu's grid and the title size from the remote, with a live preview beside the settings. A folder browser chooses a background image or slideshow folder, previewing each image as you move over it. Leaving saves only what changed into your config file, keeping its comments and layout, and keeps the previous version as `config.ini.bak`; nothing is written when nothing changed, and a save that fails says why and leaves the file as it was. On Linux, a read-only packaged config is saved as your own `~/.config/streamflex/config.ini`.
+- The default config's System menu has a Settings tile, and its gamepad section maps Start to `:settings`. A config that maps nothing to `:settings` gets Start for it anyway, unless it uses Start for something else.
+- Headless tests: CI runs the launcher under a virtual display, drives it with key presses, and checks what it logs and saves. The `Headless` job is part of the required `build-and-test` gate.
+
 ### Changed
+- **Titles scale with each menu's buttons.** `FontSize` and `Padding` take a percentage of the button size, and a config that doesn't set them now gets `14%` and `8%`: the same as before on 256 px buttons, smaller in a dense grid, larger on large buttons, and never below 2% of the screen height. A plain number still means a fixed size.
+- The default config's `OversizeMode` is `Truncate`, so every title in a menu is the same size.
 - CI runs on `ubuntu-24.04` instead of `ubuntu-latest`, which GitHub moves to Ubuntu 26 from October 19, 2026. Every job now names its runner image (Windows was already `windows-2022` and Raspberry Pi `ubuntu-24.04-arm`), so a new image arrives in its own deliberate change rather than under a build that had not changed.
 
 ### Fixed
@@ -20,6 +27,21 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 - **Huge `Rows`, `Columns`, `IconSpacing` or `VPadding` values no longer overflow the layout arithmetic.** `IconSpacing` is capped at the screen width, with a log line, and no more rows or columns are tried than 32 px buttons could fill. Before, `Columns=999999` with a screen-wide gap overflowed an `int` and laid out a nonsense grid.
 - The debug log shows every menu's grid and button size, including menus that are never opened. Before, a menu's layout appeared only once it was loaded.
 - A menu whose grid is reduced to fit the screen is reported in the log once, not every time it is opened.
+- **Titles stay readable in dense grids.** Shrink mode made a long title smaller with no limit, down to a few pixels, and leaked a font each time it went all the way down. It now stops at 2% of the screen height and truncates the rest.
+- **Titles on large buttons grow with them.** The title size was the same in every menu, so 1024 px buttons had titles sized for 256 px ones.
+- **Title padding follows the button size.** It was sized for 256 px buttons whatever the grid.
+- **`OversizeMode=Truncate` works.** The parser only knew `Truncated`, so the documented spelling was ignored.
+- **StreamFlex starts on a display that reports no refresh rate**, as Xvfb, some VMs and remote desktops do. It divided by zero before drawing anything; it now uses 60 Hz and logs it.
+- **File paths with non-ASCII characters work on Windows**, such as a config, log, icon library or slideshow folder under a user folder named `José`, and a command or shortcut whose path has such a character launches.
+- **A menu section that appears twice keeps all its entries.** Its later entries and grid settings went to the menu read in between.
+- **An empty menu entry (`Entry2=`) after another entry no longer crashes StreamFlex at startup.** It is skipped.
+- `Mode=Slideshow` without a `SlideshowDirectory` handed the file system a null path at startup, which could crash StreamFlex; it now falls back to the colour background. A slideshow folder with a single image no longer rewrites the `Image` setting.
+- **A slideshow folder with no images, or only one, no longer corrupts memory at startup.** The fade speed was written into the slideshow after it had been freed.
+- **A slideshow folder whose files all fail to load no longer hangs StreamFlex at startup.** It falls back to the colour background.
+- **A running slideshow that runs out of images falls back safely.** With one image left, its loader thread made a texture off the main thread; with none, it freed the slideshow and then wrote into it. The fall-back now happens on the main thread.
+- **A `QuitCmd` is no longer freed twice when StreamFlex quits**, which could crash it on the way out.
+- Invalid `Mode`, `Color`, `SlideshowImageDuration` and `SlideshowTransitionTime` values in `[Background]`, and invalid `FontSize` and `Padding` values, are logged; they were ignored without a word. The background `Color` refuses a value with a stray character (`#12345G`) instead of half-reading it.
+- The configuration guide said comments could not follow a value. They can, after a space and a semicolon (`Columns=4 ; four across`), and the guide now says so.
 
 ## [0.2.0] - 2026-09-27
 

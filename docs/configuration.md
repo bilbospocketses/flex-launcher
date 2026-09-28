@@ -6,21 +6,22 @@ title: Configuration
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Settings](#settings)
+2. [The Settings Screen](#the-settings-screen)
+3. [Settings](#settings)
     - [General](#general)
     - [Background](#background)
     - [Layout](#layout)
     - [Titles](#titles)
     - [Highlight](#highlight)
     - [Scroll Indicators](#scroll-indicators)
-3. [Creating Menus](#creating-menus)
+4. [Creating Menus](#creating-menus)
     - [Special Commands](#special-commands)
     - [Desktop Files (Linux Only)](#desktop-files-linux-only)
-4. [Clock](#clock)
-5. [Screensaver](#screensaver)
-6. [Hotkeys](#hotkeys)
-7. [Gamepad Controls](#gamepad-controls)
-8. [Transparent Backgrounds](#transparent-backgrounds)
+5. [Clock](#clock)
+6. [Screensaver](#screensaver)
+7. [Hotkeys](#hotkeys)
+8. [Gamepad Controls](#gamepad-controls)
+9. [Transparent Backgrounds](#transparent-backgrounds)
 
 ## Overview
 StreamFlex uses an [INI file](https://en.wikipedia.org/wiki/INI_file) to configure settings and menus. The INI file consists of sections enclosed in square brackets, and in each section there are entries which consist of a key and a value. Example:
@@ -30,7 +31,7 @@ Key1=value
 Key2=value
 ...
 ```
-A line can be commented out by using the # character at the beginning of the line, which will cause the line to be ignored by the program. In-line comments are not allowable. Here are a few things to note about the configuration settings for StreamFlex:
+A line that starts with `#` or `;` is a comment, and is ignored. A comment can also follow a value, after a space and a semicolon: `Columns=4 ; four across`. The [settings screen](#the-settings-screen) keeps every comment when it saves. Here are a few things to note about the configuration settings for StreamFlex:
 - All keys and values are case sensitive.
 - Full UTF-8 character set is supported for titles.
 - The following image formats are supported: JPEG, PNG, WebP and SVG
@@ -38,6 +39,49 @@ A line can be commented out by using the # character at the beginning of the lin
 - Color is specified in 24 bit RGB HEX format prefixed with the # character, e.g. the color red should be `#FF0000`. The letters can be uppercase or lowercase. HEX color pickers can be easily found online to assist color choices.
 - Several settings allow for values to be specified in pixels *or* as a percentage of another value. In this case, if no percent sign is detected it will be interpreted as pixels, and if the percent sign is present, than it will be interpreted as a percent value e.g. "5" means 5 pixels and "5%" means 5 percent.
 - Shell variable expansion is generally not supported, e.g. you cannot use the ~ character to refer to your home directory. The exception is for commands, since those are passed through to your system shell.
+
+## The Settings Screen
+The settings screen changes the background, each menu's grid and the title size from the remote, and shows each change in a preview as you make it. It saves your changes into your config file when you leave.
+
+### Opening it
+- Press the **Menu** key on the remote (the context-menu key on a keyboard), or **Start** on a gamepad when [gamepad controls](#gamepad-controls) are enabled. Either works unless your config gives that key or button something else to do.
+- Or run the `:settings` [special command](#special-commands) from a menu entry, a hotkey or a gamepad control. The default config's System menu has a Settings tile.
+
+### Using it
+The settings are in a column on the left; the rest of the screen is a live preview of your launcher.
+- **Up and Down** move between rows.
+- **Left and Right** change the highlighted value.
+- **OK** opens a row marked ›, or does what the row says, such as *Discard changes*.
+- **Back** goes back a page. On the first page, it saves your changes and closes settings.
+- **Menu** (or Start) closes settings from any page, saving your changes. A `:home` command does the same, then shows the menu set by `DefaultMenu`.
+
+While settings are open, a hotkey or gamepad control works only when its command is one of the keys above (`:up`, `:down`, `:left`, `:right`, `:select`, `:back`, `:home` or `:settings`). Any other command, such as `:quit`, is ignored. The screensaver does not start while settings are open.
+
+### What it changes
+- **Background:** a colour (one of ten presets), an image, a slideshow of a folder of images, or transparent. A slideshow also has *Change every*, from 5 seconds to 60 minutes, and *Fade*, from 0 to 3 seconds.
+- **Menus:** the grid of every menu (*All menus*, which is the `[Layout]` section) and of each menu on its own: rows (1 to 10), columns (1 to 12) and the largest a button may grow (64 to 1024 px; on *All menus*, *Fill* lets buttons grow as large as the grid allows). On a menu's own page, the lowest step, *All menus*, makes that menu follow the shared grid again. A menu with no entries cannot be shown in the preview, but its grid can still be changed.
+- **Titles:** Small, Medium or Large. Titles scale with each menu's buttons; see [FontSize](#fontsize). A fixed size from your config file stays among the choices, shown as *Fixed*.
+
+If you choose Image or Slideshow but leave the Background page without choosing an image or folder, the mode goes back to what it was when you opened the page.
+
+#### The folder browser
+Choosing an image or a slideshow folder opens a folder browser. It starts in the folder of the image or slideshow you have now, or else in your Pictures folder, and its list of places reaches your home folder and your drives (on Linux, `/` and the drives and shares mounted in `/media` and `/mnt`).
+- **Up and Down** move; **Left and Right** move a page at a time.
+- **OK** opens a folder, or chooses the highlighted image, or *Use this folder* for a slideshow.
+- **Back** goes up a folder. Past the top it shows the places, and from the places it closes the browser without choosing.
+
+The preview shows each image as you move over it, and the first image of a highlighted folder. The browser lists JPEG, PNG and WebP images. A slideshow folder needs at least two images; the Background page shows the chosen folder's name and how many images it holds. An image that cannot be opened, or a path too long for one line of the config file, is shown but cannot be chosen, and the browser says why. Network drives and shares, and on Linux what is mounted in `/media` and `/mnt`, are listed without being opened, so a server that is off does not hold up opening the browser; one that cannot be reached says so when you open it.
+
+### Saving
+- Only the settings you changed are written. Everything else in your config file stays as it was: comments, blank lines and order included. Setting a menu back to *All menus* removes its line.
+- The file is read again when you save, so an edit made to it by hand while settings were open is kept.
+- If nothing changed, nothing is written.
+- The previous version is kept beside it as `config.ini.bak`. The new file is written beside the old one and then swapped in whole, so a failed save never leaves half a file. On Windows, a config file you have hidden stays hidden.
+- A file that sets the columns with the older name, `MaxButtons`, keeps that name when they are saved. A file that has both `Columns` and `MaxButtons` in `[Layout]` is left with `Columns` alone.
+- **Discard changes**, on the first page, puts everything back as it was when you opened settings.
+- **On Linux**, the config installed with the package (in `/usr/share/streamflex`) cannot be changed. Your first save writes your own copy to `~/.config/streamflex/config.ini`, which StreamFlex reads from then on, and later saves change that copy.
+- If the file cannot be written, settings say why, and offer to try again or to leave without saving; Back returns to the settings instead. The config file stays as it was.
+- Quitting StreamFlex while settings are open saves nothing.
 
 ## Settings
 The following sections contain settings that control the look and behavior of the launcher:
@@ -235,9 +279,11 @@ Defines the font to use for the titles of the menu entries. The value should be 
 Default: OpenSans
 
 ##### FontSize
-Defines the font size of each menu entry title.
+Defines the size of the menu entry titles, in one of two ways:
+- **A percentage** of the button size, such as `14%`. Each menu's titles follow its buttons, so a dense grid gets smaller titles and a row of large buttons gets larger ones. Titles never get smaller than 2% of the screen height, so they stay readable from the couch. The settings screen's Small, Medium and Large are `11%`, `14%` and `17%`.
+- **A fixed size**, such as `36`: the same size in every menu, as in earlier versions.
 
-Default: 36
+Default: 14%
 
 ##### Color
 Defines the color of the menu entry titles.
@@ -261,16 +307,16 @@ Default: 100%
 
 ##### OversizeMode
 Defines the behavior when the width of a menu entry title exceeds the width of its button, which is set by the menu's grid (see [Layout](#layout)). Possible values: "Truncate", "Shrink", and "None"
-- Truncate: Truncates the title at the maximum width and adds "..." to the end.
-- Shrink: Shrinks oversized titles to a smaller font size than `TitleFontSize` so that the entire title fits within the maximum width.
+- Truncate: Truncates the title at the maximum width and adds "..." to the end. ("Truncated" is accepted too.)
+- Shrink: Shrinks an oversized title to a smaller size than `FontSize` so that it fits, but never below 2% of the screen height. A title that still does not fit is truncated.
 - None: No action is taken to limit the width of titles. Overlaps with other titles may occur, and it is the user's responsibility to manually handle any such case.
 
 Default: Truncate
 
 ##### Padding
-Defines the vertical spacing between an icon and its title, in pixels.
+Defines the vertical spacing between an icon and its title: a percentage of the button size, such as `8%`, or a number of pixels. A number of pixels is capped at half the button's size.
 
-Default: 20
+Default: 8%
 
 #### Highlight
 The settings in this section control the menu highlight.
@@ -470,6 +516,9 @@ Put the computer to sleep.<sup>1</sup>
 
 <sup>1</sup> *Linux: Works in systemd-based distros only. Non-systemd distro users need to implement the command manually for their init system.*
 
+#### :settings
+Opens the [settings screen](#the-settings-screen). Running it again while settings are open saves your changes and closes them.
+
 ### Desktop Files (Linux Only)
 If the application you want to launch was installed via your distro's package manager, a .desktop file was most likely provided. The command to launch a Linux application can simply be the path to its .desktop file, and StreamFlex will run the Exec command that the developers have specified in the file. Desktop files are located in /usr/share/applications.
 
@@ -581,7 +630,7 @@ Hotkey=keycode;command
 ```
 The keycode is a HEX prefixed with the # character. There are two ways to find a keycode for a given key. The first is to use the [lookup table provided by SDL](https://wiki.libsdl.org/SDLKeycodeLookup). The name of each key is in the right column of the table, and the corresponding HEX keycode is in the center column. The second is to run StreamFlex in debug mode, press the key, then check the log. For each keystroke, the name of the key will be printed and the HEX value will be in parenthesis next to it.
 
-Any key can be set as a hotkey, except keys that are reserved for the default controls: the left and right arrow keys, enter/return, and backspace. The up and down arrow keys move between rows of a grid, unless a hotkey is bound to them, in which case the hotkey is used. Hotkeys may be used to "speed dial" your favorite applications, or to add controls via [special commands](#special-commands). As an example configuration below, the first hotkey is mapped to F1 and will launch Kodi when it is pressed, and the second hotkey is mapped to F12 and will cause StreamFlex to quit when it is pressed:
+Any key can be set as a hotkey, except keys that are reserved for the default controls: the left and right arrow keys, enter/return, and backspace. The up and down arrow keys move between rows of a grid, unless a hotkey is bound to them, in which case the hotkey is used. The Menu key (keycode `#40000065`) opens the [settings screen](#the-settings-screen) the same way, unless a hotkey is bound to it. Hotkeys may be used to "speed dial" your favorite applications, or to add controls via [special commands](#special-commands). As an example configuration below, the first hotkey is mapped to F1 and will launch Kodi when it is pressed, and the second hotkey is mapped to F12 and will cause StreamFlex to quit when it is pressed:
 ```ini
 [Hotkeys]
 Hotkey1=#4000003A;"C:\Program Shortcuts\kodi.lnk"
@@ -626,6 +675,8 @@ The [SDL GameController](https://wiki.libsdl.org/CategoryGameController) interfa
 The default controls in StreamFlex allow the user to move the highlight cursor with the left stick or the DPad, select an entry by pressing A, and go back to the previous menu by pressing B. These controls are simple and will suffice for the vast majority of use cases.
 
 Up and down have defaults of their own. If your config maps nothing to `:up` or `:down`, the DPad's up and down buttons and the left stick's vertical axis run them, unless your config already uses those controls for something else. A config written before grids existed can still move between rows.
+
+Start has a default too: if your config maps nothing to `:settings`, Start opens the [settings screen](#the-settings-screen), unless your config already uses Start for something else.
 
 The following axis and buttons are available for control in StreamFlex:
 - LStickX-

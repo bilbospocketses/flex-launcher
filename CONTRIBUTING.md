@@ -6,12 +6,12 @@ This repository is an independent project. It started from complexlogic's Flex L
 
 ## Building
 
-Build instructions for Windows (Visual Studio + vcpkg) and Linux (CMake + distro packages) are in [`docs/compilation.md`](docs/compilation.md). The CI workflow in [`.github/workflows/build.yml`](.github/workflows/build.yml) is the authoritative, always-exercised recipe for all four targets: Windows, Debian, Raspberry Pi, and Arch Linux. After building, run the unit tests with `ctest --test-dir build -C Release --output-on-failure`. The icon library's tooling has Python tests of its own, and its README says how to run them and `check-library.py`; see [`branding/library/README.md`](branding/library/README.md).
+Build instructions for Windows (Visual Studio + vcpkg) and Linux (CMake + distro packages) are in [`docs/compilation.md`](docs/compilation.md). The CI workflow in [`.github/workflows/build.yml`](.github/workflows/build.yml) is the authoritative, always-exercised recipe for all four targets: Windows, Debian, Raspberry Pi, and Arch Linux. After building, run the unit tests with `ctest --test-dir build -C Release --output-on-failure`. The icon library's tooling has Python tests of its own, and its README says how to run them and `check-library.py`; see [`branding/library/README.md`](branding/library/README.md). The headless checks run in Docker: build the image from `tests/headless` and run `run.sh` in it with the repository mounted, as the `Headless` job in `build.yml` does; `run.sh` says how at its top.
 
 ## Project Structure
 
 ```
-src/                 Launcher core (launcher.c, layout.c, library.c, image.c, clock.c, util.c, utf8.c, debug.c)
+src/                 Launcher core (launcher.c, layout.c, library.c, image.c, clock.c, util.c, utf8.c, debug.c) and the settings screen (settings_screen.c, settings.c, browser.c, inidoc.c, config_save.c, fileio.c)
 src/platform/        Windows and Linux platform layers
 src/external/        Vendored third-party sources
 config/              Default config template, packaging and platform templates (PKGBUILD, .desktop, manifest, icon)
@@ -21,6 +21,7 @@ branding/logo/       The full-resolution logo original; the docs banner is a dow
 branding/library/    Tools for the icon library: generator, brand importer, checks, gallery (see its README)
 design/              Design specs and implementation plans (not published; docs/ is the site)
 tests/               Unit tests (CTest); run them with ctest after building
+tests/headless/      Headless checks: the launcher under Xvfb, driven by key presses (see run.sh); CI runs them
 docs/                Documentation site (GitHub Pages / Jekyll)
 ```
 
@@ -29,7 +30,7 @@ docs/                Documentation site (GitHub Pages / Jekyll)
 `master` is **PR-gated**. Direct pushes are blocked by a branch ruleset; every change goes branch → PR → required checks green → squash-merge.
 
 **Required status checks** (all must be green before merge, and the branch must be up to date with `master`):
-- `build-and-test` — the gate job in `build.yml`; passes only when the Windows, Debian, Raspberry Pi, and Arch Linux builds and the `Icon library` check all succeed.
+- `build-and-test` — the gate job in `build.yml`; passes only when the Windows, Debian, Raspberry Pi, and Arch Linux builds, the `Icon library` check and the `Headless` checks all succeed.
 - `CodeQL` — code scanning via CodeQL default setup (C/C++ and GitHub Actions). It is required as the single `CodeQL` result rather than the per-language `Analyze (...)` jobs, so PRs where those jobs don't run are not blocked forever.
 - `Scorecard analysis` — OpenSSF supply-chain scoring from `scorecard.yml`.
 
