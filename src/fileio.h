@@ -27,7 +27,7 @@ bool fileio_copy(const char *from, const char *to);
 bool fileio_replace(const char *from, const char *to);
 bool fileio_remove(const char *path);
 bool fileio_make_dirs(const char *path);
-bool fileio_real_path(const char *path, char *out, size_t size);
+bool fileio_real_path(const char *path, char *out, size_t size);   // on Linux, follows symbolic links; on Windows, the path as given
 int fileio_list(const char *folder, FileioEntry **entries);
 void fileio_free_list(FileioEntry *entries, int count);
 const char *fileio_last_error(void);

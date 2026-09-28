@@ -383,7 +383,10 @@ bool fileio_real_path(const char *path, char *out, size_t size)
 #else
     char resolved[PATH_MAX];
     if (realpath(path, resolved) == NULL) {
-        copy_path(out, size, path);
+        // Say why it could not be resolved, unless the path did not even fit
+        int saved = errno;
+        if (copy_path(out, size, path))
+            set_errno_error(saved);
         return false;
     }
     return copy_path(out, size, resolved);

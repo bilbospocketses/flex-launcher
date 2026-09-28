@@ -146,6 +146,13 @@ static void test_real_path(void)
     CHECK(!fileio_real_path(DIR "/" CAFE, too_small, sizeof(too_small)));
     CHECK(strstr(fileio_last_error(), "too long") != NULL);
     CHECK(too_small[0] == '\0');
+
+    // Linux resolves the path, so a missing file fails and says why. The call above left "too
+    // long", so "not found" can only come from this one.
+#ifndef _WIN32
+    CHECK(!fileio_real_path(DIR "/missing.ini", out, sizeof(out)));
+    CHECK(strstr(fileio_last_error(), "not found") != NULL);
+#endif
 }
 
 #ifdef _WIN32
