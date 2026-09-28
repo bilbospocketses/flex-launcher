@@ -1,0 +1,5 @@
+# The headless harness runs in Linux; its scripts must keep LF line endings on a Windows checkout
+tests/headless/*.sh text eol=lf
+tests/headless/checks/*.sh text eol=lf
+tests/headless/*.py text eol=lf
+tests/headless/Dockerfile text eol=lf

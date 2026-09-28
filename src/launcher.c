@@ -215,6 +215,13 @@ static void init_sdl()
     SDL_GetDesktopDisplayMode(0, &display_mode);
     geo.screen_width = display_mode.w;
     geo.screen_height = display_mode.h;
+
+    // SDL reports 0 when the display does not say (Xvfb, some VMs and remote desktops), and
+    // every timing below divides by the rate: create_window() reads it again from display_mode
+    if (display_mode.refresh_rate <= 0) {
+        log_debug("The display reports no refresh rate, using %i Hz", DEFAULT_REFRESH_RATE);
+        display_mode.refresh_rate = DEFAULT_REFRESH_RATE;
+    }
     refresh_period = 1000 / (Uint32) display_mode.refresh_rate;
     geo.screen_margin = (int) (SCREEN_MARGIN * (float) geo.screen_height);
 }

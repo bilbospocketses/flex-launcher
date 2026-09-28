@@ -262,12 +262,45 @@ jobs:
           .venv/bin/python -m unittest discover -s branding/library -p "test_*.py" -v
           .venv/bin/python branding/library/check-library.py
 
-  # Single required status check for the master branch ruleset. It passes only
-  # when every platform build and the icon library check succeeded; `if: always()`
+  # What only a running launcher shows: the settings screen, key handling and startup paths,
+  # driven by key presses under a virtual display (tests/headless). It runs in its own container
+  # because the harness turns off address randomization for ASan (setarch -R), which Docker's
+  # default seccomp profile refuses.
+  headless:
+    name: Headless
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Git repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the test image
+        run: docker build -t streamflex-test tests/headless
+
+      - name: Run the headless checks
+        run: |
+          mkdir -p "$RUNNER_TEMP/headless"
+          docker run --rm --security-opt seccomp=unconfined \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/headless:/out" \
+            streamflex-test bash /src/tests/headless/run.sh ci
+          docker run --rm --security-opt seccomp=unconfined \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/headless:/out" \
+            streamflex-test bash /src/tests/headless/run.sh ci-scrollfail scrollfail
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        name: Upload the logs of a failed run
+        if: failure()
+        with:
+          name: Headless logs
+          path: ${{ runner.temp }}/headless
+
+  # Single required status check for the master branch ruleset. It passes only when every
+  # platform build, the icon library check and the headless checks succeeded; `if: always()`
   # makes it report a failure (rather than being skipped) when a job fails or is cancelled.
   build-and-test:
     runs-on: ubuntu-24.04
-    needs: [build_windows, build_linux, build_rpi, build_arch, library_check]
+    needs: [build_windows, build_linux, build_rpi, build_arch, library_check, headless]
     if: always()
     steps:
       - name: Check platform builds

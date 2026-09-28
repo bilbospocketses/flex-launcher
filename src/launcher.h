@@ -15,6 +15,7 @@
 #define COLOR_MASKS RMASK, GMASK, BMASK, AMASK
 
 // Launcher parameters
+#define DEFAULT_REFRESH_RATE 60
 #define MIN_FPS_LIMIT 10
 #define MIN_ICON_SIZE 32
 #define MAX_ICON_SIZE 1024

@@ -3,7 +3,8 @@
 # Security updates are handled separately by Dependabot security alerts
 # (enabled in repo settings). This file covers routine version bumps.
 #
-# github-actions maintains the SHA-pinned action refs in .github/workflows/.
+# github-actions maintains the SHA-pinned action refs in .github/workflows/, and docker the
+# headless test image's pinned base in tests/headless/Dockerfile.
 # Without it Dependabot would never bump our pins and we would drift on
 # security fixes shipped in the actions themselves.
 #
@@ -25,3 +26,10 @@ updates:
       actions:
         patterns:
           - "*"
+
+  # The headless test image's base (tests/headless/Dockerfile) is pinned by digest
+  - package-ecosystem: docker
+    directory: /tests/headless
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
