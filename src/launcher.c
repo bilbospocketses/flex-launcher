@@ -1345,6 +1345,7 @@ static void update_screensaver()
 
         // User has pressed input, deactivate the screensaver
         if (state.screensaver_active && ticks.last_input == ticks.main) {
+            log_debug("Screensaver off");
             SDL_SetTextureAlphaMod(screensaver->texture, 0);
             screensaver->alpha = 0.0f;
             state.screensaver_active = false;
@@ -1682,7 +1683,8 @@ int main(int argc, char *argv[])
                 poll_gamepad();
             if (background_shown == BACKGROUND_SLIDESHOW)
                 update_slideshow();
-            if (config.screensaver_enabled && !settings_is_open())
+            // Settings never start the screensaver, but the key that opened them must still end it
+            if (config.screensaver_enabled && (!settings_is_open() || state.screensaver_active))
                 update_screensaver();
             if (config.clock_enabled)
                 update_clock(false);

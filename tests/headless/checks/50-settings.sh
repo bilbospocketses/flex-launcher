@@ -55,6 +55,8 @@ CFG=$cfg run_keys f50-discard Menu Down Return Return Down Right BackSpace BackS
 ok=1
 cmp -s "$FX/f50-grid.ini" "$cfg" && [ ! -e "$cfg.bak" ] \
     && grep -q 'Settings: discarded the changes' "$out/f50-discard.log" \
+    && sed -n '/Settings: discarded the changes/,/Settings closed/p' "$out/f50-discard.log" \
+        | grep -q "Menu 'Main': 4 x 1 grid" \
     && grep -q 'Settings: nothing changed' "$out/f50-discard.log" && sanitizer_clean f50-discard && ok=0
 result "settings: Discard, then Back, leaves the file untouched" $ok
 
@@ -63,7 +65,8 @@ cfg=$(writable_config f50-grid)
 chmod 444 "$cfg"
 CFG=$cfg run_keys f50-readonly $ALL_MENUS_COLUMNS_UP Down Return
 ok=1
-cmp -s "$FX/f50-grid.ini" "$cfg" && grep -q "Couldn't save to $cfg: permission denied" "$out/f50-readonly.log" \
+cmp -s "$FX/f50-grid.ini" "$cfg" && [ ! -e "$cfg.bak" ] && [ ! -e "$cfg.tmp" ] && [ ! -e "$cfg.bak.tmp" ] \
+    && grep -q "Couldn't save to $cfg: permission denied" "$out/f50-readonly.log" \
     && grep -q 'Settings: leaving without saving' "$out/f50-readonly.log" && sanitizer_clean f50-readonly && ok=0
 result "settings: a read-only config shows why, and Leave without saving closes" $ok
 
@@ -96,12 +99,21 @@ grep -q 'Settings opened' "$out/f50-quitcmd.log" \
     && ! grep -q 'Settings: ignoring' "$out/f50-quitcmd.log" && sanitizer_clean f50-quitcmd && ok=0
 result "settings: quitting while they are open still runs the QuitCmd" $ok
 
+# A screensaver already on when settings open goes off with the key that opened them, not later
+run_keys f50-screensaver Menu BackSpace
+ok=1
+sed -n '/Settings opened/,/Settings closed/p' "$out/f50-screensaver.log" | grep -q 'Screensaver off' \
+    && sanitizer_clean f50-screensaver && ok=0
+result "settings: a screensaver on when they open goes off as they open" $ok
+grep -E 'Screensaver off|Settings (opened|closed)' "$out/f50-screensaver.log" | sed 's/^/      /'
+
 # A menu with no entries cannot be previewed: the preview stays put, and its grid still saves
 cfg=$(writable_config f50-empty)
 CFG=$cfg run_keys f50-empty Menu Down Return Down Down Return Right BackSpace BackSpace BackSpace
 ok=1
 [ "$(cat "$out/f50-empty.code")" = 0 ] && sed -n '/^\[Empty\]/,$p' "$cfg" | grep -qx 'Rows=3' \
-    && sanitizer_clean f50-empty && ok=0
+    && grep -q 'Settings: \[Empty\] Rows 2 -> 3' "$out/f50-empty.log" \
+    && ! grep -q "Loading menu 'Empty'" "$out/f50-empty.log" && sanitizer_clean f50-empty && ok=0
 result "settings: a menu with no entries can have its grid changed" $ok
 
 # The gamepad's Start button opens settings when nothing else does, and keeps a mapping of its own
