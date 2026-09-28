@@ -13,6 +13,13 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ### Fixed
 - The docs caught up with the icon library and the font fix. The configuration guide lists SVG among the supported image formats, says a relative `Font` path is also looked for next to the executable and that library icons don't depend on the working directory, and names the entry's middle field `icon` throughout. The README, the docs home page and the default config's comments point to the library; `CONTRIBUTING.md` counts the Icon library check in the required gate and points to the library's own tests; `SECURITY.md` includes the library manifest in scope. The setup guide's contents also named a section "Maintaining Controls" instead of "Maintaining Contrast".
+- **If the scroll arrows cannot be drawn, StreamFlex turns them off and carries on.** Before, it freed their memory twice, once on turning them off and again at exit, which could crash on quit or corrupt memory.
+- **A config without `HPadding` or `VPadding` gets the documented 30 px.** Before, an unset padding was -1: the highlight hugged the button with no padding, and an outline was drawn with a width of -1. The shipped config sets both, so it looks the same.
+- **Back works after an entry opens the menu it is already in.** Before, that menu became its own Back target, so Back stayed where it was and the way back was lost until a restart.
+- **`MaxButtons` and `IconSize` refuse junk, as `Rows` and `Columns` already did, and the log says so.** `MaxButtons=7x` used to be read as 7 and `IconSize=200px` as 200; both are now ignored. `IconSize` takes a whole number from 32 to 1024, in `[Layout]` or in a menu.
+- **Huge `Rows`, `Columns`, `IconSpacing` or `VPadding` values no longer overflow the layout arithmetic.** `IconSpacing` is capped at the screen width, with a log line, and no more rows or columns are tried than 32 px buttons could fill. Before, `Columns=999999` with a screen-wide gap overflowed an `int` and laid out a nonsense grid.
+- The debug log shows every menu's grid and button size, including menus that are never opened. Before, a menu's layout appeared only once it was loaded.
+- A menu whose grid is reduced to fit the screen is reported in the log once, not every time it is opened.
 
 ## [0.2.0] - 2026-09-27
 

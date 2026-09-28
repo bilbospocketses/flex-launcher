@@ -98,8 +98,8 @@ Config config = {
     .max_buttons                      = DEFAULT_MAX_BUTTONS,
     .rows                             = DEFAULT_ROWS,
     .icon_spacing                     = -1,
-    .highlight_vpadding               = -1,
-    .highlight_hpadding               = -1,
+    .highlight_vpadding               = DEFAULT_HIGHLIGHT_VPADDING,
+    .highlight_hpadding               = DEFAULT_HIGHLIGHT_HPADDING,
     .title_opacity[0]                 = '\0',
     .highlight_fill_opacity[0]        = '\0',
     .highlight_outline_opacity[0]     = '\0',
@@ -605,7 +605,8 @@ static int load_menu(Menu *menu, bool set_back_menu, bool reset_position)
         current_menu = previous_menu;
         return 1;
     }
-    if (set_back_menu)
+    // A menu opened from itself keeps its back link, or Back would return to the same menu
+    if (set_back_menu && menu != previous_menu)
         current_menu->back = previous_menu;
     return 0;
 }
@@ -636,9 +637,9 @@ static void calculate_layout_area()
     };
 }
 
-// A function to lay out the current menu: size its buttons for its grid, re-render its
-// textures if that size changed, and place the visible entries
-static int apply_layout(Menu *menu)
+// A function to work out a menu's grid on this screen without drawing anything, so the debug
+// log can show every menu's layout, not only the ones that have been opened
+int compute_menu_layout(const Menu *menu, LayoutGeometry *geometry, char *why, size_t why_size)
 {
     LayoutOverrides global = { (int) config.rows, (int) config.max_buttons, (int) config.icon_size };
     LayoutOverrides builtin = { DEFAULT_ROWS, DEFAULT_MAX_BUTTONS, 0 };
@@ -652,12 +653,21 @@ static int apply_layout(Menu *menu)
         .hpad        = config.highlight_hpadding,
         .vpad        = config.highlight_vpadding
     };
+    return layout_compute(&params, &layout_area, (int) menu->num_entries, geometry, why, why_size);
+}
+
+// A function to lay out the current menu: size its buttons for its grid, re-render its
+// textures if that size changed, and place the visible entries
+static int apply_layout(Menu *menu)
+{
     char why[256];
-    if (layout_compute(&params, &layout_area, (int) menu->num_entries, &layout, why, sizeof(why))) {
+    if (compute_menu_layout(menu, &layout, why, sizeof(why))) {
         log_error("Menu '%s' cannot be shown: %s", menu->name, why);
         return 1;
     }
-    if (why[0] != '\0')
+
+    // A reduced grid is reported when the menu is first laid out at this size, not on every load
+    if (why[0] != '\0' && menu->rendered_size != layout.button)
         log_error("Menu '%s': %s", menu->name, why);
     log_debug("Menu '%s': %i x %i grid, %i px buttons", menu->name, layout.columns, layout.rows, layout.button);
 
@@ -1318,7 +1328,12 @@ int main(int argc, char *argv[])
         scroll = malloc(sizeof(Scroll));
         scroll->texture = NULL;
         int scroll_indicator_height = (int) ((float) geo.screen_height * SCROLL_INDICATOR_HEIGHT);
-        render_scroll_indicators(scroll, scroll_indicator_height, &geo);
+        if (render_scroll_indicators(scroll, scroll_indicator_height, &geo)) {
+            log_error("Could not render scroll indicator, disabling feature");
+            free(scroll);
+            scroll = NULL;
+            config.scroll_indicators = false;
+        }
     }
 
     // Work out where the buttons may go, now that the clock's size is known

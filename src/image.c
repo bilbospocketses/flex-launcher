@@ -270,8 +270,9 @@ SDL_Texture *render_highlight(int width, int height, SDL_Rect *rect)
     return texture;
 }
 
-// A function to render the scroll indicators
-void render_scroll_indicators(Scroll *scroll, int height, Geometry *geo)
+// A function to render the scroll indicators. It returns non-zero when the arrow cannot be
+// drawn; `scroll` belongs to the caller, which decides what to do then.
+int render_scroll_indicators(Scroll *scroll, int height, Geometry *geo)
 {
     // Format the SVG
     char *buffer = NULL;
@@ -290,14 +291,10 @@ void render_scroll_indicators(Scroll *scroll, int height, Geometry *geo)
                           &scroll->rect_right
                       );
     free(buffer);
+    if (scroll->texture == NULL)
+        return 1;
     scroll->rect_left.w = scroll->rect_right.w;
     scroll->rect_left.h = scroll->rect_right.h;
-    if (scroll->texture == NULL) {
-        log_error("Could not render scroll indicator, disabling feature");
-        free(scroll);
-        config.scroll_indicators = false;
-        return;
-    }
 
     // Calculate screen position
     scroll->rect_right.y = geo->screen_height - geo->screen_margin - scroll->rect_right.h;
@@ -319,6 +316,7 @@ void render_scroll_indicators(Scroll *scroll, int height, Geometry *geo)
     };
     scroll->rect_down = scroll->rect_up;
     scroll->rect_down.y = geo->screen_height - geo->screen_margin / 2 - grid_h / 2;
+    return 0;
 }
 
 // A function to render text
