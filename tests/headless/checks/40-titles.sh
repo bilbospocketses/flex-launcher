@@ -22,6 +22,7 @@ run_quick f40-fixed
 ok=1
 grep -q "Menu 'Main': 4 x 1 grid, 256 px buttons, 36 pt titles" "$out/f40-fixed.log" \
     && grep -A10 'Titles ===' "$out/f40-fixed.log" | grep -qE 'FontSize:\s+36$' \
+    && grep -A10 'Titles ===' "$out/f40-fixed.log" | grep -qE '^Padding:\s+20$' \
     && sanitizer_clean f40-fixed && ok=0
 result "items 18-19: a fixed FontSize and Padding still mean what they did" $ok
 
@@ -40,12 +41,25 @@ for f in f40-truncate f40-truncated; do
     result "OversizeMode $(grep -o 'OversizeMode=[A-Za-z]*' "$FX/$f.ini") parses as Truncate" $ok
 done
 
-# Shrink mode on long titles in a dense grid: stops at the minimum and cuts the rest, without a
-# crash (the harness runs with detect_leaks=0, so the font leak's fix is checked by reading)
+# Shrink mode on long titles in a dense grid: the titles are already at the 22 pt minimum, so
+# Shrink cuts them without opening a smaller font, and without a crash
 run_quick f40-shrink
 ok=1
-[ "$(cat "$out/f40-shrink.code")" = 0 ] && sanitizer_clean f40-shrink && ok=0
+[ "$(cat "$out/f40-shrink.code")" = 0 ] \
+    && grep -qE "Menu 'Main': 8 x 4 grid, [0-9]+ px buttons, 22 pt titles" "$out/f40-shrink.log" \
+    && sanitizer_clean f40-shrink && ok=0
 result "item 19: Shrink mode on long titles in a dense grid" $ok
+
+# Shrink mode under large buttons: at 78 pt every title here is wider than its 556 px button, so
+# render_text opens smaller fonts. One title fits at its first smaller size, one needs a step down
+# (a font closed and another opened), and one stops at the 22 pt minimum and is cut. The harness
+# runs with detect_leaks=0, so this finds a use-after-free or a double close there, not a leak.
+run_quick f40-shrink-large
+ok=1
+[ "$(cat "$out/f40-shrink-large.code")" = 0 ] \
+    && grep -q "Menu 'Main': 3 x 1 grid, 556 px buttons, 78 pt titles" "$out/f40-shrink-large.log" \
+    && sanitizer_clean f40-shrink-large && ok=0
+result "item 19: Shrink mode on long titles under large buttons steps down and stops at the minimum" $ok
 
 # A FontSize that is neither a size nor a percentage is refused with a log line
 run_quick f40-junk
