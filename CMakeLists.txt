@@ -60,7 +60,9 @@ if (WIN32)
   function(find_vcpkg_library var name)
     set(VCPKG_TRIPLET_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
     find_library(${var}_LIBRARY_RELEASE ${name} PATHS "${VCPKG_TRIPLET_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
-    find_library(${var}_LIBRARY_DEBUG ${name} PATHS "${VCPKG_TRIPLET_DIR}/debug/lib" NO_DEFAULT_PATH REQUIRED)
+    # Not REQUIRED: a release-only triplet (VCPKG_BUILD_TYPE release) has no debug folder, and
+    # select_library_configurations() then links the release library in every configuration
+    find_library(${var}_LIBRARY_DEBUG ${name} PATHS "${VCPKG_TRIPLET_DIR}/debug/lib" NO_DEFAULT_PATH)
     select_library_configurations(${var})
     # Drop the single path an older configure cached under the same name
     unset(${var} CACHE)
@@ -73,8 +75,9 @@ if (WIN32)
   find_vcpkg_library(GETOPT getopt)
 
   # A static triplet's libraries are built against the static C runtime (/MT), so build ours the
-  # same way; the default /MD made the link search both MSVCRT and LIBCMT
-  if (VCPKG_TARGET_TRIPLET MATCHES "-static$")
+  # same way; the default /MD made the link search both MSVCRT and LIBCMT. A runtime given on the
+  # command line (-DCMAKE_MSVC_RUNTIME_LIBRARY=...) still wins
+  if (VCPKG_TARGET_TRIPLET MATCHES "-static$" AND NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   endif ()
 endif ()
