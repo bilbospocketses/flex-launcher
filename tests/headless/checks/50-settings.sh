@@ -218,10 +218,13 @@ grep -E "Titles: closed|Menu 'Main': .* grid" "$out/f50-titlefonts.log" | sed 's
 
 # :home (a Home hotkey here) closes settings straight to the default menu. Settings open over
 # Games, and the Menus list's preview moves to Main; closing loads Main once and never Games.
+# The preview must have moved to Main before Home, or closing would load nothing else either way.
 CFG=$FX/f50-home.ini run_keys f50-home Return Menu Down Return Down Home
 ok=1
 after=$(sed -n '/Key Home (#4000004A) detected/,$p' "$out/f50-home.log")
-grep -q "Settings opened over menu 'Games'" "$out/f50-home.log" && grep -q 'Settings closed' <<< "$after" \
+grep -q "Settings opened over menu 'Games'" "$out/f50-home.log" \
+    && in_range "$out/f50-home.log" 'Settings opened' 'Key Home' "Settings: the preview shows menu 'Main'" \
+    && grep -q 'Settings closed' <<< "$after" \
     && [ "$(grep -c "Loading menu 'Main'" <<< "$after")" = 1 ] && ! grep -q "Loading menu 'Games'" <<< "$after" \
     && ran_clean f50-home && ok=0
 result "settings: :home closes them to the default menu, loading only it (exit $(cat "$out/f50-home.code"))" $ok
