@@ -82,7 +82,11 @@ static int counted_images = -1;               // Its images; -1 when it could no
 static char fitted_source[NOTE_TEXT_MAX];     // The note fit_note() fitted last...
 static int fitted_width = -1;                 // ...to this width...
 static int fitted_height = -1;                // ...and this height...
-static char fitted_note[NOTE_TEXT_MAX];       // ...and what it came to
+static char fitted_note[NOTE_TEXT_MAX];       // ...and what it came to...
+static int fitted_note_h = 0;                 // ...and how tall that wraps
+#ifdef STREAMFLEX_TEST_HOOKS
+static int measures = 0;                      // Paragraphs measured while settings are open
+#endif
 static char drawn_note[512];                  // The note under the preview last drawn, for the log
 static Menu *preview_wanted = NULL;           // The menu the preview switches to once the cursor rests...
 static Uint32 preview_asked = 0;              // ...since when it has rested
@@ -751,6 +755,11 @@ static void describe_folder_row(SettingsRow *row)
 // A function to free what the screen holds while open
 static void free_screen(void)
 {
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: how many paragraphs were measured to fit them
+    log_debug("Test hook: %i paragraphs were measured while settings were open", measures);
+    measures = 0;
+#endif
     if (browser != NULL)
         close_browser();
     stop_decoding();
@@ -1027,6 +1036,9 @@ void settings_handle_command(const char *command)
 // A function to tell how tall a paragraph wraps to a width
 static int wrapped_height(TTF_Font *font, const char *text, int width)
 {
+#ifdef STREAMFLEX_TEST_HOOKS
+    measures++;   // Only the headless harness builds this: free_screen() logs the count
+#endif
     SDL_Surface *surface = TTF_RenderUTF8_Blended_Wrapped(font, text, WHITE, (Uint32) width);
     if (surface == NULL)
         return 0;
@@ -1050,8 +1062,8 @@ static void cut_middle(const char *note, size_t keep, char *out, size_t size)
 }
 
 // A function to fit a note into a height, cutting it in the middle, where a long path sits, so its
-// start (what failed) and its end (why) stay. The last note fitted is remembered, so a note is
-// measured once, not every frame.
+// start (what failed) and its end (why) stay. The last note fitted is remembered with its height
+// (fitted_note_h), so a note is measured once, not every frame.
 static const char *fit_note(const char *note, int width, int max_height)
 {
     if (strcmp(note, fitted_source) == 0 && width == fitted_width && max_height == fitted_height)
@@ -1060,19 +1072,25 @@ static const char *fit_note(const char *note, int width, int max_height)
     fitted_width = width;
     fitted_height = max_height;
     copy_string(fitted_note, note, sizeof(fitted_note));
-    if (wrapped_height(font_small, note, width) <= max_height)
+    fitted_note_h = wrapped_height(font_small, note, width);
+    if (fitted_note_h <= max_height)
         return fitted_note;
     size_t fits = 0;                  // Bytes kept that are known to fit...
     size_t too_many = strlen(note);   // ...and known not to
+    int fits_h = 0;                   // ...and the height that fitted
     while (too_many - fits > 1) {
         size_t keep = (fits + too_many) / 2;
         cut_middle(note, keep, fitted_note, sizeof(fitted_note));
-        if (wrapped_height(font_small, fitted_note, width) <= max_height)
+        int h = wrapped_height(font_small, fitted_note, width);
+        if (h <= max_height) {
             fits = keep;
+            fits_h = h;
+        }
         else
             too_many = keep;
     }
     cut_middle(note, fits, fitted_note, sizeof(fitted_note));
+    fitted_note_h = fits > 0 ? fits_h : wrapped_height(font_small, fitted_note, width);
     log_debug("Settings: the note was cut in the middle to fit the column");
     return fitted_note;
 }
@@ -1083,8 +1101,8 @@ static int row_drawn_height(const SettingsRow *row, int note_room)
 {
     if (row->kind != SETTINGS_ROW_NOTE)
         return row_height;
-    int width = column_width - 2 * (margin / 2);
-    return max_int(row_height, wrapped_height(font_small, fit_note(row->note, width, note_room), width) + row_height / 2);
+    fit_note(row->note, column_width - 2 * (margin / 2), note_room);
+    return max_int(row_height, fitted_note_h + row_height / 2);
 }
 
 // A function to draw one row; returns the height it took. A note row takes at most note_room.
@@ -1159,8 +1177,11 @@ static void draw_model_rows(int x, int top, int bottom)
     if (!rest_after) {
         int room = bottom - top;
         int from = count;
-        while (from > 0 && room >= row_drawn_height(&rows[from - 1], note_room)) {
-            room -= row_drawn_height(&rows[from - 1], note_room);
+        while (from > 0) {
+            int h = row_drawn_height(&rows[from - 1], note_room);
+            if (room < h)
+                break;
+            room -= h;
             from--;
         }
         first_row = max_int(first_row, min_int(from, cursor));

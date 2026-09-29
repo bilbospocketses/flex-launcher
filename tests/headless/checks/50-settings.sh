@@ -267,3 +267,11 @@ in_range "$out/f50-manymenus.log" 'Settings opened' 'Settings closed' 'of 64 on 
     && ! grep -q 'Settings: the note was cut' "$out/f50-manymenus.log" && ran_clean f50-manymenus && ok=0
 result "settings: a page longer than the column shows its last note whole (exit $(cat "$out/f50-manymenus.code"))" $ok
 grep -E 'Settings: (rows .* of 64|the note was cut)' "$out/f50-manymenus.log" | tail -3 | sed 's/^/      /'
+
+# The same run rested about 3 s with the note on show, many frames. The note is measured when it is
+# first fitted and never again (the harness build counts every measure): not in every frame.
+measured=$(grep -oE 'Test hook: [0-9]+ paragraphs were measured' "$out/f50-manymenus.log" | grep -oE '[0-9]+' | tail -1)
+ok=1
+[ -n "$measured" ] && [ "$measured" -lt 50 ] && ran_clean f50-manymenus && ok=0
+result "settings: a note on show is measured once, not every frame" $ok
+echo "      measured ${measured:-no count} times"
