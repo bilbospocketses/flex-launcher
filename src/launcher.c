@@ -931,6 +931,7 @@ static void render_buttons(Menu *menu, const LayoutGeometry *geometry)
     // Keep no pointer to a cached font: another menu's title size may close it
     title_info.font = fixed_title_font;
     title_info.font_size = (int) config.title_font_size;
+    log_debug("Menu '%s': rendered its buttons at %i px", menu->name, size);
 }
 
 // A function to position the visible buttons and the highlight for the current menu

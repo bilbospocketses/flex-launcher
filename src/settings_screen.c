@@ -37,6 +37,8 @@ extern LayoutGeometry layout;
 #define MAX_COLUMN_RATIO 0.32F
 #define TEXT_CACHE_SIZE 96
 #define NOTE_TEXT_MAX 1600         // Longest note a row shows: a failed save's path and reason
+#define PREVIEW_REST_MS 300        // How long the Menus list's cursor rests before the preview follows it
+#define SLOW_KEY_MS 50             // A key that keeps the screen waiting this long is logged
 #define ALPHA_VALUE 180            // A row's value
 #define ALPHA_DIM 110              // Greyed rows, the page path and the key hint
 #define ALPHA_FILL 40              // The highlighted row
@@ -82,6 +84,8 @@ static int fitted_width = -1;                 // ...to this width...
 static int fitted_height = -1;                // ...and this height...
 static char fitted_note[NOTE_TEXT_MAX];       // ...and what it came to
 static char drawn_note[512];                  // The note under the preview last drawn, for the log
+static Menu *preview_wanted = NULL;           // The menu the preview switches to once the cursor rests...
+static Uint32 preview_asked = 0;              // ...since when it has rested
 static int shown_first = -1;                  // The rows last on show, for the log
 static int shown_last = -1;
 static int shown_count = -1;
@@ -461,16 +465,34 @@ static void measure_layout(void)
     preview_rect.h = preview_h;
 }
 
+// A function to show a menu in the preview, and log how long laying it out (and, the first time
+// at a size, rasterizing its icons) took
+static void show_preview(Menu *menu)
+{
+    Uint32 start = SDL_GetTicks();
+    show_menu(menu);
+    log_debug("Settings: the preview shows menu '%s' (%u ms)", menu->name, SDL_GetTicks() - start);
+}
+
 // A function to show in the preview the menu the page is about: a menu being edited or
-// highlighted, else the one settings opened over. A menu with no entries cannot be shown.
+// highlighted, else the one settings opened over. A menu with no entries cannot be shown. In the
+// Menus list the preview waits for the cursor to rest (settings_draw() switches it), so moving
+// down the list never waits for the icons of every menu on the way.
 static void follow_preview(void)
 {
     int index = settings_preview_menu(model);
     Menu *want = index >= 0 && index < menu_count ? menus[index] : origin;
     if (want->num_entries == 0)
         want = origin;
-    if (want != current_menu)
-        show_menu(want);
+    preview_wanted = NULL;
+    if (want == current_menu)
+        return;
+    if (settings_page(model) == SETTINGS_PAGE_MENUS) {
+        preview_wanted = want;
+        preview_asked = SDL_GetTicks();
+    }
+    else
+        show_preview(want);
 }
 
 // A function run on its own thread: decode one image for the preview
@@ -736,6 +758,7 @@ static void free_screen(void)
     if (browser != NULL)
         close_browser();
     stop_decoding();
+    preview_wanted = NULL;
     if (preview != NULL)
         SDL_DestroyTexture(preview);
     preview = NULL;
@@ -970,13 +993,11 @@ static void handle_browser_command(const char *command)
     preview_highlighted();
 }
 
-// A function to act on a special command while settings are open: the remote's keys move through
-// them, and every other command waits until they close
-void settings_handle_command(const char *command)
+// A function to act on a key while settings are open: the remote's keys move through them, and
+// every other command waits until they close
+static void handle_command(const char *command)
 {
     SettingsCommand key;
-    if (model == NULL)
-        return;
     if (browser != NULL) {
         handle_browser_command(command);
         return;
@@ -990,6 +1011,19 @@ void settings_handle_command(const char *command)
     handle_event(&event);
     if (model != NULL && before != SETTINGS_PAGE_BACKGROUND && settings_page(model) == SETTINGS_PAGE_BACKGROUND)
         counted_folder[0] = '\0';   // The Background page opened: count the Folder's images again
+}
+
+// A function to act on a special command while settings are open, logging a key that kept the
+// screen waiting
+void settings_handle_command(const char *command)
+{
+    if (model == NULL)
+        return;
+    Uint32 start = SDL_GetTicks();
+    handle_command(command);
+    Uint32 took = SDL_GetTicks() - start;
+    if (took >= SLOW_KEY_MS)
+        log_debug("Settings: '%s' kept the screen waiting %u ms", command, took);
 }
 
 // A function to tell how tall a paragraph wraps to a width
@@ -1194,6 +1228,13 @@ void settings_draw(void)
     if (model == NULL)
         return;
     poll_decode(false);
+
+    // The Menus list's cursor has rested: the preview follows it now
+    if (preview_wanted != NULL && SDL_GetTicks() - preview_asked >= PREVIEW_REST_MS) {
+        Menu *menu = preview_wanted;
+        preview_wanted = NULL;
+        show_preview(menu);
+    }
     if (preview != NULL) {
         SDL_SetRenderTarget(renderer, preview);
         draw_scene(true);

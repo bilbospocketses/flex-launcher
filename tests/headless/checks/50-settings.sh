@@ -179,3 +179,17 @@ grep -q 'Settings: the font OpenSans-Regular.ttf is missing, so they use /opt/sf
     && grep -q "Settings opened over menu 'Main'" "$out/f50-nofont.log" && ran_clean f50-nofont && ok=0
 result "settings: an install without the bundled font opens them in the title font (exit $(cat "$out/f50-nofont.code"))" $ok
 grep 'Settings' "$out/f50-nofont.log" | sed 's/^/      /'
+
+# Moving quickly down the Menus list (five menus of twelve 556 px SVG icons) does not lay out, or
+# rasterize the icons of, each menu on the way: the preview follows once the cursor rests, on D.
+# Going up to C and back to D shows D again without rendering its buttons a second time.
+fast_downs() { xdotool key --delay 100 Down Down Down Down Down; sleep 2; }
+revisit() { xdotool key Up; sleep 1; xdotool key Down; sleep 1; }
+CFG=$FX/f50-menus.ini run_keys f50-menus Menu Down Return +fast_downs +revisit Menu
+log=$out/f50-menus.log
+ok=1
+in_range "$log" 'Settings opened' 'Settings closed' "Settings: the preview shows menu 'D'" \
+    && ! sed -n "/Settings opened/,/Settings: the preview shows menu 'D'/p" "$log" | grep -qE "Loading menu '[ABC]'" \
+    && [ "$(grep -c "Menu 'D': rendered its buttons" "$log")" = 1 ] && ran_clean f50-menus && ok=0
+result "settings: the Menus list's preview waits for the cursor to rest, and never renders a menu twice (exit $(cat "$out/f50-menus.code"))" $ok
+grep -E "Loading menu|rendered its buttons|the preview shows menu|kept the screen waiting" "$log" | sed 's/^/      /'
