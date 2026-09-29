@@ -51,12 +51,15 @@ result "item 19: Shrink mode on long titles in a dense grid (exit $(cat "$out/f4
 # Shrink mode under large buttons: at 78 pt every title here is wider than its 556 px button, so
 # render_text opens smaller fonts. One title fits at its first smaller size, one needs a step down
 # (a font closed and another opened), and one stops at the 22 pt minimum and is cut. This finds a
-# use-after-free or a double close; the leak pass (run.sh leaks) finds a font left open.
+# use-after-free or a double close; the leak pass (run.sh leaks) finds a font left open. The cut
+# title fits its button: the debug log names any title wider than its button.
 run_quick f40-shrink-large
 ok=1
 ran_clean f40-shrink-large && grep -A10 'Titles ===' "$out/f40-shrink-large.log" | grep -qE 'OversizeMode:\s+Shrink$' \
-    && grep -q "Menu 'Main': 3 x 1 grid, 556 px buttons, 78 pt titles" "$out/f40-shrink-large.log" && ok=0
+    && grep -q "Menu 'Main': 3 x 1 grid, 556 px buttons, 78 pt titles" "$out/f40-shrink-large.log" \
+    && ! grep -q 'px wide, over its' "$out/f40-shrink-large.log" && ok=0
 result "item 19: Shrink mode on long titles under large buttons steps down and stops at the minimum (exit $(cat "$out/f40-shrink-large.code"))" $ok
+grep 'px wide, over its' "$out/f40-shrink-large.log" | sed 's/^/      /'
 
 # A FontSize that is neither a size nor a percentage is refused with a log line
 run_quick f40-junk

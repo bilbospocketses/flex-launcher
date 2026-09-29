@@ -367,6 +367,17 @@ int render_scroll_indicators(Scroll *scroll, int height, Geometry *geo)
     return 0;
 }
 
+// A function to cut a line of text with "..." to fit a width, measured in the font it is drawn in:
+// utf8_truncate() estimates from the average character's width, and wide letters can leave the
+// estimate too long, so one more character goes until it fits. Leaves the width and height in w, h.
+static void truncate_to_fit(TTF_Font *font, char *text, int max_width, int *w, int *h)
+{
+    utf8_truncate(text, *w, max_width);
+    TTF_SizeUTF8(font, text, w, h);
+    while (*w > max_width && utf8_shorten(text))
+        TTF_SizeUTF8(font, text, w, h);
+}
+
 // A function to render text
 SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *text_height)
 {
@@ -384,10 +395,8 @@ SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *
     if (info->oversize_mode != OVERSIZE_NONE && w > info->max_width) {
 
         // Truncate mode:
-        if (info->oversize_mode == OVERSIZE_TRUNCATE) {
-            utf8_truncate(text_buffer, w, info->max_width);
-            TTF_SizeUTF8(info->font, text_buffer, &w, &h);
-        }
+        if (info->oversize_mode == OVERSIZE_TRUNCATE)
+            truncate_to_fit(info->font, text_buffer, info->max_width, &w, &h);
 
         // Shrink mode: work out the size that fits from the measured width, never going below
         // the readable minimum, then cut whatever still does not fit
@@ -420,10 +429,8 @@ SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *
                 if (reduced_font == NULL)
                     TTF_SizeUTF8(info->font, text_buffer, &w, &h);
             }
-            if (w > info->max_width) {
-                utf8_truncate(text_buffer, w, info->max_width);
-                TTF_SizeUTF8(reduced_font != NULL ? reduced_font : info->font, text_buffer, &w, &h);
-            }
+            if (w > info->max_width)
+                truncate_to_fit(reduced_font != NULL ? reduced_font : info->font, text_buffer, info->max_width, &w, &h);
         }
     }
     output_font = reduced_font != NULL ? reduced_font : info->font;

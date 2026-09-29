@@ -67,3 +67,18 @@ void utf8_truncate(char *string, int width, int max_width)
         *(ptr + 3) = '\0';
     }
 }
+
+// A function to shorten a string utf8_truncate has cut, by the character before its "...". It
+// returns 0 when there is none left to remove, or the string was not cut.
+int utf8_shorten(char *string)
+{
+    size_t length = strlen(string);
+    if (length <= 3 || strcmp(string + length - 3, "...") != 0)
+        return 0;
+    char *dots = string + length - 3;
+    char *ptr = dots - 1;
+    while (ptr > string && (*ptr & 0xC0) == 0x80) // Back to the first byte of the character
+        ptr--;
+    memmove(ptr, dots, 4);
+    return 1;
+}
