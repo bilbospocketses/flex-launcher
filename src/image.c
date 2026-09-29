@@ -9,6 +9,7 @@
 #include "launcher.h"
 #include <launcher_config.h>
 #include "image.h"
+#include "chroma.h"
 #include "util.h"
 #include "debug.h"
 #include <ini.h>
@@ -199,8 +200,47 @@ SDL_Texture *load_texture(SDL_Surface *surface)
     return texture;
 }
 
-// A function to rasterize an SVG from an existing text buffer
-SDL_Texture *rasterize_svg(char *buffer, int w, int h, SDL_Rect *rect)
+// A function to move an image's opaque pixels off the chroma key (RGBA bytes), always, since
+// Transparent mode can be chosen in settings after the image is loaded: on Windows it makes every
+// pixel of the key colour see-through. `what` names the image for the log.
+static void keep_off_chroma_key(unsigned char *rgba, int width, int height, int pitch, const char *what)
+{
+    int moved = chroma_keep_off(rgba, width, height, pitch,
+                    config.chroma_key_color.r, config.chroma_key_color.g, config.chroma_key_color.b);
+    if (moved > 0)
+        log_debug("%s: moved %i pixel(s) off the chroma key #%02X%02X%02X", what, moved,
+            config.chroma_key_color.r, config.chroma_key_color.g, config.chroma_key_color.b);
+}
+
+// A function to keep a loaded image's opaque pixels off the chroma key. The pixels are read as
+// RGBA bytes, so another format is converted first. Returns the surface to use: this one, or the
+// converted copy, which replaces it.
+static SDL_Surface *keep_surface_off_chroma_key(SDL_Surface *surface, const char *what)
+{
+    if (surface->format->format != SDL_PIXELFORMAT_RGBA32) {
+        SDL_Surface *converted = SDL_ConvertSurfaceFormat(surface, SDL_PIXELFORMAT_RGBA32, 0);
+        if (converted == NULL) {
+            log_error("Could not convert %s to keep it off the chroma key\n%s", what, SDL_GetError());
+            return surface;
+        }
+        SDL_FreeSurface(surface);
+        surface = converted;
+    }
+    if (SDL_LockSurface(surface) == 0) {
+        keep_off_chroma_key(surface->pixels, surface->w, surface->h, surface->pitch, what);
+        SDL_UnlockSurface(surface);
+    }
+    else {
+        // The pixels cannot be read, but the texture can still be made from the surface: the icon
+        // is drawn as it is, and only a Transparent window may show through its near-key pixels
+        log_debug("%s: could not be kept off the chroma key, so it is drawn as it is: %s", what, SDL_GetError());
+    }
+    return surface;
+}
+
+// A function to rasterize an SVG from a text buffer, keeping its pixels off the chroma key;
+// `what` names it for the log
+static SDL_Texture *rasterize(char *buffer, int w, int h, SDL_Rect *rect, const char *what)
 {
     NSVGimage *image = NULL;
     unsigned char *pixel_buffer = NULL;
@@ -246,6 +286,7 @@ SDL_Texture *rasterize_svg(char *buffer, int w, int h, SDL_Rect *rect)
 
     // Rasterize image
     nsvgRasterize(rasterizer, image, 0, 0, scale, pixel_buffer, width, height, pitch);
+    keep_off_chroma_key(pixel_buffer, width, height, pitch, what);
     SDL_Surface *surface = SDL_CreateRGBSurfaceFrom(pixel_buffer,
                                width,
                                height,
@@ -264,6 +305,12 @@ SDL_Texture *rasterize_svg(char *buffer, int w, int h, SDL_Rect *rect)
     return texture;
 }
 
+// A function to rasterize an SVG from an existing text buffer
+SDL_Texture *rasterize_svg(char *buffer, int w, int h, SDL_Rect *rect)
+{
+    return rasterize(buffer, w, h, rect, "An SVG image");
+}
+
 // A function to rasterize an SVG file; pass -1 for w or h to keep the aspect ratio
 SDL_Texture *rasterize_svg_from_file(const char *path, int w, int h, SDL_Rect *rect)
 {
@@ -272,13 +319,14 @@ SDL_Texture *rasterize_svg_from_file(const char *path, int w, int h, SDL_Rect *r
         log_error("Could not load image %s\n%s", path, SDL_GetError());
         return NULL;
     }
-    SDL_Texture *texture = rasterize_svg(buffer, w, h, rect);
+    SDL_Texture *texture = rasterize(buffer, w, h, rect, path);
     SDL_free(buffer);
     return texture;
 }
 
 // A function to load a menu icon. SVGs are rasterized at the button size so they stay sharp
-// at any size; other formats load at their own size and the renderer scales them.
+// at any size; other formats load at their own size and the renderer scales them. Either way its
+// pixels are kept off the chroma key.
 SDL_Texture *load_icon(const char *path, int size)
 {
     if (path == NULL)
@@ -286,7 +334,12 @@ SDL_Texture *load_icon(const char *path, int size)
     size_t length = strlen(path);
     if (length > 4 && SDL_strcasecmp(path + length - 4, ".svg") == 0)
         return rasterize_svg_from_file(path, size, -1, NULL);
-    return load_texture_from_file(path);
+    SDL_Surface *surface = IMG_Load(path);
+    if (surface == NULL) {
+        log_error("Could not load image %s\n%s", path, IMG_GetError());
+        return NULL;
+    }
+    return load_texture(keep_surface_off_chroma_key(surface, path));
 }
 
 // A function to render the highlight for the buttons
@@ -317,7 +370,7 @@ SDL_Texture *render_highlight(int width, int height, SDL_Rect *rect)
     );
 
     // Rasterize the SVG
-    SDL_Texture *texture = rasterize_svg(buffer, -1, -1, rect);
+    SDL_Texture *texture = rasterize(buffer, -1, -1, rect, "The highlight");
     
     // Cleanup
     free(buffer);
@@ -342,10 +395,11 @@ int render_scroll_indicators(Scroll *scroll, int height, Geometry *geo)
     );
 
     // Rasterize the SVG
-    scroll->texture = rasterize_svg(buffer,
+    scroll->texture = rasterize(buffer,
                           -1,
                           height,
-                          &scroll->rect_right
+                          &scroll->rect_right,
+                          "The scroll arrow"
                       );
     free(buffer);
     if (scroll->texture == NULL)

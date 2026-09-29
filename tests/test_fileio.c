@@ -294,6 +294,39 @@ static void test_real_path(void)
 #endif
 }
 
+// A function to test the full path: absolute on both systems, so a name the working folder finds
+// (as the config search finds .\config.ini) says where the file is, and the same with or without
+// the ".\" in front. One too long for its buffer is refused and left empty.
+static void test_full_path(void)
+{
+#ifdef _WIN32
+    const char *tail = DIR "\\" CAFE;
+    const char *dotted = ".\\" DIR "\\" CAFE;
+#else
+    const char *tail = DIR "/" CAFE;
+    const char *dotted = "./" DIR "/" CAFE;
+#endif
+    CHECK(fileio_write_all(DIR "/" CAFE, "x", 1));
+    char out[1024];
+    char from_dot[1024];
+    CHECK(fileio_full_path(DIR "/" CAFE, out, sizeof(out)));
+    CHECK(fileio_full_path(dotted, from_dot, sizeof(from_dot)));
+    CHECK(strcmp(out, from_dot) == 0);
+#ifdef _WIN32
+    CHECK(((out[0] >= 'A' && out[0] <= 'Z') || (out[0] >= 'a' && out[0] <= 'z')) && out[1] == ':' && out[2] == '\\');
+#else
+    CHECK(out[0] == '/');
+#endif
+    size_t length = strlen(out);
+    size_t tail_length = strlen(tail);
+    CHECK(length > tail_length && strcmp(out + length - tail_length, tail) == 0);
+
+    char too_small[8];
+    CHECK(!fileio_full_path(DIR "/" CAFE, too_small, sizeof(too_small)));
+    CHECK(strstr(fileio_last_error(), "too long") != NULL);
+    CHECK(too_small[0] == '\0');
+}
+
 // What the other thread in test_errors_are_per_thread() read as its reason
 static char other_thread_error[160];
 
@@ -971,6 +1004,7 @@ int main(void)
     test_writable();
     test_hidden();
     test_real_path();
+    test_full_path();
     test_errors_are_per_thread();
     test_list_fails_when_a_read_fails();
     test_replace_says_what_it_could_not_keep();

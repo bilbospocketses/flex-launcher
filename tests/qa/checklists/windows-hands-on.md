@@ -98,16 +98,16 @@ This is the Windows half of Task 13's hands-on check for the settings screen (su
 
 - **Inputs, part 1:** take a mark, then a single **Menu** key (down, up).
 - **Expected:**
-  - New lines hold `Key Application (#40000065) detected`, then `Settings opened over menu 'Main'`.
-  - If the Key line shows another name or code, the SendInput event is wrong: BLOCKED, not FAIL.
+  - New lines hold `Key … (#40000065) detected`, then `Settings opened over menu 'Main'`. Match on the keycode `(#40000065)`, not the name: SDL names it `Application` or `Menu` depending on its version (the tested Windows build logs `Key Menu (#40000065)`).
+  - If the Key line shows another code, the SendInput event is wrong: BLOCKED, not FAIL.
 - Then **Backspace**: `Settings closed`.
 - **Inputs, part 2 (held):** SendInput does not auto-repeat a held key, so act as the keyboard would. Take a mark, then send a **Menu** key-down, 30 further Menu key-downs 33 ms apart (no key-up between them), and then one key-up. Wait 1 s.
 - **Expected:**
   - Settings are open. **Frame** `W1b-held-menu.png`.
   - The new lines hold exactly **one** `Settings opened` and **no** `Settings closed`.
-  - They also hold **at least two** `Key Application (#40000065) detected` lines. This proves the repeats reached StreamFlex. If there is only one, the repeats were not delivered, and the check is BLOCKED rather than PASS. (A repeat is logged before StreamFlex drops it, so one line means the guest sent no repeats.)
+  - They also hold **at least two** `Key … (#40000065) detected` lines. This proves the repeats reached StreamFlex. If there is only one, the repeats were not delivered, and the check is BLOCKED rather than PASS. (A repeat is logged before StreamFlex drops it, so one line means the guest sent no repeats.)
 - Then **Backspace** to close.
-- **Both Menu keycodes** open settings: `Application` (0x40000065) and `Menu` (0x40000076). Part 1 covers the first; the second is N/A on Windows, as below.
+- **Both Menu keycodes** open settings: 0x40000065 (`SDLK_APPLICATION`) and 0x40000076 (`SDLK_MENU`). Part 1 covers the first; the second is N/A on Windows, as below.
 - **SDLK_MENU (0x40000076)** has no Windows virtual key. Write "N/A on Windows; checked on Ubuntu" in the report.
 
 ## W2. Background modes (brief step 2)

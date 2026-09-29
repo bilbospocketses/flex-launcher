@@ -8,6 +8,13 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+### Fixed
+- **Transparent mode on Windows no longer punches holes in icons.** Windows shows through every pixel of the window that is exactly the chroma key colour (`#010101` unless `ChromaKeyColor` says otherwise), so icon art containing that colour turned partly see-through, and so did dark pixels that scaling blended onto it; the built-in Plex icon had a diagonal line and specks of it. Every icon, PNG or SVG, now has its opaque pixels within one step of the key lifted two steps off it as it loads (near-black becomes `#030303`), whatever the background mode, so no opaque pixel of an icon is within one step of the key, and dark art that was near it can no longer be averaged onto it when the icon is scaled. The built-in Plex, Hulu, Spotify, Twitch and Amazon Music icons are lifted the same way (none of them blends onto the key when scaled), and the icon library's check refuses brand art that is not.
+- Settings and their messages name the config file by its full path. Started from its own folder, StreamFlex showed `Couldn't save to .\config.ini: ...` on screen and logged `.\config.ini`; it now says `C:\StreamFlex\config.ini`. When the full path differs from the path the file was found by (`.\config.ini`, or on Linux a link given with `-c`), the debug log's `Config file found:` line gives both: `.\config.ini (C:\StreamFlex\config.ini)`.
+- Choosing *Image* or *Slideshow* in settings before picking an image or folder no longer logs errors blaming the config file (on Linux they also reached the terminal). The preview shows the colour until one is chosen, and the debug log says so. A config that sets such a mode without an image or folder still reports it at startup.
+- The debug log (`-d`) names every folder the settings' folder browser moves into, not only the one it opens in.
+- The configuration guide and the hands-on checklists name the Menu key by its keycodes: SDL logs `#40000065` as `Application` or `Menu` depending on its version.
+
 ## [0.3.0] - 2026-09-29
 
 The second part of the overhaul: a settings screen, opened with the remote's Menu key, a gamepad's Start or `:settings`, that changes the background, each menu's grid and the title size with a live preview, and saves only what changed into your config. A config written for 0.2.0 still works. Visible differences: the gamepad is on unless the config turns it off, titles scale with each menu's buttons (the same size as before on 256 px buttons), and the Windows zip no longer carries a Visual C++ runtime DLL.

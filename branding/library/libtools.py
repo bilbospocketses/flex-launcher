@@ -1,5 +1,5 @@
 """Shared paths and file formats for the icon library tools. Standard library only
-(outline_mask, added with the brand tools, imports Pillow when it is called)."""
+(outline_mask, added with the brand tools, and the chroma key helpers import Pillow when called)."""
 import hashlib
 import pathlib
 import re
@@ -16,6 +16,12 @@ BRAND_GROUPS = ("video", "free-tv", "servers", "music", "games", "web")
 OUTLINE_RADIUS = 0.22           # corner radius as a share of the side: the app icon's plate, 54 of 244
 BRAND_MIN, BRAND_MAX = 512, 1024
 BRAND_KEYS = ("title", "group", "owner", "android", "source", "art", "fill", "size", "sha256")
+# StreamFlex's default chroma key, #010101. Transparent mode on Windows shows through every pixel of
+# the window that is exactly this colour, including pixels the renderer's scaling averages onto it
+# from dark neighbours. So brand art keeps its opaque pixels two steps off it, as the launcher does
+# when it loads an icon (src/chroma.c): one within a step of it in every channel becomes OFF_KEY.
+CHROMA_KEY = (1, 1, 1)
+OFF_KEY = (3, 3, 3)
 
 
 def read_sections(path):
@@ -57,6 +63,32 @@ def write_brands(sections, path=BRANDS_INI):
 
 def sha256_file(path):
     return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+
+
+def key_mask(image):
+    """Mode L, 255 where an RGBA image's pixel is fully opaque and within one step of CHROMA_KEY in every
+    channel, else 0. Needs Pillow."""
+    from PIL import ImageChops
+    mask = image.getchannel("A").point(lambda v: 255 if v == 255 else 0)
+    for band, level in zip(image.split(), CHROMA_KEY):
+        near = band.point(lambda v, level=level: 255 if abs(v - level) <= 1 else 0)
+        mask = ImageChops.multiply(mask, near)
+    return mask
+
+
+def key_pixels(image):
+    """How many of an RGBA image's pixels are fully opaque and within one step of CHROMA_KEY. Needs Pillow."""
+    return key_mask(image).histogram()[255]
+
+
+def keep_off_key(image):
+    """Make each fully opaque pixel of an RGBA image within one step of CHROMA_KEY into OFF_KEY, in place;
+    returns how many changed. Needs Pillow."""
+    mask = key_mask(image)
+    count = mask.histogram()[255]
+    if count:
+        image.paste(OFF_KEY + (255,), (0, 0) + image.size, mask)
+    return count
 
 
 def outline_mask(size, supersample=4):

@@ -35,6 +35,20 @@ class CheckLibrary(unittest.TestCase):
         problems = cl.check_files(self.library)
         self.assertTrue(any(brand.name in p and "square" in p for p in problems), problems)
 
+    def test_a_brand_with_pixels_near_the_chroma_key_is_reported(self):
+        # Transparent mode on Windows shows through #010101, and scaling averages pixels a step off it onto
+        # it: five opaque pixels within one step in every channel are named and counted
+        brand = next((self.library / "brands").glob("*.png"))
+        image = Image.new("RGBA", (512, 512), (10, 20, 30, 255))
+        for x, colour in enumerate(((1, 1, 1), (0, 0, 0), (2, 2, 2), (0, 2, 1), (1, 1, 1))):
+            image.putpixel((200 + x, 256), colour + (255,))
+        image.putpixel((210, 256), (1, 1, 1, 254))   # not fully opaque: not counted
+        image.putpixel((211, 256), (3, 1, 1, 255))   # two steps off in red: not counted
+        image.save(brand)
+        problems = cl.check_files(self.library)
+        self.assertTrue(any(brand.name in p and "5 opaque pixel(s) within one step of the chroma key" in p
+                            for p in problems), problems)
+
     def test_a_brand_opaque_in_its_corner_is_reported(self):
         brand = next((self.library / "brands").glob("*.png"))
         Image.new("RGBA", (512, 512), (10, 20, 30, 255)).save(brand)

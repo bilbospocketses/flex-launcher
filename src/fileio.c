@@ -602,6 +602,41 @@ bool fileio_real_path(const char *path, char *out, size_t size)
 #endif
 }
 
+// A function to find the absolute path a file's name stands for, so a name found from the working
+// folder (".\config.ini") still says where the file is: on Linux its real path, as above; on Windows
+// the working folder's path joined to it, whether or not the file exists
+bool fileio_full_path(const char *path, char *out, size_t size)
+{
+#ifdef _WIN32
+    if (size > 0)
+        out[0] = '\0';
+    wchar_t *wide = to_wide(path);
+    if (wide == NULL)
+        return false;
+    char *text = NULL;
+    DWORD needed = GetFullPathNameW(wide, 0, NULL, NULL);
+    if (needed == 0)
+        set_windows_error(GetLastError());
+    else {
+        wchar_t *full = alloc_malloc((size_t) needed * sizeof(wchar_t));
+        DWORD written = full != NULL ? GetFullPathNameW(wide, needed, full, NULL) : 0;
+        if (full == NULL)
+            set_error("out of memory");
+        else if (written == 0 || written >= needed)
+            set_windows_error(GetLastError());
+        else
+            text = to_utf8(full);
+        alloc_free(full);
+    }
+    alloc_free(wide);
+    bool ok = text != NULL && copy_path(out, size, text);
+    alloc_free(text);
+    return ok;
+#else
+    return fileio_real_path(path, out, size);
+#endif
+}
+
 #ifndef _WIN32
 #define MAX_LINKS 8   // How many links deep a link is followed by its text
 

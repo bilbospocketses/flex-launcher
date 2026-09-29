@@ -8,6 +8,11 @@ add_executable(test_utf8 test_utf8.c "${PROJECT_SOURCE_DIR}/src/utf8.c")
 target_include_directories(test_utf8 PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME utf8 COMMAND test_utf8)
 
+# Unit tests for keeping images off the chroma key (a pure module, linked on its own)
+add_executable(test_chroma test_chroma.c "${PROJECT_SOURCE_DIR}/src/chroma.c")
+target_include_directories(test_chroma PRIVATE "${PROJECT_SOURCE_DIR}/src")
+add_test(NAME chroma COMMAND test_chroma)
+
 # fileio.c finds the Windows places (Pictures, drives) through the shell
 function(link_fileio target)
   if (WIN32)

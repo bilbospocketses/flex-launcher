@@ -44,6 +44,28 @@ grep -qx 'checkerboard yes' "$out/f60-transparent.seen" && grep -q 'Settings: no
 result "settings: the Transparent preview is a checkerboard (exit $(cat "$out/f60-transparent.code"))" $ok
 sed 's/^/      /' "$out/f60-transparent.seen"
 
+# The same run stepped Mode through Image and Slideshow, twice each, with neither an image nor a
+# folder chosen yet. Each previews the colour, as designed: the debug log says so, and no error
+# about a config problem reaches stderr, since there is none.
+ok=1
+! grep -qE "Background 'Image' setting|Couldn't load background image|Slideshow directory .* does not exist" "$out/f60-transparent.err" \
+    && grep -q 'Settings: no image chosen yet, the preview shows the colour' "$out/f60-transparent.log" \
+    && grep -q 'Settings: no slideshow folder chosen yet, the preview shows the colour' "$out/f60-transparent.log" && ok=0
+result "settings: stepping Mode through Image and Slideshow with nothing chosen writes no error" $ok
+grep -E "Background 'Image' setting|Couldn't load background image|does not exist" "$out/f60-transparent.err" | sort | uniq -c | sed 's/^/      /'
+
+# A config whose own Mode names an image or folder it never gives is a config problem: at startup
+# that still says so as an error, on stderr. The slideshow's case runs f30-nodir's config here,
+# under a name of its own, so this check reads only what it ran.
+run_quick f60-noimage
+CFG=$FX/f30-nodir.ini run_quick f60-nofolder
+ok=1
+grep -q "Background 'Image' setting not specified in config file" "$out/f60-noimage.err" \
+    && grep -q "Couldn't load background image, defaulting to color background" "$out/f60-noimage.err" \
+    && grep -q "Slideshow directory '(none)' does not exist" "$out/f60-nofolder.err" \
+    && ran_clean f60-noimage && ran_clean f60-nofolder && ok=0
+result "a config's Image or Slideshow mode with nothing chosen still errors at startup (exit $(cat "$out/f60-noimage.code"))" $ok
+
 # Image: Mode to Image, open the browser (it starts in Pictures), take the second image
 cfg=$(writable_config f60-colour)
 CFG=$cfg run_keys f60-image Menu Return Right Down Return Down Return BackSpace BackSpace
@@ -200,6 +222,20 @@ grep -q "Settings: Can't open locked: permission denied" "$out/f60-locked.log" \
     && grep -q 'Settings: nothing changed' "$out/f60-locked.log" && ran_clean f60-locked && ok=0
 result "settings: a folder that cannot be opened says why (exit $(cat "$out/f60-locked.code"))" $ok
 grep -E "Settings: (browsing|Can't)" "$out/f60-locked.log" | sed 's/^/      /'
+
+# Moving between folders logs where the browser is each time, as opening it does: it opens in
+# ~/nest, OK enters its folder sub, and Back goes up to ~/nest again
+rm -rf "$TESTER_HOME/nest"
+mkdir -p "$TESTER_HOME/nest/sub"
+cp "$TESTER_HOME/Pictures/red.png" "$TESTER_HOME/nest/sub/"
+chown -R tester:tester "$TESTER_HOME/nest"
+run_keys f60-nest Menu Return Down Return Down Return BackSpace Menu
+want="Settings: browsing $TESTER_HOME/nest|Settings: browsing $TESTER_HOME/nest/sub|Settings: browsing $TESTER_HOME/nest|"
+ok=1
+[ "$(grep -x 'Settings: browsing .*' "$out/f60-nest.log" | tr '\n' '|')" = "$want" ] \
+    && grep -q 'Settings: nothing changed' "$out/f60-nest.log" && ran_clean f60-nest && ok=0
+result "settings: the folder browser logs each folder it moves into (exit $(cat "$out/f60-nest.code"))" $ok
+grep 'Settings: browsing' "$out/f60-nest.log" | sed 's/^/      /'
 
 # Images that only look like pictures (~/broken): the browser opens on a.png, whose failed decode
 # puts "cannot be opened" in the caption with no key pressed, and SDL_image's reason in the log;
