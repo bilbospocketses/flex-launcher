@@ -325,7 +325,7 @@ static void init_sdl_ttf()
         .font_size = (int) config.title_font_size,
         .shadow = config.title_shadows,
         .font_path = &config.title_font_path,
-        .max_width = 0, // Set per menu to its button size, in render_buttons
+        .max_width = 0, // Set per menu in render_buttons: its button size, less room for a shadow
         .min_size = geo.title_min_size,
         .oversize_mode = config.title_oversize_mode,
         .color = &config.title_font_color
@@ -918,7 +918,6 @@ static int apply_layout(Menu *menu)
 static void render_buttons(Menu *menu, const LayoutGeometry *geometry)
 {
     int size = geometry->button;
-    title_info.max_width = size;
     title_info.font = fixed_title_font;
     title_info.font_size = (int) config.title_font_size;
     if (geometry->title_size > 0) {
