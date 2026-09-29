@@ -14,6 +14,8 @@ set(SOURCES
   layout.h
   utf8.c
   utf8.h
+  chroma.c
+  chroma.h
   library.c
   library.h
   alloc.c
