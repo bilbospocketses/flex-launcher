@@ -53,11 +53,31 @@ if (WIN32)
   find_package(sdl2_image CONFIG REQUIRED)
   find_package(SDL2_ttf CONFIG REQUIRED)
   
+  # A function to find a vcpkg library once per configuration, so each configuration links its own.
+  # A multi-config generator has no build type, so vcpkg searches its debug folder first, and a
+  # plain find_library() gave the Release link the debug library and its debug C runtime (LIBCMTD)
+  include(SelectLibraryConfigurations)
+  function(find_vcpkg_library var name)
+    set(VCPKG_TRIPLET_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+    find_library(${var}_LIBRARY_RELEASE ${name} PATHS "${VCPKG_TRIPLET_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
+    find_library(${var}_LIBRARY_DEBUG ${name} PATHS "${VCPKG_TRIPLET_DIR}/debug/lib" NO_DEFAULT_PATH REQUIRED)
+    select_library_configurations(${var})
+    # Drop the single path an older configure cached under the same name
+    unset(${var} CACHE)
+    set(${var} ${${var}_LIBRARY} PARENT_SCOPE)
+  endfunction()
+
   find_path(INIH_INCLUDE_DIR "ini.h" REQUIRED)
-  find_library(INIH inih REQUIRED)
+  find_vcpkg_library(INIH inih)
   find_path(GETOPT_INCLUDE_DIR "getopt.h" REQUIRED)
-  find_library(GETOPT getopt REQUIRED)
-endif () 
+  find_vcpkg_library(GETOPT getopt)
+
+  # A static triplet's libraries are built against the static C runtime (/MT), so build ours the
+  # same way; the default /MD made the link search both MSVCRT and LIBCMT
+  if (VCPKG_TARGET_TRIPLET MATCHES "-static$")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  endif ()
+endif ()
 
 # Build configuration - Linux
 if (UNIX)
