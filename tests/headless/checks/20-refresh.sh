@@ -31,3 +31,10 @@ fi
 result "item 22: a display that reports 0 Hz starts at 60 Hz (X says ${x_hz:-nothing}, SDL says ${sdl_hz:-nothing} Hz, exit $(cat "$out/f22-refresh.code"))" $ok
 [ "$x_hz" = 0.00Hz ] || echo "      the X display does not report 0 Hz, so this check tests nothing it names: fix the premise"
 grep -m2 -E 'runtime error|AddressSanitizer' "$out/f22-refresh.err" | sed 's/^/      /'
+
+# The log names SDL's video driver and the renderer it chose as the launcher starts, the first
+# thing a hands-on check reads: here the X11 driver, and whichever renderer this SDL picked
+ok=1
+grep -qE "^Video: SDL's x11 driver, the [a-z0-9_]+ renderer$" "$out/f22-refresh.log" && ok=0
+result "the log names SDL's video driver and renderer at startup" $ok
+grep '^Video:' "$out/f22-refresh.log" | sed 's/^/      /'

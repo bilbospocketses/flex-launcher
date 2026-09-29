@@ -273,6 +273,11 @@ static void create_window()
     if (renderer == NULL)
         log_fatal("Could not initialize renderer\n%s", SDL_GetError());
 
+    // Which video driver and renderer SDL chose: X11 or Wayland, OpenGL or software
+    SDL_RendererInfo renderer_info;
+    if (SDL_GetRendererInfo(renderer, &renderer_info) == 0)
+        log_debug("Video: SDL's %s driver, the %s renderer", SDL_GetCurrentVideoDriver(), renderer_info.name);
+
     // Set background color
     set_draw_color();
 
