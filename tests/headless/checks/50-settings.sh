@@ -110,13 +110,14 @@ result "settings: a :quit hotkey is ignored while they are open, and Menu closes
 
 # A held Menu key opens settings once, and they stay open: the keyboard's repeats of it do nothing.
 # The same for a remote's Menu button, SDLK_MENU (X's XF86MenuKB, where Menu is SDLK_APPLICATION).
-# The key must have come more than once, or nothing was repeated and the check proves nothing.
+# The key must have come more than once, or nothing was repeated and the check proves nothing. Its
+# lines are matched by keycode alone: SDL names #40000065 Application or Menu, by version.
 hold_menu() { xdotool keydown Menu; sleep 2; xdotool keyup Menu; sleep 1; }
 hold_menukb() { xdotool keydown XF86MenuKB; sleep 2; xdotool keyup XF86MenuKB; sleep 1; }
 for held in held:Menu:40000065 heldkb:MenuKB:40000076; do
     IFS=: read -r name key code <<< "$held"
     CFG=$FX/f50-keys.ini run_keys "f50-$name" "+hold_${key,,}"
-    n=$(grep -c "Key Menu (#$code) detected" "$out/f50-$name.log")
+    n=$(grep -c "^Key .* (#$code) detected$" "$out/f50-$name.log")
     ok=1
     [ "$n" -gt 1 ] && [ "$(grep -c 'Settings opened' "$out/f50-$name.log")" = 1 ] \
         && ! grep -q 'Settings closed' "$out/f50-$name.log" && ran_clean "f50-$name" && ok=0
