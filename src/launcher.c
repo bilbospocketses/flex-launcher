@@ -547,7 +547,7 @@ static void handle_keypress(SDL_Keysym *key, bool repeat)
         for (Hotkey *i = hotkeys; i != NULL; i = i->next) {
             if (key->sym == i->keycode) {
                 // A hotkey for :settings acts once however long it is held, as the Menu key does
-                if (!repeat || strcmp(i->cmd, SCMD_SETTINGS))
+                if (!repeat || strcmp(i->cmd, SCMD_SETTINGS) != 0)
                     execute_command(i->cmd);
                 break;
             }
@@ -1366,7 +1366,7 @@ static void poll_gamepad()
             ticks.last_input = ticks.main;
 
             // :settings acts on the first press only: repeating it would strobe settings open and shut
-            if (strcmp(i->cmd, SCMD_SETTINGS))
+            if (strcmp(i->cmd, SCMD_SETTINGS) != 0)
                 execute_command(i->cmd);
             i->repeat -= repeat_period;
         }
