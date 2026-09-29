@@ -105,11 +105,12 @@ echo "Mesa: $gallium, from $mesa_driver"
 # before LeakSanitizer looks, so the few blocks the driver still holds (from context creation and
 # its first flush) lose their only pointers and read as leaks, with stacks in an unknown module.
 # A libgallium driver, which libGLX_mesa links, was clean without the preload (Fedora 44); it is
-# preloaded all the same, so both kinds of Mesa take one path. ASan must come first in the preload list. Only the launcher gets the preload (the env after
-# setarch): an ASan runtime in setarch starts before randomization is off, and crashes. Whole
-# stacks (fast_unwind_on_malloc=0) reach our code through libraries built without frame
-# pointers; that is slower, so only this pass does it. It keeps setarch -R: the ASan build
-# crashes at random without it whether or not leaks are looked for.
+# preloaded all the same, so both kinds of Mesa take one path. ASan must come first in the
+# preload list. Only the launcher gets the preload (the env after setarch): an ASan runtime in
+# setarch starts before randomization is off, and crashes. Whole stacks
+# (fast_unwind_on_malloc=0) reach our code through libraries built without frame pointers; that
+# is slower, so only this pass does it. It keeps setarch -R: the ASan build crashes at random
+# without it whether or not leaks are looked for.
 asan_options=detect_leaks=0
 preload=()
 if [ "$fault" = leaks ]; then
@@ -372,5 +373,8 @@ else
     done
     [ "$fault" != leaks ] || list_leaks
 fi
+# The total counts a leaking run twice on purpose: once as its check's FAIL and once as its LEAK
+# line (22 leaking runs read "44 failed"). The LEAK count is what makes a leak in a run whose
+# check never looked at its sanitizers fail the pass; do not bring the total down to the FAILs.
 echo "$failures failed"
 [ "$failures" = 0 ]
