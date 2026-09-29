@@ -1,13 +1,15 @@
 #!/bin/bash
 # StreamFlex headless checks. Builds the launcher with ASan and UBSan, starts a virtual X display,
 # runs fixture configs (some with key presses) and reads the debug log, the files they write and
-# the screen. Runs inside the image built from this folder's Dockerfile, with the repo mounted
-# read-only at /src and an output folder at /out:
+# the screen. Runs inside the image built from this folder's Dockerfile (Debian) or
+# Dockerfile.fedora (whose SDL2 is sdl2-compat over SDL3), with the repo mounted read-only at
+# /src and an output folder at /out. No step branches on the distribution: what differs between
+# the images is detected.
 #   run.sh <label>              every check in checks/, in name order
 #   run.sh <label> scrollfail   item 11 only: the scroll arrow's texture is forced to fail,
 #                               a path no config or input can reach
 #   run.sh <label> leaks        every check again, with LeakSanitizer on: a run that leaks fails
-#                               its check, and the leaks are listed at the end
+#                               its check, and each leak is listed at the end as a failure too
 # The build defines STREAMFLEX_TEST_HOOKS, which only this harness does (see decode_image()).
 # Prints PASS or FAIL per check and exits non-zero when any failed. Every run's output, log and
 # exit code are kept in /out/<label>.
@@ -68,8 +70,7 @@ xdotool getdisplaygeometry > /dev/null 2>&1 || { echo "Xvfb DID NOT START"; exit
 # config it cannot write. setpriv, env and setarch each exec the next, so the launcher keeps the
 # PID the shell sees. setarch -R turns address randomization off, because GCC 12's ASan crashes
 # at random when the kernel randomizes 32 bits of mmap (WSL2, and GitHub's ubuntu-24.04
-# runners); it needs the container started with --security-opt seccomp=unconfined. Mesa's
-# softpipe has no JIT; llvmpipe's JIT made ASan runs crash at random.
+# runners); it needs the container started with --security-opt seccomp=unconfined.
 exe=/work/build/streamflex
 TESTER_HOME=/home/tester
 LOG=$TESTER_HOME/.local/share/streamflex/streamflex.log
@@ -85,10 +86,26 @@ printf 'not a picture\n' > "$TESTER_HOME/broken/b.png"
 cp "$TESTER_HOME/Pictures/red.png" "$TESTER_HOME/mixed/"
 printf 'not a picture\n' > "$TESTER_HOME/mixed/broken.png"
 chown -R tester:tester "$TESTER_HOME"
+
+# Mesa's software driver, found from Mesa's GL library for X, libGLX_mesa: before Mesa 24.2 it is
+# dri/swrast_dri.so beside that library, which loads it at run time; from 24.2 every driver is
+# in libgallium, which the library links (swrast_dri.so is then a stub). softpipe has no JIT, and
+# llvmpipe's JIT made ASan runs crash at random, so softpipe is used when the driver has it. A
+# Mesa built without it (Fedora's) gets llvmpipe, the only software driver it has.
+mesa_glx=$(ldconfig -p | awk '$1 == "libGLX_mesa.so.0" { print $NF; exit }')
+mesa_driver=$(ldd "$mesa_glx" 2> /dev/null | awk '$1 ~ /^libgallium/ { print $3; exit }')
+[ -n "$mesa_driver" ] || mesa_driver=$(dirname "$mesa_glx")/dri/swrast_dri.so
+mesa_driver=$(readlink -f "$mesa_driver")
+[ -n "$mesa_glx" ] && [ -f "$mesa_driver" ] || { echo "NO MESA DRIVER FOUND (libGLX_mesa: '$mesa_glx')"; exit 2; }
+gallium=llvmpipe
+grep -qa softpipe "$mesa_driver" && gallium=softpipe
+echo "Mesa: $gallium, from $mesa_driver"
+
 # The leak pass preloads Mesa's driver into the launcher. Unpreloaded, libGL unloads it at exit,
 # before LeakSanitizer looks, so the few blocks the driver still holds (from context creation and
 # its first flush) lose their only pointers and read as leaks, with stacks in an unknown module.
-# ASan must come first in the preload list. Only the launcher gets the preload (the env after
+# A libgallium driver, which libGLX_mesa links, was clean without the preload (Fedora 44); it is
+# preloaded all the same, so both kinds of Mesa take one path. ASan must come first in the preload list. Only the launcher gets the preload (the env after
 # setarch): an ASan runtime in setarch starts before randomization is off, and crashes. Whole
 # stacks (fast_unwind_on_malloc=0) reach our code through libraries built without frame
 # pointers; that is slower, so only this pass does it. It keeps setarch -R: the ASan build
@@ -97,14 +114,15 @@ asan_options=detect_leaks=0
 preload=()
 if [ "$fault" = leaks ]; then
     asan_options=detect_leaks=1:fast_unwind_on_malloc=0
-    libasan=$(readlink -f "$(gcc -print-file-name=libasan.so)")
-    driver=/usr/lib/$(gcc -print-multiarch)/dri/swrast_dri.so
-    [ -f "$libasan" ] && [ -f "$driver" ] || { echo "NO ASAN RUNTIME OR MESA DRIVER TO PRELOAD"; exit 2; }
-    preload=(env "LD_PRELOAD=$libasan $driver")
+    # The runtime the launcher links: gcc's libasan.so can be a linker script, which ld.so
+    # cannot preload
+    libasan=$(ldd "$exe" | awk '$1 ~ /^libasan\.so/ { print $3; exit }')
+    [ -f "$libasan" ] || { echo "NO ASAN RUNTIME TO PRELOAD"; exit 2; }
+    preload=(env "LD_PRELOAD=$libasan $mesa_driver")
 fi
 TESTER=(setpriv --reuid=tester --regid=tester --init-groups --
         env HOME=$TESTER_HOME DISPLAY=:99 ASAN_OPTIONS=$asan_options UBSAN_OPTIONS=print_stacktrace=1
-            GALLIUM_DRIVER=softpipe setarch "$(uname -m)" -R "${preload[@]}")
+            "GALLIUM_DRIVER=$gallium" setarch "$(uname -m)" -R "${preload[@]}")
 
 # A function to give the launcher its config: the fixture NAME.ini, the file CFG names, or
 # none at all with CFG=none (the launcher then searches for one)

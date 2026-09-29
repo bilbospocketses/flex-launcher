@@ -21,6 +21,9 @@ exec sleep 60
 EOF
 cat > /tmp/harness/quits-on-term << EOF
 #!/bin/sh
+# The leak pass preloads ASan into what it runs. This shell is not the launcher, and bash (sh on
+# some systems) leaks when a trap ends it, so it starts again without the preload.
+[ -z "\${LD_PRELOAD:-}" ] || exec env -u LD_PRELOAD "\$0" "\$@"
 trap 'exit 0' TERM
 while :; do sleep 0.2; done
 EOF
