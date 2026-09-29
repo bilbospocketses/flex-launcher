@@ -16,6 +16,8 @@ set(SOURCES
   utf8.h
   library.c
   library.h
+  alloc.c
+  alloc.h
   fileio.c
   fileio.h
   inidoc.c
