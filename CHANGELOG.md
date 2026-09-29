@@ -66,7 +66,7 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 - A config file that cannot be opened stops StreamFlex with a log line naming the file and the reason, not only "Could not open config file".
 - **A log line longer than 500 bytes, such as one naming a long path, no longer reads past the log's buffer.** It is cut to fit.
 - **On Linux, the clock no longer cuts `LANG` short for every application StreamFlex launches** (`en_US.UTF-8` became `en`), and with `LANG` unset it no longer reads freed memory at startup.
-- **On Linux, StreamFlex no longer crashes at startup when `HOME` is not set**, as for a system service with no user or a launch through `env -i`. It takes the home folder from the user database, as a login shell does, for its log, its config search and the settings' save; with no entry there either, it logs to stderr.
+- **On Linux, StreamFlex no longer crashes at startup when `HOME` is not set**, as for a system service with no user or a launch through `env -i`. It takes the home folder from the user database, as a login shell does, for its log, its config search and the settings' save; with no usable home there either, it logs to stderr.
 
 ## [0.2.0] - 2026-09-27
 

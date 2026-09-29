@@ -36,7 +36,7 @@ static int init_log()
         // No home folder to keep a log file in, as for a service run under a user id with no
         // account: the log goes to stderr, which a service manager keeps
         log_file = stderr;
-        fputs("No home folder: HOME is not set and the user database has no entry for this user, "
+        fputs("No home folder: HOME is not set and the user database gives no usable home for this user, "
               "so the log goes to stderr\n", stderr);
     }
 #else

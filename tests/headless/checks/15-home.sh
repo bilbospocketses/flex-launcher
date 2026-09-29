@@ -46,7 +46,7 @@ without_home 4321
 ( TESTER=("${no_home[@]}"); CFG=$FX/f15-home.ini run_quick f15-nouser )
 ok=1
 [ -z "$unknown_in_db" ] && ran_clean f15-nouser \
-    && grep -q '^No home folder: HOME is not set and the user database has no entry for this user, so the log goes to stderr$' "$out/f15-nouser.err" \
+    && grep -q '^No home folder: HOME is not set and the user database gives no usable home for this user, so the log goes to stderr$' "$out/f15-nouser.err" \
     && grep -q "^Loading menu 'Main'" "$out/f15-nouser.err" && ok=0
 result "HOME unset and no user database entry: the log goes to stderr (exit $(cat "$out/f15-nouser.code"))" $ok
 [ -z "$unknown_in_db" ] || echo "      uid 4321 has an entry in the user database: fix the premise"
