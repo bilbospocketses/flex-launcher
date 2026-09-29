@@ -32,10 +32,18 @@ static void set_error(const char *reason)
     snprintf(last_error, sizeof(last_error), "%s", reason);
 }
 
-// A function for a module built on these, such as the browser, to say why its own call failed
-void fileio_set_error(const char *reason)
+// A fault a unit test asks for, to reach a failure no real file can be made to give: which one,
+// after how many entries (FILEIO_FAULT_LIST_READ), and with which error code
+static FileioFault fault = FILEIO_FAULT_NONE;
+static int fault_after = 0;
+static int fault_code = 0;
+
+// A function for the unit tests to make one kind of step fail; FILEIO_FAULT_NONE for none
+void fileio_set_fault(FileioFault kind, int after, int code)
 {
-    set_error(reason);
+    fault = kind;
+    fault_after = after;
+    fault_code = code;
 }
 
 // A function to tell the caller why the last call failed
@@ -131,6 +139,12 @@ static void set_windows_error(DWORD code)
         case ERROR_NOT_ENOUGH_MEMORY:
         case ERROR_OUTOFMEMORY:
             set_error("out of memory");
+            break;
+        case ERROR_NETNAME_DELETED:
+        case ERROR_UNEXP_NET_ERR:
+        case ERROR_BAD_NETPATH:
+        case ERROR_NETWORK_UNREACHABLE:
+            set_error("the network share is not available");
             break;
         default:
             snprintf(text, sizeof(text), "Windows error %lu", (unsigned long) code);
@@ -409,9 +423,9 @@ bool fileio_replace(const char *from, const char *to)
     }
 
     // FILE_ATTRIBUTE_NORMAL is only valid alone, so it is dropped beside the kept attributes
-    if (ok && kept != 0) {
+    if (ok && (kept != 0 || fault == FILEIO_FAULT_KEEP)) {
         DWORD attributes = GetFileAttributesW(wide_to);
-        if (attributes == INVALID_FILE_ATTRIBUTES ||
+        if (attributes == INVALID_FILE_ATTRIBUTES || fault == FILEIO_FAULT_KEEP ||
             !SetFileAttributesW(wide_to, (attributes & ~(DWORD) FILE_ATTRIBUTE_NORMAL) | kept))
             snprintf(last_warning, sizeof(last_warning), "the file's hidden or system attribute could not be kept");
     }
@@ -421,7 +435,7 @@ bool fileio_replace(const char *from, const char *to)
 #else
     // The new file takes the old one's permission bits
     struct stat info;
-    bool mode_kept = stat(to, &info) != 0 || chmod(from, info.st_mode & 07777) == 0;
+    bool mode_kept = stat(to, &info) != 0 || (fault != FILEIO_FAULT_KEEP && chmod(from, info.st_mode & 07777) == 0);
     if (rename(from, to) != 0) {
         set_errno_error(errno);
         return false;
@@ -498,11 +512,12 @@ bool fileio_make_dirs(const char *path)
                 parts++;
         }
 
-        // `start` is now past the separator after the share; a path that is only the share is a
-        // folder that is there or not
+        // `start` is now past the separator after the share. A path that is only the share has
+        // nothing to make, and is not looked at: looking waits on the network when the server is
+        // off. Whatever is done there next says so, if it is not there.
         if (parts < 2 || start >= length) {
             alloc_free(buffer);
-            return fileio_is_dir(path);
+            return true;
         }
     }
 #endif
@@ -736,13 +751,30 @@ int fileio_list(const char *folder, FileioEntry **entries)
         set_windows_error(code);
         return -1;
     }
-    do {
-        if (wcscmp(data.cFileName, L".") == 0 || wcscmp(data.cFileName, L"..") == 0)
-            continue;
-        ok = add_entry(entries, &count, &capacity, to_utf8(data.cFileName),
-                       (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0,
-                       (data.dwFileAttributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)) != 0);
-    } while (ok && FindNextFileW(handle, &data));
+    while (ok) {
+        if (wcscmp(data.cFileName, L".") != 0 && wcscmp(data.cFileName, L"..") != 0) {
+            ok = add_entry(entries, &count, &capacity, to_utf8(data.cFileName),
+                           (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0,
+                           (data.dwFileAttributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)) != 0);
+            if (!ok)
+                break;
+        }
+
+        // Only the end of the folder ends the listing: a share that drops partway fails it
+        BOOL more = FindNextFileW(handle, &data);
+        DWORD read_code = more ? ERROR_SUCCESS : GetLastError();
+        if (more && fault == FILEIO_FAULT_LIST_READ && count >= fault_after) {
+            more = FALSE;
+            read_code = (DWORD) fault_code;
+        }
+        if (!more) {
+            if (read_code != ERROR_NO_MORE_FILES) {
+                set_windows_error(read_code);
+                ok = false;
+            }
+            break;
+        }
+    }
     FindClose(handle);
 #else
     DIR *dir = opendir(folder);
@@ -754,8 +786,23 @@ int fileio_list(const char *folder, FileioEntry **entries)
         return -1;
     }
     size_t folder_length = strlen(folder);
-    struct dirent *entry;
-    while (ok && (entry = readdir(dir)) != NULL) {
+    while (ok) {
+        // readdir() gives NULL at the end and on an error, which only errno tells apart; only the
+        // end ends the listing
+        errno = 0;
+        struct dirent *entry = readdir(dir);
+        int read_code = errno;
+        if (entry != NULL && fault == FILEIO_FAULT_LIST_READ && count >= fault_after) {
+            entry = NULL;
+            read_code = fault_code;
+        }
+        if (entry == NULL) {
+            if (read_code != 0) {
+                set_errno_error(read_code);
+                ok = false;
+            }
+            break;
+        }
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
             continue;
 
@@ -804,9 +851,16 @@ void fileio_free_list(FileioEntry *entries, int count)
     alloc_free(entries);
 }
 
-// A function to add a starting place without looking at its folder. Out of memory, the place is
-// left out whole, never added with a missing label or path.
-static void append_place(FileioPlace **places, int *count, const char *label, const char *path, bool network)
+// The places found so far, and whether memory ran out on the way
+typedef struct {
+    FileioPlace *items;
+    int count;
+    bool failed;
+} PlaceList;
+
+// A function to add a starting place without looking at its folder. Out of memory, the list is
+// marked as failed, so the caller gets no list rather than one with a place quietly missing.
+static void append_place(PlaceList *list, const char *label, const char *path, bool network)
 {
     if (path == NULL)
         return;
@@ -814,15 +868,29 @@ static void append_place(FileioPlace **places, int *count, const char *label, co
     char *path_copy = alloc_strdup(path);
     FileioPlace *grown = NULL;
     if (label_copy != NULL && path_copy != NULL)
-        grown = alloc_realloc(*places, (size_t) (*count + 1) * sizeof(FileioPlace));
+        grown = alloc_realloc(list->items, (size_t) (list->count + 1) * sizeof(FileioPlace));
     if (grown == NULL) {
         alloc_free(label_copy);
         alloc_free(path_copy);
+        list->failed = true;
         return;
     }
-    *places = grown;
-    (*places)[*count] = (FileioPlace) { .label = label_copy, .path = path_copy, .network = network };
-    (*count)++;
+    list->items = grown;
+    list->items[list->count] = (FileioPlace) { .label = label_copy, .path = path_copy, .network = network };
+    list->count++;
+}
+
+// A function to hand the caller the places, or, when memory ran out, none: -1 with the reason
+static int finish_places(PlaceList *list, FileioPlace **places)
+{
+    if (list->failed) {
+        fileio_free_places(list->items, list->count);
+        *places = NULL;
+        set_error("out of memory");
+        return -1;
+    }
+    *places = list->items;
+    return list->count;
 }
 
 #ifdef _WIN32
@@ -857,15 +925,17 @@ static bool is_network_path(const char *path)
 }
 #endif
 
-// A function to add a starting place when its folder exists. A folder on a network share is added
-// without looking, because looking can wait for the network (see fileio_places).
-static void add_place(FileioPlace **places, int *count, const char *label, const char *path)
+// A function to add a starting place when its folder exists. A folder that may be on a network
+// share is added without looking, because looking can wait for the network (see fileio_places).
+static void add_place(PlaceList *list, const char *label, const char *path)
 {
     if (path == NULL)
         return;
     bool network = is_network_path(path);
     if (network || fileio_is_dir(path))
-        append_place(places, count, label, path, network);
+        append_place(list, label, path, network);
+    else if (strcmp(last_error, "out of memory") == 0)
+        list->failed = true;   // Not "not there": the look itself ran out of memory
 }
 
 #ifndef _WIN32
@@ -875,12 +945,12 @@ static void add_place(FileioPlace **places, int *count, const char *label, const
 // folder lists as a folder, a link or of unknown kind is taken on trust. A folder that is itself a
 // network mount is listed whole, unread. The user's own folder in it (/media/<user>, where desktops
 // mount drives) is read the same way, one level, for the drives inside it; a user is found only from
-// USER or LOGNAME, since asking the user database can itself go over the network. False when the
-// folder cannot be read.
-static bool add_places_under(FileioPlace **places, int *count, const char *folder, bool user_folder)
+// USER or LOGNAME, since asking the user database can itself go over the network. Every place found
+// here may be on a network share, so each is marked so. False when the folder cannot be read.
+static bool add_places_under(PlaceList *list, const char *folder, bool user_folder)
 {
     if (on_network_mount(folder)) {
-        append_place(places, count, folder, folder, true);
+        append_place(list, folder, folder, true);
         return true;
     }
     DIR *dir = opendir(folder);
@@ -891,35 +961,37 @@ static bool add_places_under(FileioPlace **places, int *count, const char *folde
         user = getenv("LOGNAME");
     size_t folder_length = strlen(folder);
     struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
+    while (!list->failed && (entry = readdir(dir)) != NULL) {
         if (entry->d_name[0] == '.')   // ".", ".." and hidden folders
             continue;
         if (entry->d_type != DT_DIR && entry->d_type != DT_LNK && entry->d_type != DT_UNKNOWN)
             continue;
         size_t size = folder_length + strlen(entry->d_name) + 2;
         char *path = alloc_malloc(size);
-        if (path == NULL)
-            continue;
+        if (path == NULL) {
+            list->failed = true;
+            break;
+        }
         snprintf(path, size, "%s/%s", folder, entry->d_name);
 
         // Only a real folder is gone into: a link could lead anywhere, a mount included
         bool mine = user_folder && user != NULL && user[0] != '\0' && entry->d_type == DT_DIR &&
                     strcmp(entry->d_name, user) == 0;
-        if (!mine || !add_places_under(places, count, path, false))
-            append_place(places, count, entry->d_name, path, is_network_path(path));
+        if (!mine || !add_places_under(list, path, false))
+            append_place(list, entry->d_name, path, is_network_path(path));
         alloc_free(path);
     }
     closedir(dir);
     return true;
 }
 
-// A function to list each folder in a folder as a place, the way /media and /mnt are listed
+// A function to list each folder in a folder as a place, the way /media and /mnt are listed; -1
+// with the reason when memory runs out
 int fileio_places_under(const char *folder, FileioPlace **places)
 {
-    int count = 0;
-    *places = NULL;
-    add_places_under(places, &count, folder, true);
-    return count;
+    PlaceList list = { NULL, 0, false };
+    add_places_under(&list, folder, true);
+    return finish_places(&list, places);
 }
 
 // A function to read a user-dirs.dirs value: "$HOME/<path>" or "/<path>" in double quotes, with a
@@ -958,8 +1030,10 @@ static bool read_user_dir(const char *value, const char *home, char *out, size_t
 }
 
 // A function to find the Pictures folder: XDG_PICTURES_DIR, else its line in the desktop's
-// user-dirs.dirs, which names it in the desktop's language ("$HOME/Bilder"), else ~/Pictures
-static bool find_pictures(const char *home, char *out, size_t size)
+// user-dirs.dirs, which names it in the desktop's language ("$HOME/Bilder"), else ~/Pictures. A
+// user-dirs.dirs that cannot be read for want of memory fails the list, rather than falling back
+// to a Pictures folder the desktop does not use.
+static bool find_pictures(PlaceList *list, const char *home, char *out, size_t size)
 {
     const char *variable = getenv("XDG_PICTURES_DIR");
     if (variable != NULL && variable[0] != '\0')
@@ -976,6 +1050,10 @@ static bool find_pictures(const char *home, char *out, size_t size)
     // The file is shell: the last line setting the folder wins
     bool found = false;
     char *text = fileio_read_all(file, NULL);
+    if (text == NULL && strcmp(last_error, "out of memory") == 0) {
+        list->failed = true;
+        return false;
+    }
     for (char *line = text; line != NULL && *line != '\0';) {
         char *next = strchr(line, '\n');
         if (next != NULL)
@@ -993,15 +1071,15 @@ static bool find_pictures(const char *home, char *out, size_t size)
 
 // A function to list where the folder browser can start: Pictures first, then Home, then the
 // drives (Windows) or the file system's root and what is mounted in /media and /mnt (elsewhere).
-// A network drive or share, or a known folder on one, is listed without being looked at, and marked
-// as such: when its server is off, looking blocks until the network times out (Windows tries to
-// reconnect), and on a hard NFS mount it never returns, while the browser asks for its places each
-// time it opens. This is deliberate: one that cannot be listed is refused only when chosen, like
-// any other folder the browser cannot list.
+// A place that may be on a network share (a network drive or share, a known folder on one, or
+// anything in /media or /mnt) is listed without being looked at, and marked: when its server is
+// off, looking blocks until the network times out (Windows tries to reconnect), and on a hard NFS
+// mount it never returns, while the browser asks for its places each time it opens. This is
+// deliberate: one that cannot be listed is refused only when chosen, like any other folder the
+// browser cannot list. -1, with the reason, when memory runs out: never a list with a place missing.
 int fileio_places(FileioPlace **places)
 {
-    int count = 0;
-    *places = NULL;
+    PlaceList list = { NULL, 0, false };
 #ifdef _WIN32
     // An empty card reader or DVD drive must not pop up "There is no disk in the drive". Only this
     // thread's mode changes: the process's is shared with the launcher's other threads.
@@ -1010,25 +1088,24 @@ int fileio_places(FileioPlace **places)
 
     // Without KF_FLAG_DONT_VERIFY the shell looks for the folder itself, network or not;
     // add_place() looks only when the folder is local
-    PWSTR wide = NULL;
-    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Pictures, (DWORD) KF_FLAG_DONT_VERIFY, NULL, &wide))) {
-        char *path = to_utf8(wide);
-        add_place(places, &count, "Pictures", path);
-        alloc_free(path);
+    static const KNOWNFOLDERID *const FOLDERS[] = { &FOLDERID_Pictures, &FOLDERID_Profile };
+    static const char *const LABELS[] = { "Pictures", "Home" };
+    for (int i = 0; i < 2 && !list.failed; i++) {
+        PWSTR wide = NULL;
+        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERS[i], (DWORD) KF_FLAG_DONT_VERIFY, NULL, &wide))) {
+            char *path = to_utf8(wide);
+            if (path == NULL)
+                list.failed = true;
+            add_place(&list, LABELS[i], path);
+            alloc_free(path);
+        }
+        CoTaskMemFree(wide);
     }
-    CoTaskMemFree(wide);
-    wide = NULL;
-    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Profile, (DWORD) KF_FLAG_DONT_VERIFY, NULL, &wide))) {
-        char *path = to_utf8(wide);
-        add_place(places, &count, "Home", path);
-        alloc_free(path);
-    }
-    CoTaskMemFree(wide);
 
     // The drive map tells each drive's kind without touching it. Only a card reader or DVD drive is
     // looked at, to leave out an empty one.
     DWORD drives = GetLogicalDrives();
-    for (int i = 0; i < 26; i++) {
+    for (int i = 0; i < 26 && !list.failed; i++) {
         if ((drives & (1u << i)) == 0)
             continue;
         char path[4] = { (char) ('A' + i), ':', '\\', '\0' };
@@ -1037,14 +1114,14 @@ int fileio_places(FileioPlace **places)
         switch (GetDriveTypeW(root)) {
             case DRIVE_FIXED:
             case DRIVE_RAMDISK:
-                append_place(places, &count, label, path, false);
+                append_place(&list, label, path, false);
                 break;
             case DRIVE_REMOTE:
-                append_place(places, &count, label, path, true);
+                append_place(&list, label, path, true);
                 break;
             case DRIVE_REMOVABLE:
             case DRIVE_CDROM:
-                add_place(places, &count, label, path);
+                add_place(&list, label, path);
                 break;
             default:   // DRIVE_NO_ROOT_DIR or DRIVE_UNKNOWN
                 break;
@@ -1054,14 +1131,14 @@ int fileio_places(FileioPlace **places)
 #else
     const char *home = getenv("HOME");
     char pictures[PATH_MAX];
-    if (find_pictures(home, pictures, sizeof(pictures)))
-        add_place(places, &count, "Pictures", pictures);
-    add_place(places, &count, "Home", home);
-    add_place(places, &count, "/", "/");
-    add_places_under(places, &count, "/media", true);
-    add_places_under(places, &count, "/mnt", true);
+    if (find_pictures(&list, home, pictures, sizeof(pictures)))
+        add_place(&list, "Pictures", pictures);
+    add_place(&list, "Home", home);
+    add_place(&list, "/", "/");
+    add_places_under(&list, "/media", true);
+    add_places_under(&list, "/mnt", true);
 #endif
-    return count;
+    return finish_places(&list, places);
 }
 
 // A function to free a list from fileio_places

@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include "check.h"
 #include "fileio.h"
 #ifdef _WIN32
@@ -371,7 +372,11 @@ static void test_replace_waits_for_a_held_file(void)
 }
 
 // A function to test that a replace keeps the target's hidden and system attributes, so a file
-// the user hid is still hidden afterwards, even when the new file has no attribute of its own
+// the user hid is still hidden afterwards, even when the new file has no attribute of its own.
+// The new file is set to FILE_ATTRIBUTE_NORMAL first, the one value that is valid only alone, so
+// the replace must not pass it on beside the kept ones (ledger #66). This has no failing
+// direction: measured on NTFS (2026-09-29), SetFileAttributesW(NORMAL | HIDDEN) succeeds and sets
+// HIDDEN, dropping NORMAL, so the old call gave the same file. It pins the attributes, not the call.
 static void test_replace_keeps_a_hidden_target_hidden(void)
 {
     wchar_t wide[512];
@@ -391,6 +396,16 @@ static void test_replace_keeps_a_hidden_target_hidden(void)
     CHECK(text != NULL && strcmp(text, "new") == 0);
     free(text);
     SetFileAttributesW(wide, FILE_ATTRIBUTE_NORMAL);
+}
+
+// A function to test that a path that is only a share ("\\server\share") has nothing to make, and
+// is not looked at: looking waits on the network when the server is off
+static void test_make_dirs_leaves_a_share_alone(void)
+{
+    DWORD start = GetTickCount();
+    CHECK(fileio_make_dirs("\\\\streamflex-no-such-server\\share"));
+    CHECK(fileio_make_dirs("\\\\streamflex-no-such-server\\share\\"));
+    CHECK(GetTickCount() - start < 1000);
 }
 
 // A function to test the UTF-16 copy that start_process() launches commands with
@@ -457,6 +472,52 @@ static void test_places_keep_the_process_error_mode(void)
     SetErrorMode(before);
 }
 #endif
+
+// A function to test that a folder whose read fails partway, as a share that drops does, fails the
+// listing with the reason, rather than giving the entries read so far as if they were all
+static void test_list_fails_when_a_read_fails(void)
+{
+    char path[64];
+    CHECK(fileio_make_dirs(DIR "/five"));
+    for (int i = 0; i < 5; i++) {
+        snprintf(path, sizeof(path), DIR "/five/%d.png", i);
+        CHECK(fileio_write_all(path, "x", 1));
+    }
+#ifdef _WIN32
+    fileio_set_fault(FILEIO_FAULT_LIST_READ, 2, ERROR_NETNAME_DELETED);
+    const char *reason = "the network share is not available";
+#else
+    fileio_set_fault(FILEIO_FAULT_LIST_READ, 2, EIO);
+    const char *reason = strerror(EIO);
+#endif
+    FileioEntry *entries = NULL;
+    int count = fileio_list(DIR "/five", &entries);
+    fileio_set_fault(FILEIO_FAULT_NONE, 0, 0);
+    CHECK_INT(count, -1);
+    CHECK(entries == NULL);
+    CHECK_STR(fileio_last_error(), reason);
+    fileio_free_list(entries, count > 0 ? count : 0);
+
+    count = fileio_list(DIR "/five", &entries);
+    CHECK_INT(count, 5);
+    fileio_free_list(entries, count > 0 ? count : 0);
+}
+
+// A function to test that a replace that cannot keep the old file's permissions or attributes
+// still replaces, and says so
+static void test_replace_says_what_it_could_not_keep(void)
+{
+    CHECK(fileio_write_all(DIR "/keep.ini", "old", 3));
+    CHECK(fileio_write_all(DIR "/keep.ini.tmp", "new", 3));
+    fileio_set_fault(FILEIO_FAULT_KEEP, 0, 0);
+    bool replaced = fileio_replace(DIR "/keep.ini.tmp", DIR "/keep.ini");
+    fileio_set_fault(FILEIO_FAULT_NONE, 0, 0);
+    CHECK(replaced);
+    CHECK(strstr(fileio_last_warning(), "could not be kept") != NULL);
+    char *text = fileio_read_all(DIR "/keep.ini", NULL);
+    CHECK(text != NULL && strcmp(text, "new") == 0);
+    free(text);
+}
 
 // A function to test the starting places: at least one, each with a label and a path. None is
 // looked at here: a place on a network share is listed unlooked, and looking would wait on it.
@@ -716,7 +777,10 @@ int main(void)
     test_hidden();
     test_real_path();
     test_errors_are_per_thread();
+    test_list_fails_when_a_read_fails();
+    test_replace_says_what_it_could_not_keep();
 #ifdef _WIN32
+    test_make_dirs_leaves_a_share_alone();
     test_replace_waits_for_a_held_file();
     test_replace_keeps_a_hidden_target_hidden();
     test_wide();

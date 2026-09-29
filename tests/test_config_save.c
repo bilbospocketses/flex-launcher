@@ -114,6 +114,24 @@ static void test_saves_only_the_edits(void)
     CHECK_STR(result.warning, "");
 }
 
+// A function to test that what a save could not keep reaches the result: the replace is made to
+// fail to keep the file's permissions (Linux) or attributes (Windows), which no real file can be
+// made to do to the .tmp the save has just written, and the save still succeeds
+static void test_warning_is_passed_on(void)
+{
+    reset(CONFIG, ORIGINAL);
+    ConfigEdit edit = { "Layout", "Rows", NULL, "2", INIDOC_AFTER_LAST_KEY };
+    ConfigSaveResult result;
+    fileio_set_fault(FILEIO_FAULT_KEEP, 0, 0);
+    bool saved = config_save(CONFIG, NULL, NULL, &edit, 1, &result);
+    fileio_set_fault(FILEIO_FAULT_NONE, 0, 0);
+    CHECK(saved);
+    CHECK(strstr(result.warning, "could not be kept") != NULL);
+    char *content = fileio_read_all(CONFIG, NULL);
+    CHECK(content != NULL && strstr(content, "Rows=2\n") != NULL);
+    free(content);
+}
+
 // A function to test a key beside its older alias: the save leaves the key alone, whether it is
 // set or removed, so the file never holds two lines for one setting
 static void test_alias_beside_the_key_is_removed(void)
@@ -467,6 +485,7 @@ static void test_hidden_files(void)
 int main(void)
 {
     test_saves_only_the_edits();
+    test_warning_is_passed_on();
     test_alias_beside_the_key_is_removed();
     test_keeps_a_hand_edit_made_meanwhile();
     test_refused_value_changes_nothing();

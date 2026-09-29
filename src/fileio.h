@@ -34,7 +34,6 @@ int fileio_list(const char *folder, FileioEntry **entries);
 void fileio_free_list(FileioEntry *entries, int count);
 const char *fileio_last_error(void);
 const char *fileio_last_warning(void);   // What the last replace could not keep, though it succeeded; "" if nothing
-void fileio_set_error(const char *reason);   // For modules built on these, such as the browser, to say why
 
 #ifdef _WIN32
 #include <wchar.h>
@@ -44,14 +43,23 @@ wchar_t *fileio_wide(const char *text);   // For other Windows calls that take a
 typedef struct {
     char *label;  // What the browser shows: "Pictures", "Home", "C:", "/", a mount's name
     char *path;
-    bool network; // It may be on a network share, so it was listed without being looked at
+    bool network; // It may be on a network share (a network drive, or anything in /media or /mnt), so it
+                  // was listed without being looked at, and is never opened unasked
 } FileioPlace;
 
-int fileio_places(FileioPlace **places);
+int fileio_places(FileioPlace **places);   // -1 when memory runs out: never a list with a place missing
 void fileio_free_places(FileioPlace *places, int count);
 #ifndef _WIN32
 int fileio_places_under(const char *folder, FileioPlace **places);   // /media's mounts, none looked at
 void fileio_set_mount_table(const char *path);   // Unit tests only: a pretend /proc/self/mounts; NULL for the real one
 #endif
+
+// Unit tests only: a step made to fail on purpose, where no real file can be made to fail it
+typedef enum {
+    FILEIO_FAULT_NONE,
+    FILEIO_FAULT_LIST_READ,   // fileio_list's read fails after `after` entries, with error `code`
+    FILEIO_FAULT_KEEP         // fileio_replace cannot keep the old file's permissions or attributes
+} FileioFault;
+void fileio_set_fault(FileioFault fault, int after, int code);
 
 #endif
