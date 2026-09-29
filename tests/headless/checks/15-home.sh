@@ -43,7 +43,7 @@ rm -rf /opt/sf-home "$TESTER_HOME/.config/streamflex"
 # HOME unset and a user id the user database does not know: there is no home to keep a log in, so
 # it goes to stderr, and the launcher runs as usual
 without_home 4321
-( TESTER=("${no_home[@]}"); run_quick f15-nouser )
+( TESTER=("${no_home[@]}"); CFG=$FX/f15-home.ini run_quick f15-nouser )
 ok=1
 [ -z "$unknown_in_db" ] && ran_clean f15-nouser \
     && grep -q '^No home folder: HOME is not set and the user database has no entry for this user, so the log goes to stderr$' "$out/f15-nouser.err" \
