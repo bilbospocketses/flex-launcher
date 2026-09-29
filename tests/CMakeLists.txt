@@ -84,7 +84,9 @@ add_test(NAME library COMMAND test_library)
 
 # Every generic icon in the shipped library must parse with nanosvg, the launcher's own SVG parser
 add_executable(test_library_svg test_library_svg.c)
-target_include_directories(test_library_svg PRIVATE "${PROJECT_SOURCE_DIR}/src" "${PROJECT_SOURCE_DIR}/src/external")
+target_include_directories(test_library_svg PRIVATE "${PROJECT_SOURCE_DIR}/src")
+# Vendored, so a system include, as the launcher has it: compilers do not warn about its code
+target_include_directories(test_library_svg SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/src/external")
 target_compile_definitions(test_library_svg PRIVATE LIBRARY_ROOT="${PROJECT_SOURCE_DIR}/assets/icons/library")
 link_inih(test_library_svg)
 if (UNIX)

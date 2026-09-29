@@ -23,7 +23,7 @@ SVG parser (`nanosvg.h`) and rasterizer (`nanosvgrast.h`), used for SVG icons, t
 |---|---|---|---|
 | `nanosvg.h` | `// streamflex: name and value always point into s here` (in `nsvg__parseElement`) | Removed the `if (name && value)` around the two `attr[nattr++]` stores; the stores are kept. | CodeQL alert #7, `cpp/redundant-null-check-simple`. Both pointers are set from `s` on every path that reaches the test (the loop breaks before `value` is set when the string ends), so the test was always true and removing it changes nothing. |
 
-`grep -rn "streamflex:" src/external` lists every local change.
+`grep -n "streamflex:" src/external/*.h` lists every local change, one line each.
 
 ## Updating
 
