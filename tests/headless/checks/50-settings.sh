@@ -227,3 +227,9 @@ precedes "$out/f50-launch.log" 'Settings: not opened while an application is lau
     && [ "$(grep -c 'Settings opened' "$out/f50-launch.log")" = 1 ] && ran_clean f50-launch && ok=0
 result "settings: they do not open while an application is launching (exit $(cat "$out/f50-launch.code"))" $ok
 grep -E 'Settings (opened|: not opened)' "$out/f50-launch.log" | sed 's/^/      /'
+
+# The sample config turns the gamepad on, so a gamepad's Start opens settings out of the box. (The
+# built-in default for a config with no such line is unchanged, and no fixture relies on either.)
+ok=1
+sed -n '/^\[Gamepad\]/,/^\[/p' /work/build/config.ini | grep -qx 'Enabled=true' && ok=0
+result "the sample config turns the gamepad on" $ok
