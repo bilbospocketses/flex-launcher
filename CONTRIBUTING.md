@@ -43,6 +43,7 @@ Each run prints one `PASS` or `FAIL` line per check, then `N failed`, and keeps 
 
 ```
 src/                 Launcher core (launcher.c, layout.c, library.c, image.c, clock.c, util.c, utf8.c, debug.c) and the settings screen (settings_screen.c, settings.c, browser.c, inidoc.c, config_save.c, fileio.c)
+                     test_hooks.c: the harness's STREAMFLEX_TEST_FAIL hook, built into every build but compiled to no code unless STREAMFLEX_TEST_HOOKS is defined; the other hooks sit inline in image.c, launcher.c and settings_screen.c
 src/platform/        Windows and Linux platform layers
 src/external/        Vendored third-party sources
 config/              Default config template, packaging and platform templates (PKGBUILD, .desktop, manifest, icon)
