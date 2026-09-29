@@ -11,7 +11,8 @@ typedef struct {
     SDL_Rect date_rect;
     TextInfo text_info;
     time_t current_time;
-    struct tm *time_info;
+    struct tm *time_info; // Points at local_time, or NULL when the time could not be converted
+    struct tm local_time;
     int x_offset_time;
     int x_offset_date;
     int y_offset;

@@ -10,7 +10,7 @@
 static void place(char *buffer, size_t size, const char *title)
 {
     memset(buffer, 'G', size);
-    strcpy(buffer + GUARD, title);
+    memcpy(buffer + GUARD, title, strlen(title) + 1);
 }
 
 static int guard_intact(const char *buffer)

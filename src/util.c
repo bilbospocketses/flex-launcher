@@ -523,7 +523,8 @@ int config_handler(void *user, const char *section, const char *name, const char
         char *string = (char*) value;
         char *token;
         char *delimiter = ";";
-        token = strtok(string, delimiter);
+        char *rest = NULL;
+        token = strtok_r(string, delimiter, &rest);
         if (token == NULL) {
             log_error("Menu '%s': '%s' is empty, ignoring it", section, name);
             return 0;
@@ -559,7 +560,7 @@ int config_handler(void *user, const char *section, const char *name, const char
             else if (i == 2)
                 entry->cmd = strdup(token);
 
-            token = strtok(NULL, delimiter);
+            token = strtok_r(NULL, delimiter, &rest);
         }
 
         // Delete entry if parse failed to find 3 valid tokens, or its command is :select
@@ -649,11 +650,8 @@ char *selected_path(const char *path)
     if (p == path)
         return out;
 
-    // Assemble path with suffix
-    strcpy(buffer, path);
-    buffer[p - path] = '\0';
-    strcat(buffer, SELECTED_SUFFIX);
-    strcat(buffer, p);
+    // Assemble path with suffix; the length test above makes room for all of it
+    snprintf(buffer, sizeof(buffer), "%.*s%s%s", (int) (p - path), path, SELECTED_SUFFIX, p);
 
     if (file_exists(buffer))
         out = strdup(buffer);
@@ -697,48 +695,38 @@ bool convert_bool(const char *string, bool *setting)
 // A function to copy a string into an existing buffer
 void copy_string(char *dest, const char *string, size_t size)
 {
-    strncpy(dest, string, size);
-    dest[size - 1] = '\0';
+    // As much as fits, and zeros to the end of the buffer, as strncpy() left it
+    size_t length = strnlen(string, size - 1);
+    memcpy(dest, string, length);
+    memset(dest + length, '\0', size - length);
 }
 
 // A function to join paths together
 char *join_paths(char *buffer, size_t bytes, int num_paths, ...)
 {
     va_list list;
-    char *arg;
+    const char *arg;
     size_t length;
+    size_t used = 0;
     va_start(list, num_paths);
 
-    // Add each subdirectory to path
-    for (int i = 0; i < num_paths && bytes > 1; i++) {
+    // Add each subdirectory to path, as much of it as fits
+    for (int i = 0; i < num_paths && used + 1 < bytes; i++) {
         arg = va_arg(list, char*);
-        length = strlen(arg);
-        if (length > bytes - 1)
-            length = bytes - 1;
-        if (i == 0) {
-            copy_string(buffer, arg, bytes);
-            bytes -= length;
-            if (bytes == 1)
-                break;
-        }
-        else {
 
-            // Don't copy preceding slash if present
-            if (*arg == '/' || *arg == '\\') {
-                strncat(buffer, arg + 1, bytes - 1);
-                bytes -= (length - 1);
-            }
-            else {
-                strncat(buffer, arg, bytes - 1);
-                bytes -= length;
-            }
-        }
+        // Don't copy preceding slash if present
+        if (i != 0 && (*arg == '/' || *arg == '\\'))
+            arg++;
+        length = strnlen(arg, bytes - 1 - used);
+        memcpy(buffer + used, arg, length);
+        used += length;
+        buffer[used] = '\0';
 
         // Add trailing slash if not present, except last argument
-        if ((i != num_paths - 1) && bytes > 1 && *(buffer + strlen(buffer) - 1) != '/' &&
-        *(buffer + strlen(buffer) - 1) != '\\') {
-            strncat(buffer, PATH_SEPARATOR, bytes - 1);
-            bytes -= 1;
+        if (i != num_paths - 1 && used + 1 < bytes &&
+        (used == 0 || (buffer[used - 1] != '/' && buffer[used - 1] != '\\'))) {
+            buffer[used++] = PATH_SEPARATOR[0];
+            buffer[used] = '\0';
         }
     }
     va_end(list);
