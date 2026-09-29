@@ -631,6 +631,12 @@ static void preview_highlighted(void)
     want_preview_image(path);
 }
 
+// A function to log the folder the browser is showing, so the log follows the user through it
+static void log_browsing(void)
+{
+    log_debug("Settings: browsing %s", browser_folder(browser) != NULL ? browser_folder(browser) : "the places");
+}
+
 // A function to open the folder browser for an Image or Folder setting, at its current path
 static void open_browser(SettingSlot *slot)
 {
@@ -668,7 +674,7 @@ static void open_browser(SettingSlot *slot)
     browser_slot = slot;
     browser_first = 0;
     browser_note[0] = '\0';
-    log_debug("Settings: browsing %s", browser_folder(browser) != NULL ? browser_folder(browser) : "the places");
+    log_browsing();
     preview_highlighted();
 }
 
@@ -922,13 +928,20 @@ static void handle_browser_command(const char *command)
         return;
     }
 
+    // The folder on show before the key (NULL for the places), to log a move into another
+    char *folder = browser_folder(browser) != NULL ? strdup(browser_folder(browser)) : NULL;
     test_fail("command", true);
     BrowserResult result = browser_command(browser, key, browser_page);
     test_fail("command", false);
     if (result == BROWSER_CLOSED) {
+        free(folder);
         close_browser();
         return;
     }
+    const char *now = browser_folder(browser);
+    if ((folder == NULL) != (now == NULL) || (folder != NULL && strcmp(folder, now) != 0))
+        log_browsing();
+    free(folder);
     if (result == BROWSER_CHOSEN) {
         char chosen[BROWSER_PATH_MAX];
         copy_string(chosen, browser_chosen(browser), sizeof(chosen));

@@ -201,6 +201,20 @@ grep -q "Settings: Can't open locked: permission denied" "$out/f60-locked.log" \
 result "settings: a folder that cannot be opened says why (exit $(cat "$out/f60-locked.code"))" $ok
 grep -E "Settings: (browsing|Can't)" "$out/f60-locked.log" | sed 's/^/      /'
 
+# Moving between folders logs where the browser is each time, as opening it does: it opens in
+# ~/nest, OK enters its folder sub, and Back goes up to ~/nest again
+rm -rf "$TESTER_HOME/nest"
+mkdir -p "$TESTER_HOME/nest/sub"
+cp "$TESTER_HOME/Pictures/red.png" "$TESTER_HOME/nest/sub/"
+chown -R tester:tester "$TESTER_HOME/nest"
+run_keys f60-nest Menu Return Down Return Down Return BackSpace Menu
+want="Settings: browsing $TESTER_HOME/nest|Settings: browsing $TESTER_HOME/nest/sub|Settings: browsing $TESTER_HOME/nest|"
+ok=1
+[ "$(grep -x 'Settings: browsing .*' "$out/f60-nest.log" | tr '\n' '|')" = "$want" ] \
+    && grep -q 'Settings: nothing changed' "$out/f60-nest.log" && ran_clean f60-nest && ok=0
+result "settings: the folder browser logs each folder it moves into (exit $(cat "$out/f60-nest.code"))" $ok
+grep 'Settings: browsing' "$out/f60-nest.log" | sed 's/^/      /'
+
 # Images that only look like pictures (~/broken): the browser opens on a.png, whose failed decode
 # puts "cannot be opened" in the caption with no key pressed, and SDL_image's reason in the log;
 # Down moves to b.png, whose OK refuses

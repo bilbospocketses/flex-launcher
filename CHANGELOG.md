@@ -8,6 +8,9 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+### Fixed
+- The debug log (`-d`) names every folder the settings' folder browser moves into, not only the one it opens in.
+
 ## [0.3.0] - 2026-09-29
 
 The second part of the overhaul: a settings screen, opened with the remote's Menu key, a gamepad's Start or `:settings`, that changes the background, each menu's grid and the title size with a live preview, and saves only what changed into your config. A config written for 0.2.0 still works. Visible differences: the gamepad is on unless the config turns it off, titles scale with each menu's buttons (the same size as before on 256 px buttons), and the Windows zip no longer carries a Visual C++ runtime DLL.
