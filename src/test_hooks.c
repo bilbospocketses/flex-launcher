@@ -1,8 +1,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+// The hooks use no SDL: SDL.h and launcher.h are here only because util.h (UNUSED) and debug.h
+// (log_debug) declare functions with their types. A hook for a pure module belongs in that module.
 #include <SDL.h>
-#include <SDL_ttf.h>
 #include "launcher.h"
 #include "test_hooks.h"
 #include "alloc.h"
