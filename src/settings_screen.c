@@ -394,19 +394,15 @@ static void log_change(const SettingSlot *slot, const SettingValue *before)
 // title font, else the clock's.
 static bool open_fonts(void)
 {
-    char *path = find_default_font(FILENAME_DEFAULT_FONT);
+    char *bundled = find_default_font(FILENAME_DEFAULT_FONT);
+    const char *path = bundled;
     if (path == NULL) {
-        const char *other = config.title_font_path != NULL ? config.title_font_path : config.clock_font_path;
-        if (other == NULL) {
+        path = config.title_font_path != NULL ? config.title_font_path : config.clock_font_path;
+        if (path == NULL) {
             log_error("Settings cannot open: the font %s is missing, and there is no other font", FILENAME_DEFAULT_FONT);
             return false;
         }
-        log_error("Settings: the font %s is missing, so they use %s", FILENAME_DEFAULT_FONT, other);
-        path = strdup(other);
-        if (path == NULL) {
-            log_error("Settings cannot open: out of memory");
-            return false;
-        }
+        log_error("Settings: the font %s is missing, so they use %s", FILENAME_DEFAULT_FONT, path);
     }
     float height = (float) geo.screen_height;
     font_header = TTF_OpenFont(path, max_int(8, (int) (HEADER_FONT_RATIO * height)));
@@ -414,7 +410,7 @@ static bool open_fonts(void)
     font_small = TTF_OpenFont(path, max_int(8, (int) (SMALL_FONT_RATIO * height)));
     if (font_header == NULL || font_row == NULL || font_small == NULL)
         log_error("Settings cannot open: could not open the font %s\n%s", path, TTF_GetError());
-    free(path);
+    free(bundled);
     return font_header != NULL && font_row != NULL && font_small != NULL;
 }
 
