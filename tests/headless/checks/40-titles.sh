@@ -70,9 +70,7 @@ result "FontSize=12pt and Padding=20px are refused with a log line (exit $(cat "
 
 # Every font is closed at quit, before SDL_ttf is: the fixed title font, the cached title sizes and
 # the clock's. The leak pass sees a clock font left open, since the clock that held it is freed.
-# LANG is set because the clock reads its region from it: with LANG unset, get_region()
-# (platform/unix.c) reads memory Fedora's Mesa has freed, a separate defect.
-LANG=en_US.UTF-8 run_quick f40-clock
+run_quick f40-clock
 ok=1
 ran_clean f40-clock && grep -A2 'Clock ===' "$out/f40-clock.log" | grep -qE 'Enabled:\s+true$' && ok=0
 result "the title and clock fonts are closed at quit (exit $(cat "$out/f40-clock.code"))" $ok
