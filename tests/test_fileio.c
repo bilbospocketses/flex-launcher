@@ -763,6 +763,65 @@ static void test_list_a_network_mount_in_the_folder(void)
     fileio_set_mount_table(NULL);
 }
 
+// A function to test the network mounts on a folder's entries where one mount hides another (the
+// later decides), and where there are more than a listing keeps by name (8), so each entry is found
+// in the table instead. Every mount point here is really a file.
+static void test_list_many_network_mounts_in_the_folder(void)
+{
+    static char table[16 * (PATH_MAX + 64)];
+    size_t used = (size_t) snprintf(table, sizeof(table), "proc /proc proc rw 0 0\n");
+    CHECK(fileio_make_dirs(DIR "/stacked"));
+    const char *stacked[][2] = {
+        { "local-over-nas", "nfs" }, { "nas", "nfs4" }, { "local-over-nas", "ext4" },
+        { "nas-over-local", "ext4" }, { "nas-over-local", "cifs" }
+    };
+    for (size_t i = 0; i < sizeof(stacked) / sizeof(stacked[0]); i++) {
+        char path[PATH_MAX + 64];
+        snprintf(path, sizeof(path), DIR "/stacked/%s", stacked[i][0]);
+        CHECK(fileio_write_all(path, "x", 1));
+        used += (size_t) snprintf(table + used, sizeof(table) - used, "server:/x %s/stacked/%s %s rw 0 0\n",
+                                  fixture, stacked[i][0], stacked[i][1]);
+    }
+    CHECK(fileio_make_dirs(DIR "/many"));
+    CHECK(fileio_write_all(DIR "/many/plain", "x", 1));
+    for (int i = 0; i < 10; i++) {
+        char path[PATH_MAX + 64];
+        snprintf(path, sizeof(path), DIR "/many/m%i", i);
+        CHECK(fileio_write_all(path, "x", 1));
+        used += (size_t) snprintf(table + used, sizeof(table) - used, "nas:/m%i %s/many/m%i nfs rw 0 0\n", i, fixture, i);
+    }
+    CHECK(used < sizeof(table));
+    CHECK(fileio_write_all(DIR "/many-mounts", table, strlen(table)));
+    fileio_set_mount_table(DIR "/many-mounts");
+    fileio_set_fault(FILEIO_FAULT_NO_KIND, 0, 0);
+
+    FileioEntry *entries = NULL;
+    int count = fileio_list(DIR "/stacked", &entries);
+    CHECK_INT(count, 3);
+    const FileioEntry *hidden = find_entry(entries, count, "local-over-nas");
+    const FileioEntry *nas = find_entry(entries, count, "nas");
+    const FileioEntry *over = find_entry(entries, count, "nas-over-local");
+    CHECK(hidden != NULL && !hidden->is_dir);
+    CHECK(nas != NULL && nas->is_dir);
+    CHECK(over != NULL && over->is_dir);
+    fileio_free_list(entries, count);
+
+    count = fileio_list(DIR "/many", &entries);
+    CHECK_INT(count, 11);
+    for (int i = 0; i < 10; i++) {
+        char name[16];
+        snprintf(name, sizeof(name), "m%i", i);
+        const FileioEntry *mounted = find_entry(entries, count, name);
+        CHECK(mounted != NULL && mounted->is_dir);
+    }
+    const FileioEntry *plain = find_entry(entries, count, "plain");
+    CHECK(plain != NULL && !plain->is_dir);
+    fileio_free_list(entries, count);
+
+    fileio_set_fault(FILEIO_FAULT_NONE, 0, 0);
+    fileio_set_mount_table(NULL);
+}
+
 // A function to test Pictures and Home: Pictures from the desktop's user-dirs.dirs when the
 // variable is not set (a German desktop's "Bilder"), and a Pictures folder that is a link onto a
 // network mount, listed unlooked and marked
@@ -864,6 +923,7 @@ int main(void)
     test_places_under_a_fuse_mount();
     test_list_kinds();
     test_list_a_network_mount_in_the_folder();
+    test_list_many_network_mounts_in_the_folder();
     test_places_pictures();
     test_replace_warns_when_permissions_are_lost();
 #endif

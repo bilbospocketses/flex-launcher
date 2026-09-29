@@ -630,10 +630,21 @@ static bool on_network_mount(const char *path)
     return network;
 }
 
+// A function to give the name of the entry of `folder` that a mount's path is, or NULL when it is
+// not one of the folder's entries. `folder` is a real path, as the table's are.
+static const char *entry_mounted_on(const char *path, const char *folder)
+{
+    if (!is_in(path, folder))
+        return NULL;
+    const char *entry = path + strlen(folder);
+    while (*entry == '/')
+        entry++;
+    return entry[0] != '\0' && strchr(entry, '/') == NULL ? entry : NULL;
+}
+
 // A function to tell, from the mount table alone, whether a network file system is mounted on the
-// entry `name` of a folder, or with no name, on any entry of it. `folder` is a real path, as the
-// table's are. Of two mounts on one entry, the later hides the earlier.
-static bool network_mount_in(const char *folder, const char *name)
+// entry `name` of a folder. Of two mounts on one entry, the later hides the earlier.
+static bool network_mount_on(const char *folder, const char *name)
 {
     FILE *table = setmntent(mount_table, "r");
     if (table == NULL)
@@ -642,20 +653,68 @@ static bool network_mount_in(const char *folder, const char *name)
     char buffer[4096];
     bool network = false;
     while (getmntent_r(table, &mount, buffer, (int) sizeof(buffer)) != NULL) {
-        if (!is_in(mount.mnt_dir, folder))
-            continue;
-        const char *entry = mount.mnt_dir + strlen(folder);
-        while (*entry == '/')
-            entry++;
-        if (entry[0] == '\0' || strchr(entry, '/') != NULL)
-            continue;
-        if (name == NULL)
-            network = network || is_network_type(mount.mnt_type);
-        else if (strcmp(entry, name) == 0)
+        const char *entry = entry_mounted_on(mount.mnt_dir, folder);
+        if (entry != NULL && strcmp(entry, name) == 0)
             network = is_network_type(mount.mnt_type);
     }
     endmntent(table);
     return network;
+}
+
+#define MAX_NESTED_MOUNTS 8   // How many network mounts on a folder's entries a listing keeps by name
+
+// The entries of a folder that a network file system is mounted on, from one read of the mount table
+typedef struct {
+    int count;   // -1 when there were more than MAX_NESTED_MOUNTS: then each entry is found in the table
+    char names[MAX_NESTED_MOUNTS][NAME_MAX + 1];
+} NestedMounts;
+
+// A function to read the mount table once for the entries of a folder that a network file system is
+// mounted on. Of two mounts on one entry, the later hides the earlier.
+static void find_nested_mounts(const char *folder, NestedMounts *nested)
+{
+    nested->count = 0;
+    FILE *table = setmntent(mount_table, "r");
+    if (table == NULL)
+        return;
+    struct mntent mount;
+    char buffer[4096];
+    while (nested->count >= 0 && getmntent_r(table, &mount, buffer, (int) sizeof(buffer)) != NULL) {
+        const char *entry = entry_mounted_on(mount.mnt_dir, folder);
+        if (entry == NULL)
+            continue;
+        int found = -1;
+        for (int i = 0; found < 0 && i < nested->count; i++) {
+            if (strcmp(nested->names[i], entry) == 0)
+                found = i;
+        }
+        bool network = is_network_type(mount.mnt_type);
+        if (network && found < 0) {
+            if (nested->count == MAX_NESTED_MOUNTS || strlen(entry) > NAME_MAX)
+                nested->count = -1;
+            else
+                snprintf(nested->names[nested->count++], sizeof(nested->names[0]), "%s", entry);
+        }
+        else if (!network && found >= 0) {
+            nested->count--;
+            if (found != nested->count)
+                memcpy(nested->names[found], nested->names[nested->count], sizeof(nested->names[0]));
+        }
+    }
+    endmntent(table);
+}
+
+// A function to tell whether a network file system is mounted on the entry `name` of a folder, from
+// the mounts found there, or from the table when there were too many to keep
+static bool is_nested_mount(const NestedMounts *nested, const char *folder, const char *name)
+{
+    if (nested->count < 0)
+        return network_mount_on(folder, name);
+    for (int i = 0; i < nested->count; i++) {
+        if (strcmp(nested->names[i], name) == 0)
+            return true;
+    }
+    return false;
 }
 
 // A function to take "." and ".." out of an absolute path by its text alone, in place, as a link's
@@ -821,8 +880,9 @@ int fileio_list(const char *folder, FileioEntry **entries)
         return -1;
     }
     size_t folder_length = strlen(folder);
-    char real[PATH_MAX];   // The folder's real path, for the mount table...
-    int nested = -1;       // ...and whether a network file system is mounted on an entry; -1 until asked
+    char real[PATH_MAX] = "";               // The folder's real path, for the mount table...
+    NestedMounts nested = { .count = 0 };   // ...and the network mounts on its entries...
+    bool nested_read = false;               // ...read at the first entry of unknown kind
     while (ok) {
         // readdir() gives NULL at the end and on an error, which only errno tells apart; only the
         // end ends the listing
@@ -850,9 +910,11 @@ int fileio_list(const char *folder, FileioEntry **entries)
         // (some CIFS, NFS and older XFS mounts give none) costs one lstat(), which looks at the entry
         // itself and never follows it; one that turns out to be a link is then treated as a link.
         // But an lstat() of an entry that a file system is mounted on looks at that file system's
-        // root, so the mount table is read first (once, by the folder's real path), and an entry
-        // that a network file system is mounted on is taken for a folder unlooked. So a folder of
-        // 300 such entries is 300 lookups, on the file system being listed, and none beyond it.
+        // root, so the mount table is read first, once, by the folder's real path (again for each
+        // entry only in a folder with more than MAX_NESTED_MOUNTS network mounts on its entries),
+        // and an entry that a network file system is mounted on is taken for a folder unlooked. So
+        // a folder of 300 such entries is 300 lookups, on the file system being listed, and none
+        // beyond it.
         unsigned char kind = fault == FILEIO_FAULT_NO_KIND ? (unsigned char) DT_UNKNOWN : entry->d_type;
         bool is_dir = kind == DT_DIR;
         if (kind == DT_LNK || kind == DT_UNKNOWN) {
@@ -866,12 +928,17 @@ int fileio_list(const char *folder, FileioEntry **entries)
             snprintf(full, size, "%s/%s", folder, entry->d_name);
             struct stat info;
             bool link = kind == DT_LNK;
-            if (kind == DT_UNKNOWN && nested < 0) {
-                if (realpath(folder, real) == NULL)
-                    snprintf(real, sizeof(real), "%s", folder);
-                nested = network_mount_in(real, NULL) ? 1 : 0;
+            if (kind == DT_UNKNOWN && !nested_read) {
+                // The table names real paths only, so without the folder's (realpath() fails only
+                // when it is too long or memory runs out) nothing in it can be matched: the guard is
+                // then off, and each entry is looked at as if no mount were on it
+                if (realpath(folder, real) != NULL)
+                    find_nested_mounts(real, &nested);
+                else
+                    nested.count = 0;
+                nested_read = true;
             }
-            if (kind == DT_UNKNOWN && nested == 1 && network_mount_in(real, entry->d_name))
+            if (kind == DT_UNKNOWN && is_nested_mount(&nested, real, entry->d_name))
                 is_dir = true;
             else if (kind == DT_UNKNOWN && lstat(full, &info) == 0) {
                 link = S_ISLNK(info.st_mode);
