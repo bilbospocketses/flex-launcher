@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <pwd.h>
 #include <stdbool.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -77,6 +78,26 @@ void make_directory(const char *directory)
         }
     }
     mkdir(buffer, S_IRWXU);
+}
+
+// A function to find the user's home folder: HOME, else the user database's entry, as a login shell does
+bool home_directory(char *buffer, size_t size)
+{
+    const char *home = getenv("HOME");
+    char entry_text[4096];
+    struct passwd entry;
+    struct passwd *found = NULL;
+
+    // An empty HOME names no folder any more than a missing one does
+    if (home == NULL || home[0] == '\0') {
+        home = NULL;
+        if (getpwuid_r(getuid(), &entry, entry_text, sizeof(entry_text), &found) == 0 && found != NULL)
+            home = found->pw_dir;
+    }
+    if (home == NULL || home[0] == '\0')
+        return false;
+    int written = snprintf(buffer, size, "%s", home);
+    return written > 0 && (size_t) written < size;
 }
 
 // A function to determine if a string ends with a phrase

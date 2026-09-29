@@ -1290,6 +1290,8 @@ int fileio_places(FileioPlace **places)
     }
     SetThreadErrorMode(old_mode, NULL);
 #else
+    // HOME only, never the user database, which can go over the network (see add_places_under):
+    // with HOME unset the list has no Pictures or Home, and the browser still opens
     const char *home = getenv("HOME");
     char pictures[PATH_MAX];
     if (find_pictures(&list, home, pictures, sizeof(pictures)))

@@ -387,8 +387,8 @@ static void cleanup()
     TTF_Quit();
     quit_svg();
 
-    // Close log file if open
-    if (log_file != NULL)
+    // Close log file if open; a log on stderr (no home folder) is not ours to close
+    if (log_file != NULL && log_file != stderr)
         fclose(log_file);
 
     // Free dynamically allocated memory

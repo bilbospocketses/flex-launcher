@@ -17,6 +17,7 @@ void scmd_sleep(void);
 // Linux-specific function prototypes
 #ifdef __unix__
 void make_directory(const char *directory);
+bool home_directory(char *buffer, size_t size);
 void print_usage(void);
 #endif
 

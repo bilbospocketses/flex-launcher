@@ -21,6 +21,9 @@
 #include "util.h"
 #include "debug.h"
 #include "test_hooks.h"
+#ifdef __unix__
+#include "platform/platform.h"
+#endif
 
 extern Config config;
 extern Geometry geo;
@@ -792,10 +795,11 @@ static bool save_changes(void)
 #ifdef __unix__
     // The packaged config cannot be written; the user's own goes where the launcher looks first
     char user_config[MAX_PATH_CHARS + 1];
-    const char *home = getenv("HOME");
-    if (home != NULL)
+    char home[MAX_PATH_CHARS + 1];
+    bool has_home = home_directory(home, sizeof(home));
+    if (has_home)
         join_paths(user_config, sizeof(user_config), 4, home, ".config", EXECUTABLE_TITLE, FILENAME_DEFAULT_CONFIG);
-    ok = config_save(config.config_path, PATH_CONFIG_SYSTEM, home != NULL ? user_config : NULL, edits, n, &result);
+    ok = config_save(config.config_path, PATH_CONFIG_SYSTEM, has_home ? user_config : NULL, edits, n, &result);
 #else
     ok = config_save(config.config_path, NULL, NULL, edits, n, &result);
 #endif

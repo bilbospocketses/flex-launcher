@@ -100,10 +100,14 @@ void handle_arguments(int argc, char *argv[], char **config_file_path)
     if (*config_file_path == NULL) {
 #ifdef __unix__
         const char *prefixes[4];
+        char home[MAX_PATH_CHARS + 1];
         char home_config_buffer[MAX_PATH_CHARS + 1];
         prefixes[0] = CURRENT_DIRECTORY;
         prefixes[1] = config.exe_path;
-        prefixes[2] = join_paths(home_config_buffer, sizeof(home_config_buffer), 3, getenv("HOME"), ".config", EXECUTABLE_TITLE);
+        // With no home folder there is no ~/.config to look in; find_file skips a NULL prefix
+        prefixes[2] = home_directory(home, sizeof(home))
+                      ? join_paths(home_config_buffer, sizeof(home_config_buffer), 3, home, ".config", EXECUTABLE_TITLE)
+                      : NULL;
         prefixes[3] = PATH_CONFIG_SYSTEM;
         *config_file_path = find_file(FILENAME_DEFAULT_CONFIG, 4, prefixes);
 #else

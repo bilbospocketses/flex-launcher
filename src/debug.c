@@ -25,16 +25,27 @@ static int init_log()
     // Determine log path
     char log_file_path[MAX_PATH_CHARS + 1];
 #ifdef __unix__
+    char home[MAX_PATH_CHARS + 1];
     char log_file_directory[MAX_PATH_CHARS + 1];
-    join_paths(log_file_directory, sizeof(log_file_directory), 4, getenv("HOME"), ".local", "share", EXECUTABLE_TITLE);
-    make_directory(log_file_directory);
-    join_paths(log_file_path, sizeof(log_file_path), 2, log_file_directory, FILENAME_LOG);
+    if (home_directory(home, sizeof(home))) {
+        join_paths(log_file_directory, sizeof(log_file_directory), 4, home, ".local", "share", EXECUTABLE_TITLE);
+        make_directory(log_file_directory);
+        join_paths(log_file_path, sizeof(log_file_path), 2, log_file_directory, FILENAME_LOG);
+    }
+    else {
+        // No home folder to keep a log file in, as for a service run under a user id with no
+        // account: the log goes to stderr, which a service manager keeps
+        log_file = stderr;
+        fputs("No home folder: HOME is not set and the user database has no entry for this user, "
+              "so the log goes to stderr\n", stderr);
+    }
 #else
     join_paths(log_file_path, sizeof(log_file_path), 2, config.exe_path, FILENAME_LOG);
 #endif
 
     // Open log
-    log_file = fileio_open(log_file_path, "wb");
+    if (log_file == NULL)
+        log_file = fileio_open(log_file_path, "wb");
     if (log_file == NULL) {
 #ifdef __unix__
         printf("Failed to create log file");
@@ -47,7 +58,7 @@ print_compiler_info(log_file);
 fputs("\n", log_file);
 #ifdef __unix__
     if (config.debug)
-        printf("Debug mode enabled\nLog is outputted to %s\n", log_file_path);
+        printf("Debug mode enabled\nLog is outputted to %s\n", log_file != stderr ? log_file_path : "stderr");
 #endif
     return 0;
 }
@@ -81,7 +92,7 @@ void output_log(LogLevel log_level, const char *format, ...)
         fflush(log_file);
     
 #ifdef __unix__
-    if (log_level > LOGLEVEL_DEBUG)
+    if (log_level > LOGLEVEL_DEBUG && log_file != stderr)
         fputs(buffer, stderr);
 #endif
     va_end(args);
