@@ -377,7 +377,20 @@ SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *
                         break;
                     TTF_CloseFont(reduced_font);
                     reduced_font = TTF_OpenFont(*info->font_path, --size);
+#ifdef STREAMFLEX_TEST_HOOKS
+                    // Only the headless harness builds this: every step down fails to open
+                    if (getenv("STREAMFLEX_TEST_FAIL_SHRINK_STEP") != NULL && reduced_font != NULL) {
+                        log_debug("Test hook: the step down to %i pt fails", size);
+                        TTF_CloseFont(reduced_font);
+                        reduced_font = NULL;
+                    }
+#endif
                 }
+
+                // A smaller font that failed to open leaves the title at the menu's size: measure it
+                // there, not in the font just closed
+                if (reduced_font == NULL)
+                    TTF_SizeUTF8(info->font, text_buffer, &w, &h);
             }
             if (w > info->max_width) {
                 utf8_truncate(text_buffer, w, info->max_width);

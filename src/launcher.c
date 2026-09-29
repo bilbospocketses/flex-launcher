@@ -925,6 +925,9 @@ static void render_buttons(Menu *menu, const LayoutGeometry *geometry)
             entry->title_texture = render_text_texture(entry->title, &title_info, &entry->text_rect, &h);
             entry->title_offset = (config.title_oversize_mode == OVERSIZE_SHRINK && h != line_height)
                                   ? (line_height - h) / 2 : 0;
+            if (config.title_oversize_mode != OVERSIZE_NONE && entry->text_rect.w > size)
+                log_debug("Menu '%s': the title '%s' is %i px wide, over its %i px button",
+                    menu->name, entry->title, entry->text_rect.w, size);
         }
     }
 

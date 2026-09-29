@@ -73,3 +73,17 @@ LANG=en_US.UTF-8 run_quick f40-clock
 ok=1
 ran_clean f40-clock && grep -A2 'Clock ===' "$out/f40-clock.log" | grep -qE 'Enabled:\s+true$' && ok=0
 result "the title and clock fonts are closed at quit (exit $(cat "$out/f40-clock.code"))" $ok
+
+# Shrink mode when a smaller font fails to open part-way down (the harness build's
+# STREAMFLEX_TEST_FAIL_SHRINK_STEP fails every step down): the title is cut at the menu's size,
+# measured in that font rather than in the one just closed. The debug log names each title wider
+# than its button, and the list must be the one the same menu gives when every font opens (the
+# run above): the title cut at the 22 pt minimum is already over its button there.
+STREAMFLEX_TEST_FAIL_SHRINK_STEP=1 CFG=$FX/f40-shrink-large.ini run_quick f40-shrinkfail
+ok=1
+ran_clean f40-shrinkfail && grep -q 'Test hook: the step down to [0-9]* pt fails' "$out/f40-shrinkfail.log" \
+    && grep -q "Menu 'Main': 3 x 1 grid, 556 px buttons, 78 pt titles" "$out/f40-shrinkfail.log" \
+    && diff <(grep 'px wide, over its' "$out/f40-shrink-large.log") <(grep 'px wide, over its' "$out/f40-shrinkfail.log") > /dev/null \
+    && ok=0
+result "item 19: Shrink mode cuts a title to fit when a smaller font fails to open (exit $(cat "$out/f40-shrinkfail.code"))" $ok
+grep -E 'Test hook|px wide, over its' "$out/f40-shrinkfail.log" | sed 's/^/      /'
