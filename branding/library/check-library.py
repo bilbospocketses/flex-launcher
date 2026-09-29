@@ -6,8 +6,9 @@ Fails when:
 - icons.ini lists a file that does not exist, or a file in generic/ or brands/ is not listed;
 - a brand PNG is not square RGBA from 512 to 1024 px, is not transparent outside the shared outline and
   opaque inside it, or does not match its sha256;
-- a brand PNG has a fully opaque pixel of exactly the default chroma key, #010101, which Transparent mode
-  on Windows would show through.
+- a brand PNG has a fully opaque pixel within one step of the default chroma key, #010101, in every channel
+  (#000000 to #020202): Transparent mode on Windows shows through the key, and scaling averages such
+  pixels onto it.
 """
 import pathlib
 import subprocess
@@ -35,8 +36,9 @@ def check_brand(library, name, keys):
             return problems
         keyed = libtools.key_pixels(image)
         if keyed:
-            problems.append(f"[{name}] {path.name} has {keyed} opaque pixel(s) of exactly the chroma key "
-                            f"#010101, which Transparent mode on Windows shows through; make them #000000")
+            problems.append(f"[{name}] {path.name} has {keyed} opaque pixel(s) within one step of the chroma key "
+                            f"#010101, which Transparent mode on Windows shows through, as they are or scaled; "
+                            f"make them #030303")
         alpha = image.getchannel("A")
         mask = libtools.outline_mask(width)
         outside = mask.point(lambda v: 255 if v == 0 else 0)

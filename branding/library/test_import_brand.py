@@ -94,24 +94,29 @@ class ImportBrand(unittest.TestCase):
             self.assertEqual(out.getpixel((0, 0))[3], 0)
         self.assertNotIn("fill", dict(ib.libtools.read_sections(self.brands_ini))["near"])
 
-    def test_chroma_key_pixels_are_made_black(self):
-        # Transparent mode on Windows shows through #010101, so opaque art of exactly that colour becomes black;
-        # the edge of the outline, where the art is not fully opaque, keeps its colour
-        info = self.run_import("keyed", self.art(512, colour=(1, 1, 1, 255)))
-        with Image.open(self.library / "brands" / "keyed.png") as out:
-            self.assertEqual(out.getpixel((256, 256)), (0, 0, 0, 255))
-            self.assertEqual(ib.libtools.key_pixels(out), 0)
-            red, green, blue, alpha = out.split()
-        edge = alpha.point(lambda v: 255 if 0 < v < 255 else 0)
-        still_key = edge
-        for band in (red, green, blue):
-            still_key = ImageChops.multiply(still_key, band.point(lambda v: 255 if v == 1 else 0))
-        edge_count = edge.histogram()[255]
-        self.assertGreater(edge_count, 0)
-        self.assertEqual(still_key.histogram()[255], edge_count)
-        self.assertGreater(info["off_key"], 0)
+    def test_pixels_near_the_chroma_key_are_moved_off_it(self):
+        # Transparent mode on Windows shows through #010101, and scaling averages pixels a step off it onto
+        # it, so opaque art within one step of it becomes #030303; the edge of the outline, where the art is
+        # not fully opaque, keeps its colour, and art two steps off is left alone
+        for name, colour in (("keyed", (1, 1, 1)), ("black", (0, 0, 0)), ("dark", (2, 1, 0))):
+            info = self.run_import(name, self.art(512, colour=colour + (255,)))
+            with Image.open(self.library / "brands" / f"{name}.png") as out:
+                self.assertEqual(out.getpixel((256, 256)), (3, 3, 3, 255), name)
+                self.assertEqual(ib.libtools.key_pixels(out), 0, name)
+                red, green, blue, alpha = out.split()
+            edge = alpha.point(lambda v: 255 if 0 < v < 255 else 0)
+            unchanged = edge
+            for band, level in zip((red, green, blue), colour):
+                unchanged = ImageChops.multiply(unchanged, band.point(lambda v, level=level: 255 if v == level else 0))
+            edge_count = edge.histogram()[255]
+            self.assertGreater(edge_count, 0, name)
+            self.assertEqual(unchanged.histogram()[255], edge_count, name)
+            self.assertGreater(info["off_key"], 0, name)
+        info = self.run_import("apart", self.art(512, colour=(3, 1, 1, 255)))
+        self.assertEqual(info["off_key"], 0)
+        with Image.open(self.library / "brands" / "apart.png") as out:
+            self.assertEqual(out.getpixel((256, 256)), (3, 1, 1, 255))
         self.assertEqual(self.run_import("plain", self.art(512))["off_key"], 0)
-
     def test_a_malformed_fill_is_refused_not_a_traceback(self):
         path = self.art(600, round_logo=True)
         for fill in ("#abc", "112233", "#GG0000", "#1122334"):
