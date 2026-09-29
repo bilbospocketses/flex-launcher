@@ -48,6 +48,7 @@ class CheckLibrary(unittest.TestCase):
         problems = cl.check_files(self.library)
         self.assertTrue(any(brand.name in p and "5 opaque pixel(s) within one step of the chroma key" in p
                             for p in problems), problems)
+
     def test_a_brand_opaque_in_its_corner_is_reported(self):
         brand = next((self.library / "brands").glob("*.png"))
         Image.new("RGBA", (512, 512), (10, 20, 30, 255)).save(brand)

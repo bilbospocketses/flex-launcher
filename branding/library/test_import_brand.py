@@ -117,6 +117,7 @@ class ImportBrand(unittest.TestCase):
         with Image.open(self.library / "brands" / "apart.png") as out:
             self.assertEqual(out.getpixel((256, 256)), (3, 1, 1, 255))
         self.assertEqual(self.run_import("plain", self.art(512))["off_key"], 0)
+
     def test_a_malformed_fill_is_refused_not_a_traceback(self):
         path = self.art(600, round_logo=True)
         for fill in ("#abc", "112233", "#GG0000", "#1122334"):
