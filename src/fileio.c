@@ -13,6 +13,7 @@
 #include <shlobj.h>
 #include <knownfolders.h>
 #include <io.h>
+#include <share.h>
 #else
 #include <dirent.h>
 #include <fcntl.h>
@@ -207,7 +208,9 @@ FILE *fileio_open(const char *path, const char *mode)
     wchar_t *wide_mode = to_wide(mode);
     FILE *file = NULL;
     if (wide_path != NULL && wide_mode != NULL) {
-        file = _wfopen(wide_path, wide_mode);
+        // _wfsopen() with _SH_DENYNO shares the file as _wfopen() did; _wfopen_s() would lock
+        // other programs out of it while it is open
+        file = _wfsopen(wide_path, wide_mode, _SH_DENYNO);
         if (file == NULL)
             set_errno_error(errno);
     }
@@ -443,6 +446,9 @@ bool fileio_replace(const char *from, const char *to)
     // read and set through that descriptor, so no other file can be put at either path between a
     // look and a change. O_PATH reads the bits of a file the user cannot read, as stat() did, and
     // O_NONBLOCK keeps a pipe put at a path from blocking the open. No old file keeps nothing.
+    // fchmod() refuses an O_PATH descriptor (EBADF), so the new file is opened for writing, or for
+    // reading when a umask left its owner no write bit: a umask that takes away either bit still
+    // lets the bits be set, as chmod() by path did.
 #ifdef O_PATH
     int old_file = open(to, O_PATH | O_CLOEXEC);
 #else
@@ -452,9 +458,12 @@ bool fileio_replace(const char *from, const char *to)
     if (old_file >= 0) {
         struct stat info;
         int new_file = -1;
-        mode_kept = fault != FILEIO_FAULT_KEEP && fstat(old_file, &info) == 0 &&
-                    (new_file = open(from, O_RDONLY | O_NOCTTY | O_NONBLOCK | O_CLOEXEC)) >= 0 &&
-                    fchmod(new_file, info.st_mode & 07777) == 0;
+        if (fault != FILEIO_FAULT_KEEP && fstat(old_file, &info) == 0) {
+            new_file = open(from, O_WRONLY | O_NOCTTY | O_NONBLOCK | O_CLOEXEC);
+            if (new_file < 0 && errno == EACCES)
+                new_file = open(from, O_RDONLY | O_NOCTTY | O_NONBLOCK | O_CLOEXEC);
+            mode_kept = new_file >= 0 && fchmod(new_file, info.st_mode & 07777) == 0;
+        }
         if (new_file >= 0)
             close(new_file);
         close(old_file);

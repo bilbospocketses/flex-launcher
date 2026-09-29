@@ -908,8 +908,8 @@ static void test_replace_warns_when_permissions_are_lost(void)
 }
 
 // A function to test which permissions a replace keeps: an old file's, even one its owner cannot
-// read; none when there is no old file, and no warning then; and, when keeping them fails, the new
-// file's own, with the warning
+// read, and onto a new file its owner cannot read or cannot write; none when there is no old file,
+// and no warning then; and, when keeping them fails, the new file's own, with the warning
 static void test_replace_keeps_permissions(void)
 {
     struct stat info;
@@ -921,6 +921,20 @@ static void test_replace_keeps_permissions(void)
     CHECK_STR(fileio_last_warning(), "");
     CHECK(stat(DIR "/unreadable.ini", &info) == 0 && (info.st_mode & 07777) == 0200);
     CHECK(chmod(DIR "/unreadable.ini", 0644) == 0);
+
+    // A new file a umask left its owner unable to read (0200), or unable to write (0400), still
+    // takes the old file's bits. Only a user other than root sees the difference: root reads and
+    // writes either file whatever its bits say.
+    const mode_t new_modes[] = { 0200, 0400 };
+    for (int i = 0; i < 2; i++) {
+        CHECK(fileio_write_all(DIR "/masked.ini", "old", 3));
+        CHECK(chmod(DIR "/masked.ini", 0640) == 0);
+        CHECK(fileio_write_all(DIR "/masked.ini.tmp", "new", 3));
+        CHECK(chmod(DIR "/masked.ini.tmp", new_modes[i]) == 0);
+        CHECK(fileio_replace(DIR "/masked.ini.tmp", DIR "/masked.ini"));
+        CHECK_STR(fileio_last_warning(), "");
+        CHECK(stat(DIR "/masked.ini", &info) == 0 && (info.st_mode & 07777) == 0640);
+    }
 
     CHECK(fileio_write_all(DIR "/fresh.ini.tmp", "new", 3));
     CHECK(chmod(DIR "/fresh.ini.tmp", 0640) == 0);
