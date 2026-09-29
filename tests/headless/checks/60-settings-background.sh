@@ -55,12 +55,15 @@ result "settings: stepping Mode through Image and Slideshow with nothing chosen 
 grep -E "Background 'Image' setting|Couldn't load background image|does not exist" "$out/f60-transparent.err" | sort | uniq -c | sed 's/^/      /'
 
 # A config whose own Mode names an image or folder it never gives is a config problem: at startup
-# that still says so as an error, on stderr
+# that still says so as an error, on stderr. The slideshow's case runs f30-nodir's config here,
+# under a name of its own, so this check reads only what it ran.
 run_quick f60-noimage
+CFG=$FX/f30-nodir.ini run_quick f60-nofolder
 ok=1
 grep -q "Background 'Image' setting not specified in config file" "$out/f60-noimage.err" \
     && grep -q "Couldn't load background image, defaulting to color background" "$out/f60-noimage.err" \
-    && grep -q "Slideshow directory '(none)' does not exist" "$out/f30-nodir.err" && ran_clean f60-noimage && ok=0
+    && grep -q "Slideshow directory '(none)' does not exist" "$out/f60-nofolder.err" \
+    && ran_clean f60-noimage && ran_clean f60-nofolder && ok=0
 result "a config's Image or Slideshow mode with nothing chosen still errors at startup (exit $(cat "$out/f60-noimage.code"))" $ok
 
 # Image: Mode to Image, open the browser (it starts in Pictures), take the second image
