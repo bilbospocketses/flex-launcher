@@ -150,10 +150,22 @@ static int fit(int length, int count, int spacing, int pad, int extra)
 }
 
 // A function to size and place a menu's buttons for its grid shape
-int layout_compute(const LayoutParams *params, const LayoutArea *area, int entry_count,
+int layout_compute(const LayoutParams *given, const LayoutArea *area, int entry_count,
                    LayoutGeometry *geometry, char *why, size_t why_size)
 {
     LayoutGeometry g;
+
+    // Keep the title arithmetic inside int however large the title settings are, as the gap and
+    // paddings are below: a fixed line no taller than the area, a fixed padding no larger than the
+    // largest button, and the percentages, sizes and line height within their parsers' limits
+    LayoutParams limited = *given;
+    const LayoutParams *params = &limited;
+    limited.title_block = min_int(max_int(given->title_block, 0), max_int(area->h, 0));
+    limited.title_padding = min_int(max_int(given->title_padding, 0), LAYOUT_MAX_BUTTON);
+    limited.title_padding_pct = min_int(max_int(given->title_padding_pct, 0), LAYOUT_MAX_PADDING_PERCENT);
+    limited.title_size_pct = min_int(max_int(given->title_size_pct, 0), LAYOUT_MAX_TITLE_PERCENT);
+    limited.title_min_size = min_int(max_int(given->title_min_size, 0), LAYOUT_MAX_TITLE_POINTS);
+    limited.title_line_pm = min_int(max_int(given->title_line_pm, 0), LAYOUT_MAX_LINE_PM);
     int cap = params->icon_cap > 0 ? min_int(params->icon_cap, LAYOUT_MAX_BUTTON) : LAYOUT_MAX_BUTTON;
     int width_fit, height_fit;
     if (why_size > 0)

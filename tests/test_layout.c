@@ -392,6 +392,108 @@ static void test_no_titles(void)
     CHECK_INT(g.y_advance, 489);    // 393 + 96
 }
 
+// A function to test the button and its growing title block solved together at the edges: a block
+// taller than the area even under a 0 px button fits nothing, and a grid whose rows would fit under
+// a 0 px button's block, but not under their own, loses a row
+static void test_titles_scale_the_row_count(void)
+{
+    LayoutArea shallow = { 0, 0, 1920, 80, 40 };
+    LayoutParams p = scaled(1, 4, 0);
+    LayoutGeometry g = { 0 };
+    char why[128];
+    CHECK(layout_compute(&p, &shallow, 4, &g, why, sizeof(why)) != 0);   // A 23 px line in 20 px of room
+    CHECK(strstr(why, "not even one") != NULL);
+
+    // 3 rows have 168 px: 32 px buttons would fit under a 0 px button's 23 px block (3 x 55 = 165),
+    // but their own is 26 px (3 x 58 = 174), so the grid drops to 2 rows, which have 264 px: 101 +
+    // 23 + 8 = 132 fits, 102 needs 133
+    LayoutArea area = { 0, 0, 1920, 420, 210 };
+    p = scaled(3, 4, 0);
+    CHECK_INT(layout_compute(&p, &area, 12, &g, why, sizeof(why)), 0);
+    CHECK_INT(g.rows, 2);
+    CHECK_INT(g.columns, 4);
+    CHECK_INT(g.button, 101);
+    CHECK_INT(g.title_block, 31);
+    CHECK(strstr(why, "reducing to 4 x 2") != NULL);
+}
+
+// A function to compute two layouts and test that they are the same
+static void check_same_layout(int line, const LayoutParams *a, const LayoutParams *b, const LayoutArea *area)
+{
+    LayoutGeometry ga = { 0 };
+    LayoutGeometry gb = { 0 };
+    int ra = layout_compute(a, area, 6, &ga, NULL, 0);
+    int rb = layout_compute(b, area, 6, &gb, NULL, 0);
+    check_count++;
+    if (ra != rb || memcmp(&ga, &gb, sizeof(ga)) != 0) {
+        check_failures++;
+        fprintf(stderr, "test_layout.c:%d: layouts differ: %d, button %d, title %d/%d/%d against %d, button %d, title %d/%d/%d\n",
+            line, ra, ga.button, ga.title_size, ga.title_padding, ga.title_block,
+            rb, gb.button, gb.title_size, gb.title_padding, gb.title_block);
+    }
+}
+
+// A function to test that huge or negative title settings keep the arithmetic inside int, as the
+// gap and paddings do: each counts as the nearest value its parser allows
+static void test_title_limits(void)
+{
+    LayoutParams huge = scaled(1, 4, 0);
+    LayoutParams limit = scaled(1, 4, 0);
+    huge.title_size_pct = 2000000000;
+    limit.title_size_pct = LAYOUT_MAX_TITLE_PERCENT;
+    check_same_layout(__LINE__, &huge, &limit, &SCREEN_1080);
+
+    huge = scaled(1, 4, 0);
+    limit = scaled(1, 4, 0);
+    huge.title_line_pm = 2000000000;
+    limit.title_line_pm = LAYOUT_MAX_LINE_PM;
+    check_same_layout(__LINE__, &huge, &limit, &SCREEN_1080);
+
+    huge = scaled(1, 4, 0);
+    limit = scaled(1, 4, 0);
+    huge.title_min_size = 2000000000;
+    limit.title_min_size = LAYOUT_MAX_TITLE_POINTS;
+    check_same_layout(__LINE__, &huge, &limit, &SCREEN_1080);
+
+    huge = scaled(1, 4, 0);
+    limit = scaled(1, 4, 0);
+    huge.title_padding_pct = 2000000000;
+    limit.title_padding_pct = LAYOUT_MAX_PADDING_PERCENT;
+    check_same_layout(__LINE__, &huge, &limit, &SCREEN_1080);
+
+    huge = params(3, 4, 0);
+    limit = params(3, 4, 0);
+    huge.title_block = 2000000000;
+    limit.title_block = SCREEN_1080.h;
+    check_same_layout(__LINE__, &huge, &limit, &SCREEN_1080);
+
+    huge = params(1, 4, 0);
+    limit = params(1, 4, 0);
+    huge.title_block = 30;
+    limit.title_block = 30;
+    huge.title_padding = 2000000000;
+    limit.title_padding = LAYOUT_MAX_BUTTON;
+    check_same_layout(__LINE__, &huge, &limit, &SCREEN_1080);
+
+    // A negative value counts as none
+    huge = scaled(1, 4, 0);
+    limit = scaled(1, 4, 0);
+    huge.title_size_pct = -5;
+    huge.title_padding_pct = -5;
+    huge.title_min_size = -5;
+    limit.title_size_pct = 0;
+    limit.title_padding_pct = 0;
+    limit.title_min_size = 0;
+    check_same_layout(__LINE__, &huge, &limit, &SCREEN_1080);
+
+    // FontSize at 100% makes titles as tall as the buttons
+    LayoutGeometry g;
+    limit = scaled(1, 4, 0);
+    limit.title_size_pct = 100;
+    CHECK_INT(layout_compute(&limit, &SCREEN_1080, 6, &g, NULL, 0), 0);
+    CHECK_INT(g.title_size, g.button);
+}
+
 static LayoutGeometry shape(int rows, int columns)
 {
     LayoutGeometry g = { 0 };
@@ -529,6 +631,8 @@ int main(void)
     test_titles_grow_with_large_buttons();
     test_fixed_titles();
     test_no_titles();
+    test_titles_scale_the_row_count();
+    test_title_limits();
     test_strip_moves();
     test_strip_slots_and_scroll();
     test_grid_moves();

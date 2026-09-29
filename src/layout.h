@@ -6,11 +6,12 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define LAYOUT_MIN_BUTTON 32   // Same as MIN_ICON_SIZE in launcher.h
-#define LAYOUT_MAX_BUTTON 1024 // Same as MAX_ICON_SIZE in launcher.h
+#define LAYOUT_MIN_BUTTON 32          // Same as MIN_ICON_SIZE in launcher.h
+#define LAYOUT_MAX_BUTTON 1024        // Same as MAX_ICON_SIZE in launcher.h
 #define LAYOUT_MAX_TITLE_POINTS 512   // Largest fixed FontSize
 #define LAYOUT_MAX_TITLE_PERCENT 100  // Largest FontSize percentage
 #define LAYOUT_MAX_PADDING_PERCENT 50 // Largest title Padding percentage
+#define LAYOUT_MAX_LINE_PM 10000      // Largest title line height per point, in thousandths
 
 typedef enum {
     LAYOUT_UP,
@@ -53,18 +54,18 @@ typedef struct {
 
 // The computed layout of one menu
 typedef struct {
-    int rows;        // After any reduction to fit the screen
+    int rows;          // After any reduction to fit the screen
     int columns;
-    int button;      // Square button size in px
-    int x_advance;   // Distance between neighbouring buttons' x
-    int y_advance;   // Distance between neighbouring rows' y
-    int x_origin;    // Top-left of the first visible slot
+    int button;        // Square button size in px
+    int x_advance;     // Distance between neighbouring buttons' x
+    int y_advance;     // Distance between neighbouring rows' y
+    int x_origin;      // Top-left of the first visible slot
     int y_origin;
-    int hpad;        // Highlight padding after capping
+    int hpad;          // Highlight padding after capping
     int vpad;
-    int title_size;  // Title point size for a percentage FontSize; 0 = the fixed FontSize
+    int title_size;    // Title point size for a percentage FontSize; 0 = the fixed FontSize
     int title_padding; // Space between the button and its title, in px
-    int title_block; // Padding plus the title's line height: all that sits under the button
+    int title_block;   // Padding plus the title's line height: all that sits under the button
 } LayoutGeometry;
 
 // Where the highlight is, and what is scrolled into view
