@@ -135,11 +135,12 @@ ok=1
 result "settings: a held hotkey bound to :settings opens them once, and they stay open (exit $(cat "$out/f50-heldhotkey.code"))" $ok
 echo "      the key came $n times; settings opened $(grep -c 'Settings opened' "$out/f50-heldhotkey.log") times"
 
-# A remote's Menu button opens settings as the keyboard's Menu key does, and closes them again
+# A remote's Menu button opens settings as the keyboard's Menu key does, and closes them again. Its
+# lines are matched by keycode alone, as the held key's are: SDL's key names vary by version.
 CFG=$FX/f50-keys.ini run_keys f50-menukb XF86MenuKB XF86MenuKB
 ok=1
-grep -q 'Key Menu (#40000076) detected' "$out/f50-menukb.log" \
-    && in_range "$out/f50-menukb.log" 'Key Menu (#40000076) detected' 'Settings closed' "Settings opened over menu 'Main'" \
+grep -q '^Key .* (#40000076) detected$' "$out/f50-menukb.log" \
+    && in_range "$out/f50-menukb.log" ' (#40000076) detected' 'Settings closed' "Settings opened over menu 'Main'" \
     && ran_clean f50-menukb && ok=0
 result "settings: the Menu key's other code (#40000076) opens and closes them (exit $(cat "$out/f50-menukb.code"))" $ok
 
