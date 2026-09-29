@@ -28,7 +28,9 @@ bool fileio_write_all(const char *path, const char *data, size_t length);
 bool fileio_copy(const char *from, const char *to);
 bool fileio_replace(const char *from, const char *to);
 bool fileio_remove(const char *path);
-bool fileio_make_dirs(const char *path);
+bool fileio_make_dirs(const char *path);   // Windows: a share alone (\\server\share) is not looked at,
+                                           // since looking can wait on the network, so true there does
+                                           // not say the share exists; what is done there next says so
 bool fileio_real_path(const char *path, char *out, size_t size);   // on Linux, follows symbolic links; on Windows, the path as given
 int fileio_list(const char *folder, FileioEntry **entries);
 void fileio_free_list(FileioEntry *entries, int count);
@@ -47,7 +49,7 @@ typedef struct {
                   // was listed without being looked at, and is never opened unasked
 } FileioPlace;
 
-int fileio_places(FileioPlace **places);   // -1 when memory runs out: never a list with a place missing
+int fileio_places(FileioPlace **places);   // -1, with the reason, when finding them fails: never a list with a place missing
 void fileio_free_places(FileioPlace *places, int count);
 #ifndef _WIN32
 int fileio_places_under(const char *folder, FileioPlace **places);   // /media's mounts, none looked at

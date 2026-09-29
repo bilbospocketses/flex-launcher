@@ -851,15 +851,23 @@ void fileio_free_list(FileioEntry *entries, int count)
     alloc_free(entries);
 }
 
-// The places found so far, and whether memory ran out on the way
+// The places found so far, and whether finding them failed on the way, and why
 typedef struct {
     FileioPlace *items;
     int count;
     bool failed;
+    char why[64];
 } PlaceList;
 
-// A function to add a starting place without looking at its folder. Out of memory, the list is
-// marked as failed, so the caller gets no list rather than one with a place quietly missing.
+// A function to fail the list with a reason, so the caller gets no list rather than one with a
+// place quietly missing
+static void fail_places(PlaceList *list, const char *why)
+{
+    list->failed = true;
+    snprintf(list->why, sizeof(list->why), "%s", why);
+}
+
+// A function to add a starting place without looking at its folder. Out of memory, the list fails.
 static void append_place(PlaceList *list, const char *label, const char *path, bool network)
 {
     if (path == NULL)
@@ -872,7 +880,7 @@ static void append_place(PlaceList *list, const char *label, const char *path, b
     if (grown == NULL) {
         alloc_free(label_copy);
         alloc_free(path_copy);
-        list->failed = true;
+        fail_places(list, "out of memory");
         return;
     }
     list->items = grown;
@@ -880,13 +888,13 @@ static void append_place(PlaceList *list, const char *label, const char *path, b
     list->count++;
 }
 
-// A function to hand the caller the places, or, when memory ran out, none: -1 with the reason
+// A function to hand the caller the places, or, when finding them failed, none: -1 with the reason
 static int finish_places(PlaceList *list, FileioPlace **places)
 {
     if (list->failed) {
         fileio_free_places(list->items, list->count);
         *places = NULL;
-        set_error("out of memory");
+        set_error(list->why);
         return -1;
     }
     *places = list->items;
@@ -935,7 +943,7 @@ static void add_place(PlaceList *list, const char *label, const char *path)
     if (network || fileio_is_dir(path))
         append_place(list, label, path, network);
     else if (strcmp(last_error, "out of memory") == 0)
-        list->failed = true;   // Not "not there": the look itself ran out of memory
+        fail_places(list, "out of memory");   // Not "not there": the look itself ran out of memory
 }
 
 #ifndef _WIN32
@@ -969,7 +977,7 @@ static bool add_places_under(PlaceList *list, const char *folder, bool user_fold
         size_t size = folder_length + strlen(entry->d_name) + 2;
         char *path = alloc_malloc(size);
         if (path == NULL) {
-            list->failed = true;
+            fail_places(list, "out of memory");
             break;
         }
         snprintf(path, size, "%s/%s", folder, entry->d_name);
@@ -989,7 +997,7 @@ static bool add_places_under(PlaceList *list, const char *folder, bool user_fold
 // with the reason when memory runs out
 int fileio_places_under(const char *folder, FileioPlace **places)
 {
-    PlaceList list = { NULL, 0, false };
+    PlaceList list = { NULL, 0, false, "" };
     add_places_under(&list, folder, true);
     return finish_places(&list, places);
 }
@@ -1051,7 +1059,7 @@ static bool find_pictures(PlaceList *list, const char *home, char *out, size_t s
     bool found = false;
     char *text = fileio_read_all(file, NULL);
     if (text == NULL && strcmp(last_error, "out of memory") == 0) {
-        list->failed = true;
+        fail_places(list, "out of memory");
         return false;
     }
     for (char *line = text; line != NULL && *line != '\0';) {
@@ -1076,10 +1084,11 @@ static bool find_pictures(PlaceList *list, const char *home, char *out, size_t s
 // off, looking blocks until the network times out (Windows tries to reconnect), and on a hard NFS
 // mount it never returns, while the browser asks for its places each time it opens. This is
 // deliberate: one that cannot be listed is refused only when chosen, like any other folder the
-// browser cannot list. -1, with the reason, when memory runs out: never a list with a place missing.
+// browser cannot list. -1, with the reason, when memory runs out (or a known folder's path cannot be
+// converted to UTF-8): never a list with a place missing.
 int fileio_places(FileioPlace **places)
 {
-    PlaceList list = { NULL, 0, false };
+    PlaceList list = { NULL, 0, false, "" };
 #ifdef _WIN32
     // An empty card reader or DVD drive must not pop up "There is no disk in the drive". Only this
     // thread's mode changes: the process's is shared with the launcher's other threads.
@@ -1095,7 +1104,7 @@ int fileio_places(FileioPlace **places)
         if (SUCCEEDED(SHGetKnownFolderPath(FOLDERS[i], (DWORD) KF_FLAG_DONT_VERIFY, NULL, &wide))) {
             char *path = to_utf8(wide);
             if (path == NULL)
-                list.failed = true;
+                fail_places(&list, last_error);   // to_utf8's reason: out of memory, or a path it cannot convert
             add_place(&list, LABELS[i], path);
             alloc_free(path);
         }
