@@ -646,8 +646,8 @@ char *selected_path(const char *path)
     size_t length = strlen(path);
     char *out = NULL;
 
-    // Find file extension
-    if (length + LEN(SELECTED_SUFFIX) + 1 > sizeof(buffer))
+    // Find file extension; an empty path has none, and the search below would start before it
+    if (length == 0 || length + LEN(SELECTED_SUFFIX) + 1 > sizeof(buffer))
         return out;
     char *p = (char*) path + length - 1;
     while (*p != '.' && p > path)
