@@ -192,8 +192,9 @@ grep 'Settings' "$out/f50-nofont.log" | sed 's/^/      /'
 
 # Moving quickly down the Menus list (five menus of twelve 556 px SVG icons) does not lay out, or
 # rasterize the icons of, each menu on the way: the preview follows once the cursor rests, on D.
-# Going up to C and back to D shows D again without rendering its buttons a second time.
-fast_downs() { xdotool key --delay 100 Down Down Down Down Down; sleep 2; }
+# Going up to C and back to D shows D again without rendering its buttons a second time. The Downs
+# come 50 ms apart, far inside the 300 ms rest, so a loaded host cannot stretch a gap past it.
+fast_downs() { xdotool key --delay 50 Down Down Down Down Down; sleep 2; }
 revisit() { xdotool key Up; sleep 1; xdotool key Down; sleep 1; }
 CFG=$FX/f50-menus.ini run_keys f50-menus Menu Down Return +fast_downs +revisit Menu
 log=$out/f50-menus.log
