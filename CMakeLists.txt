@@ -19,6 +19,12 @@ if (EXTRA_WARNINGS)
   endif ()
 endif ()
 
+# MSVC calls the POSIX names (strdup) deprecated in favour of its own (_strdup); the code uses the
+# POSIX names on every platform. This reaches the launcher, platform and test targets, not vcpkg's builds
+if (MSVC)
+  add_compile_definitions(_CRT_NONSTDC_NO_DEPRECATE)
+endif ()
+
 # Set Visual Studio solution startup project
 if (WIN32)
   set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${EXECUTABLE_TITLE})
@@ -53,11 +59,34 @@ if (WIN32)
   find_package(sdl2_image CONFIG REQUIRED)
   find_package(SDL2_ttf CONFIG REQUIRED)
   
+  # A function to find a vcpkg library once per configuration, so each configuration links its own.
+  # A multi-config generator has no build type, so vcpkg searches its debug folder first, and a
+  # plain find_library() gave the Release link the debug library and its debug C runtime (LIBCMTD)
+  include(SelectLibraryConfigurations)
+  function(find_vcpkg_library var name)
+    set(VCPKG_TRIPLET_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+    find_library(${var}_LIBRARY_RELEASE ${name} PATHS "${VCPKG_TRIPLET_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
+    # Not REQUIRED: a release-only triplet (VCPKG_BUILD_TYPE release) has no debug folder, and
+    # select_library_configurations() then links the release library in every configuration
+    find_library(${var}_LIBRARY_DEBUG ${name} PATHS "${VCPKG_TRIPLET_DIR}/debug/lib" NO_DEFAULT_PATH)
+    select_library_configurations(${var})
+    # Drop the single path an older configure cached under the same name
+    unset(${var} CACHE)
+    set(${var} ${${var}_LIBRARY} PARENT_SCOPE)
+  endfunction()
+
   find_path(INIH_INCLUDE_DIR "ini.h" REQUIRED)
-  find_library(INIH inih REQUIRED)
+  find_vcpkg_library(INIH inih)
   find_path(GETOPT_INCLUDE_DIR "getopt.h" REQUIRED)
-  find_library(GETOPT getopt REQUIRED)
-endif () 
+  find_vcpkg_library(GETOPT getopt)
+
+  # A static triplet's libraries are built against the static C runtime (/MT), so build ours the
+  # same way; the default /MD made the link search both MSVCRT and LIBCMT. A runtime given on the
+  # command line (-DCMAKE_MSVC_RUNTIME_LIBRARY=...) still wins
+  if (VCPKG_TARGET_TRIPLET MATCHES "-static$" AND NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  endif ()
+endif ()
 
 # Build configuration - Linux
 if (UNIX)
@@ -67,11 +96,6 @@ if (UNIX)
   set(CMAKE_SHARED_LINKER_FLAGS "--as-needed")
 endif ()
 
-# Build configuration - Windows
-if (WIN32)
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /FORCE:MULTIPLE") # Workaround for Nanosvg and SDL_image header conflicts
- endif ()
- 
  # Configure default applications - Linux
  if (UNIX)
   set(DESKTOP_PATH "/usr/share/applications")
@@ -182,24 +206,27 @@ endif ()
 
 # Installation - Windows
 if (WIN32)
-  set(INSTALL_DIR_BIN "./")
-  set(INSTALL_DIR_CONFIGFILE "./")
-  set(INSTALL_DIR_ASSETS "./")
+  set(INSTALL_DIR_BIN ".")
+  set(INSTALL_DIR_CONFIGFILE ".")
+  set(INSTALL_DIR_ASSETS ".")
 
   configure_file(${PROJECT_SOURCE_DIR}/CHANGELOG.md ${PROJECT_BINARY_DIR}/CHANGELOG.txt COPYONLY)
   install(FILES ${PROJECT_BINARY_DIR}/CHANGELOG.txt DESTINATION "${INSTALL_DIR_BIN}")
   configure_file(${PROJECT_SOURCE_DIR}/LICENSE ${PROJECT_BINARY_DIR}/LICENSE.txt COPYONLY)
   install(FILES ${PROJECT_BINARY_DIR}/LICENSE.txt DESTINATION "${INSTALL_DIR_BIN}")
   
-  # Copy the VC Runtime DLL in case user doesn't have it installed
-  set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
-  include(InstallRequiredSystemLibraries)
-  foreach(lib ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS})
-    string(FIND ${lib} "vcruntime140.dll" vcruntime)
-    if (NOT vcruntime EQUAL -1)
-      install(FILES ${lib} DESTINATION "./")
-    endif ()
-  endforeach()
+  # Copy the VC Runtime DLL in case user doesn't have it installed. An exe built with the static
+  # C runtime (/MT, a -static triplet) imports no VC Runtime DLL, so only a /MD build ships one
+  if (NOT CMAKE_MSVC_RUNTIME_LIBRARY OR CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "DLL")
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+    include(InstallRequiredSystemLibraries)
+    foreach(lib ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS})
+      string(FIND ${lib} "vcruntime140.dll" vcruntime)
+      if (NOT vcruntime EQUAL -1)
+        install(FILES ${lib} DESTINATION ".")
+      endif ()
+    endforeach()
+  endif ()
   
   # Set package
   if (NOT PACKAGE)

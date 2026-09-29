@@ -11,6 +11,8 @@
 #include <launcher_config.h>
 #include "util.h"
 #include "library.h"
+#include "fileio.h"
+#include "settings.h"
 #include "debug.h"
 #include "platform/platform.h"
 #include <ini.h>
@@ -21,6 +23,7 @@ static Menu *create_menu(const char *menu_name, size_t *num_menus);
 static bool gamepad_command_mapped(const char *cmd);
 static bool gamepad_control_mapped(const char *label);
 static void add_default_controls(const char *cmd, const char *const *labels, size_t count);
+static void store_background_setting(SettingId id, const SettingValue *value);
 
 extern Config          config;
 extern GamepadControl  *gamepad_controls;
@@ -32,7 +35,7 @@ static bool            columns_set = false; // Columns wins over its older name,
 static const char *mode_settings[][5] = {
     {"Color", "Image", "Slideshow", "Transparent", NULL}, // Background Mode
     {"Blank", "None", "Quit", NULL, NULL},                // OnLaunch
-    {"Truncated", "Shrink", "None", NULL, NULL},          // OversizeMode
+    {"Truncate", "Shrink", "None", NULL, NULL},           // OversizeMode ("Truncated" is read too)
     {"Left", "Right", NULL, NULL, NULL},                  // Clock Alignment
     {"24hr", "12hr", "Auto", NULL, NULL},                 // Clock Format
     {"Big", "Little", "Auto", NULL, NULL}                 // Date Format
@@ -97,10 +100,14 @@ void handle_arguments(int argc, char *argv[], char **config_file_path)
     if (*config_file_path == NULL) {
 #ifdef __unix__
         const char *prefixes[4];
+        char home[MAX_PATH_CHARS + 1];
         char home_config_buffer[MAX_PATH_CHARS + 1];
         prefixes[0] = CURRENT_DIRECTORY;
         prefixes[1] = config.exe_path;
-        prefixes[2] = join_paths(home_config_buffer, sizeof(home_config_buffer), 3, getenv("HOME"), ".config", EXECUTABLE_TITLE);
+        // With no home folder there is no ~/.config to look in; find_file skips a NULL prefix
+        prefixes[2] = home_directory(home, sizeof(home))
+                      ? join_paths(home_config_buffer, sizeof(home_config_buffer), 3, home, ".config", EXECUTABLE_TITLE)
+                      : NULL;
         prefixes[3] = PATH_CONFIG_SYSTEM;
         *config_file_path = find_file(FILENAME_DEFAULT_CONFIG, 4, prefixes);
 #else
@@ -119,14 +126,45 @@ void handle_arguments(int argc, char *argv[], char **config_file_path)
 // A function to parse the config file and store the settings into the config struct
 void parse_config_file(const char *config_file_path)
 {
-    FILE *file = fopen(config_file_path, "r");
+    FILE *file = fileio_open(config_file_path, "r");
     if (file == NULL)
-        log_fatal("Could not open config file");
+        log_fatal("Could not open config file %s: %s", config_file_path, fileio_last_error());
     int error = ini_parse_file(file, config_handler, NULL);
     fclose(file);
     
     if (error < 0)
         log_fatal("Could not parse config file");
+}
+
+// A function to store a [Background] setting read through the settings table
+static void store_background_setting(SettingId id, const SettingValue *value)
+{
+    switch (id) {
+        case SET_ID_BACKGROUND_MODE:
+            config.background_mode = (ModeBackground) value->number;
+            break;
+        case SET_ID_BACKGROUND_COLOR:
+            config.background_color.r = value->color.r;
+            config.background_color.g = value->color.g;
+            config.background_color.b = value->color.b;
+            break;
+        case SET_ID_BACKGROUND_IMAGE:
+            free(config.background_image);
+            config.background_image = strdup(value->text);
+            break;
+        case SET_ID_SLIDESHOW_DIRECTORY:
+            free(config.slideshow_directory);
+            config.slideshow_directory = strdup(value->text);
+            break;
+        case SET_ID_SLIDESHOW_DURATION:
+            config.slideshow_image_duration = (Uint32) value->number * 1000;
+            break;
+        case SET_ID_SLIDESHOW_FADE:
+            config.slideshow_transition_time = (Uint32) value->number;
+            break;
+        default:
+            break;
+    }
 }
 
 // A function to handle config file parsing
@@ -168,30 +206,30 @@ int config_handler(void *user, const char *section, const char *name, const char
     }
 
     else if (MATCH(section, "Layout")) {
-        int count;
+        SettingValue parsed;
         if (MATCH(name, SETTING_MAX_BUTTONS)) {
-            if (!layout_parse_count(value, &count))
+            if (!setting_parse(setting_def(SET_ID_LAYOUT_COLUMNS), value, &parsed))
                 log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_MAX_BUTTONS, value);
             else if (!columns_set)
-                config.max_buttons = (unsigned int) count;
+                config.max_buttons = (unsigned int) parsed.number;
         }
         else if (MATCH(name, SETTING_COLUMNS)) {
-            if (layout_parse_count(value, &count)) {
-                config.max_buttons = (unsigned int) count;
+            if (setting_parse(setting_def(SET_ID_LAYOUT_COLUMNS), value, &parsed)) {
+                config.max_buttons = (unsigned int) parsed.number;
                 columns_set = true;
             }
             else
                 log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_COLUMNS, value);
         }
         else if (MATCH(name, SETTING_ROWS)) {
-            if (layout_parse_count(value, &count))
-                config.rows = (unsigned int) count;
+            if (setting_parse(setting_def(SET_ID_LAYOUT_ROWS), value, &parsed))
+                config.rows = (unsigned int) parsed.number;
             else
                 log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_ROWS, value);
         }
         else if (MATCH(name, SETTING_ICON_SIZE)) {
-            if (layout_parse_icon_size(value, &count))
-                config.icon_size = (Uint16) count;
+            if (setting_parse(setting_def(SET_ID_LAYOUT_ICON_SIZE), value, &parsed))
+                config.icon_size = (Uint16) parsed.number;
             else
                 log_error("Invalid %s value '%s' in [Layout] (use a whole number from %i to %i), ignoring it",
                     SETTING_ICON_SIZE, value, MIN_ICON_SIZE, MAX_ICON_SIZE);
@@ -212,28 +250,25 @@ int config_handler(void *user, const char *section, const char *name, const char
     }
 
     else if (MATCH(section, "Background")) {
+        SettingId id = SET_ID_COUNT;
         if (MATCH(name, SETTING_BACKGROUND_MODE))
-            parse_mode_setting(MODE_SETTING_BACKGROUND, value, (int*) &config.background_mode);
+            id = SET_ID_BACKGROUND_MODE;
         else if (MATCH(name, SETTING_BACKGROUND_COLOR))
-            hex_to_color(value, &config.background_color);
-        else if (MATCH(name, SETTING_BACKGROUND_IMAGE)) {
-            config.background_image = strdup(value);
-            clean_path(config.background_image);
-        }
-        else if (MATCH(name, SETTING_SLIDESHOW_DIRECTORY)) {
-            config.slideshow_directory = strdup(value);
-            clean_path(config.slideshow_directory);
-        }
-        else if (MATCH(name, SETTING_SLIDESHOW_IMAGE_DURATION)) {
-            Uint32 slideshow_image_duration = ((Uint32) atoi(value))*1000;
-            if (slideshow_image_duration >= MIN_SLIDESHOW_IMAGE_DURATION && 
-            slideshow_image_duration <= MAX_SLIDESHOW_IMAGE_DURATION)
-                config.slideshow_image_duration = slideshow_image_duration;
-        }
-        else if (MATCH(name, SETTING_SLIDESHOW_TRANSITION_TIME)) {
-            Uint32 slideshow_transition_time = (Uint32) (atof(value)*1000.0f);
-            if (slideshow_transition_time <= MAX_SLIDESHOW_TRANSITION_TIME)
-                config.slideshow_transition_time = slideshow_transition_time;
+            id = SET_ID_BACKGROUND_COLOR;
+        else if (MATCH(name, SETTING_BACKGROUND_IMAGE))
+            id = SET_ID_BACKGROUND_IMAGE;
+        else if (MATCH(name, SETTING_SLIDESHOW_DIRECTORY))
+            id = SET_ID_SLIDESHOW_DIRECTORY;
+        else if (MATCH(name, SETTING_SLIDESHOW_IMAGE_DURATION))
+            id = SET_ID_SLIDESHOW_DURATION;
+        else if (MATCH(name, SETTING_SLIDESHOW_TRANSITION_TIME))
+            id = SET_ID_SLIDESHOW_FADE;
+        if (id != SET_ID_COUNT) {
+            SettingValue parsed;
+            if (setting_parse(setting_def(id), value, &parsed))
+                store_background_setting(id, &parsed);
+            else
+                log_error("Invalid %s value '%s' in [Background], ignoring it", name, value);
         }
         else if (MATCH(name, SETTING_CHROMA_KEY_COLOR))
             hex_to_color(value, &config.chroma_key_color);
@@ -254,8 +289,18 @@ int config_handler(void *user, const char *section, const char *name, const char
             config.title_font_path = strdup(value);
             clean_path(config.title_font_path);
         }
-        else if (MATCH(name, SETTING_TITLE_FONT_SIZE))
-            config.title_font_size = (unsigned int) atoi(value);
+        else if (MATCH(name, SETTING_TITLE_FONT_SIZE)) {
+            SettingValue parsed;
+            if (!setting_parse(setting_def(SET_ID_TITLE_SIZE), value, &parsed))
+                log_error("Invalid %s value '%s' in [Titles] (use a percentage of the button such as 14%%, or a size such as 36), ignoring it",
+                    SETTING_TITLE_FONT_SIZE, value);
+            else if (parsed.percent)
+                config.title_font_size_pct = parsed.number;
+            else {
+                config.title_font_size = (unsigned int) parsed.number;
+                config.title_font_size_pct = 0;
+            }
+        }
         else if (MATCH(name, SETTING_TITLE_FONT_COLOR))
             hex_to_color(value, &config.title_font_color);
         else if (MATCH(name, SETTING_TITLE_OPACITY)) {
@@ -266,12 +311,27 @@ int config_handler(void *user, const char *section, const char *name, const char
             convert_bool(value, &config.title_shadows);
         else if (MATCH(name, SETTING_TITLE_SHADOW_COLOR))
             hex_to_color(value, &config.title_shadow_color);
-        else if (MATCH(name, SETTING_TITLE_OVERSIZE_MODE))
-            parse_mode_setting(MODE_SETTING_OVERSIZE, value, (int*) &config.title_oversize_mode);
+        else if (MATCH(name, SETTING_TITLE_OVERSIZE_MODE)) {
+            // "Truncated" was the only spelling the parser knew; the docs have always said "Truncate"
+            if (MATCH(value, "Truncated"))
+                config.title_oversize_mode = OVERSIZE_TRUNCATE;
+            else
+                parse_mode_setting(MODE_SETTING_OVERSIZE, value, (int*) &config.title_oversize_mode);
+        }
         else if (MATCH(name, SETTING_TITLE_PADDING)) {
-            int title_padding = atoi(value);
-            if (title_padding >= 0)
-                config.title_padding = title_padding;
+            int padding;
+            bool percent;
+            if (!layout_parse_title_padding(value, &padding, &percent))
+                log_error("Invalid %s value '%s' in [Titles] (use a percentage of the button such as 8%%, or px such as 20), ignoring it",
+                    SETTING_TITLE_PADDING, value);
+            else if (percent) {
+                config.title_padding_pct = padding;
+                config.title_padding = 0;
+            }
+            else {
+                config.title_padding = padding;
+                config.title_padding_pct = 0;
+            }
         }
     }
 
@@ -391,9 +451,10 @@ int config_handler(void *user, const char *section, const char *name, const char
     }
     
     else if (MATCH(section, "Hotkeys")) {
-        char *keycode = strtok((char*) value, ";");
+        char *rest = NULL;
+        char *keycode = strtok_r((char*) value, ";", &rest);
         if (keycode != NULL) {
-            char *cmd = strtok(NULL, "");
+            char *cmd = strtok_r(NULL, "", &rest);
             if (cmd != NULL)
                 add_hotkey(keycode, cmd);
         }
@@ -418,26 +479,28 @@ int config_handler(void *user, const char *section, const char *name, const char
     else {
         Entry *previous_entry = NULL;
 
-        // Check if menu struct exists for current section
-        if (config.first_menu == NULL) {
-            config.first_menu = create_menu(section, &config.num_menus);
-            menu = config.first_menu;
+        // Point the menu and entry cursors at this section's menu, adding it to the end of the list
+        // when it is new. A section can appear twice with another menu between, so the cursors move
+        // back to it, and to its last entry, rather than staying on the last menu read.
+        Menu *section_menu = NULL;
+        Menu *last_menu = NULL;
+        for (Menu *tmp = config.first_menu; tmp != NULL; tmp = tmp->next) {
+            if (section_menu == NULL && MATCH(tmp->name, section))
+                section_menu = tmp;
+            last_menu = tmp;
         }
-        else {
-            bool menu_exists = false;
-            for (Menu *tmp = config.first_menu; tmp != NULL;
-            tmp = tmp->next) {
-                if (MATCH(tmp->name,section)) {
-                    menu_exists = true;
-                    break;
-                }
-            }
-
-        // Create menu if it doesn't already exist
-            if (menu_exists == false) {
-                menu->next = create_menu(section, &config.num_menus);
-                menu = menu->next;
-            }
+        if (section_menu == NULL) {
+            section_menu = create_menu(section, &config.num_menus);
+            if (last_menu == NULL)
+                config.first_menu = section_menu;
+            else
+                last_menu->next = section_menu;
+        }
+        if (section_menu != menu) {
+            menu = section_menu;
+            entry = menu->first_entry;
+            while (entry != NULL && entry->next != NULL)
+                entry = entry->next;
         }
 
         // Per-menu layout settings. They count only when the value is a number, so an
@@ -445,17 +508,17 @@ int config_handler(void *user, const char *section, const char *name, const char
         bool layout_key = MATCH(name, SETTING_ROWS) || MATCH(name, SETTING_COLUMNS) ||
                           MATCH(name, SETTING_ICON_SIZE);
         if (layout_key && strchr(value, ';') == NULL) {
-            int count = 0;
-            bool valid = MATCH(name, SETTING_ICON_SIZE) ? layout_parse_icon_size(value, &count)
-                                                        : layout_parse_count(value, &count);
-            if (!valid)
+            SettingId id = MATCH(name, SETTING_ROWS) ? SET_ID_MENU_ROWS
+                         : MATCH(name, SETTING_COLUMNS) ? SET_ID_MENU_COLUMNS : SET_ID_MENU_ICON_SIZE;
+            SettingValue parsed;
+            if (!setting_parse(setting_def(id), value, &parsed))
                 log_error("Invalid %s value '%s' in menu '%s', ignoring it", name, value, section);
-            else if (MATCH(name, SETTING_ROWS))
-                menu->overrides.rows = count;
-            else if (MATCH(name, SETTING_COLUMNS))
-                menu->overrides.columns = count;
+            else if (id == SET_ID_MENU_ROWS)
+                menu->overrides.rows = parsed.number;
+            else if (id == SET_ID_MENU_COLUMNS)
+                menu->overrides.columns = parsed.number;
             else
-                menu->overrides.icon_cap = count;
+                menu->overrides.icon_cap = parsed.number;
             return 0;
         }
         if (layout_key)
@@ -465,26 +528,29 @@ int config_handler(void *user, const char *section, const char *name, const char
         char *string = (char*) value;
         char *token;
         char *delimiter = ";";
-        token = strtok(string, delimiter);
-        if (token != NULL) {
-
-            // Create first entry in the menu if none exists
-            if (menu->first_entry == NULL) {
-                menu->first_entry = calloc(1, sizeof(Entry));
-                entry = menu->first_entry;
-                entry->next = NULL;
-            }
-
-            // Add entry to the end of the linked list
-            else {
-                previous_entry = entry;
-                entry = entry->next;
-                entry = calloc(1, sizeof(Entry));
-                previous_entry->next = entry;
-                entry->next = NULL;
-            }
-            entry->title_offset = 0;
+        char *rest = NULL;
+        token = strtok_r(string, delimiter, &rest);
+        if (token == NULL) {
+            log_error("Menu '%s': '%s' is empty, ignoring it", section, name);
+            return 0;
         }
+
+        // Create first entry in the menu if none exists
+        if (menu->first_entry == NULL) {
+            menu->first_entry = calloc(1, sizeof(Entry));
+            entry = menu->first_entry;
+            entry->next = NULL;
+        }
+
+        // Add entry to the end of the linked list
+        else {
+            previous_entry = entry;
+            entry = entry->next;
+            entry = calloc(1, sizeof(Entry));
+            previous_entry->next = entry;
+            entry->next = NULL;
+        }
+        entry->title_offset = 0;
 
         // Store data in entry struct
         int i;
@@ -499,11 +565,19 @@ int config_handler(void *user, const char *section, const char *name, const char
             else if (i == 2)
                 entry->cmd = strdup(token);
 
-            token = strtok(NULL, delimiter);
+            token = strtok_r(NULL, delimiter, &rest);
         }
 
-        // Delete entry if parse failed to find 3 valid tokens
+        // Delete entry if parse failed to find 3 valid tokens, or its command is :select
         if (i != 3 || MATCH(":select", entry->cmd)) {
+            if (i != 3)
+                log_error("Menu '%s': '%s' needs a title, an icon and a command, ignoring it", section, name);
+            else
+                log_error("Menu '%s': '%s' uses :select, which only a hotkey or gamepad button can, ignoring it",
+                    section, name);
+            free(entry->title);
+            free(entry->icon_path);
+            free(entry->cmd);
             if (menu->num_entries == 0) {
                 free(menu->first_entry);
                 menu->first_entry = NULL;
@@ -572,8 +646,8 @@ char *selected_path(const char *path)
     size_t length = strlen(path);
     char *out = NULL;
 
-    // Find file extension
-    if (length + LEN(SELECTED_SUFFIX) + 1 > sizeof(buffer))
+    // Find file extension; an empty path has none, and the search below would start before it
+    if (length == 0 || length + LEN(SELECTED_SUFFIX) + 1 > sizeof(buffer))
         return out;
     char *p = (char*) path + length - 1;
     while (*p != '.' && p > path)
@@ -581,11 +655,8 @@ char *selected_path(const char *path)
     if (p == path)
         return out;
 
-    // Assemble path with suffix
-    strcpy(buffer, path);
-    buffer[p - path] = '\0';
-    strcat(buffer, SELECTED_SUFFIX);
-    strcat(buffer, p);
+    // Assemble path with suffix; the length test above makes room for all of it
+    snprintf(buffer, sizeof(buffer), "%.*s%s%s", (int) (p - path), path, SELECTED_SUFFIX, p);
 
     if (file_exists(buffer))
         out = strdup(buffer);
@@ -629,48 +700,38 @@ bool convert_bool(const char *string, bool *setting)
 // A function to copy a string into an existing buffer
 void copy_string(char *dest, const char *string, size_t size)
 {
-    strncpy(dest, string, size);
-    dest[size - 1] = '\0';
+    // As much as fits, and zeros to the end of the buffer, as strncpy() left it
+    size_t length = strnlen(string, size - 1);
+    memcpy(dest, string, length);
+    memset(dest + length, '\0', size - length);
 }
 
 // A function to join paths together
 char *join_paths(char *buffer, size_t bytes, int num_paths, ...)
 {
     va_list list;
-    char *arg;
+    const char *arg;
     size_t length;
+    size_t used = 0;
     va_start(list, num_paths);
 
-    // Add each subdirectory to path
-    for (int i = 0; i < num_paths && bytes > 1; i++) {
+    // Add each subdirectory to path, as much of it as fits
+    for (int i = 0; i < num_paths && used + 1 < bytes; i++) {
         arg = va_arg(list, char*);
-        length = strlen(arg);
-        if (length > bytes - 1)
-            length = bytes - 1;
-        if (i == 0) {
-            copy_string(buffer, arg, bytes);
-            bytes -= length;
-            if (bytes == 1)
-                break;
-        }
-        else {
 
-            // Don't copy preceding slash if present
-            if (*arg == '/' || *arg == '\\') {
-                strncat(buffer, arg + 1, bytes - 1);
-                bytes -= (length - 1);
-            }
-            else {
-                strncat(buffer, arg, bytes - 1);
-                bytes -= length;
-            }
-        }
+        // Don't copy preceding slash if present
+        if (i != 0 && (*arg == '/' || *arg == '\\'))
+            arg++;
+        length = strnlen(arg, bytes - 1 - used);
+        memcpy(buffer + used, arg, length);
+        used += length;
+        buffer[used] = '\0';
 
         // Add trailing slash if not present, except last argument
-        if ((i != num_paths - 1) && bytes > 1 && *(buffer + strlen(buffer) - 1) != '/' &&
-        *(buffer + strlen(buffer) - 1) != '\\') {
-            strncat(buffer, PATH_SEPARATOR, bytes - 1);
-            bytes -= 1;
+        if (i != num_paths - 1 && used + 1 < bytes &&
+        (used == 0 || (buffer[used - 1] != '/' && buffer[used - 1] != '\\'))) {
+            buffer[used++] = PATH_SEPARATOR[0];
+            buffer[used] = '\0';
         }
     }
     va_end(list);
@@ -879,14 +940,17 @@ static void add_default_controls(const char *cmd, const char *const *labels, siz
     }
 }
 
-// A function to give Up and Down default gamepad controls. Configs written before grids
-// existed map nothing to :up or :down, and a grid is unusable without them.
+// A function to give Up, Down and :settings default gamepad controls. Configs written before
+// grids existed map nothing to :up or :down, and a grid is unusable without them; and any config
+// written before the settings screen needs a way to open it.
 void add_default_gamepad_controls()
 {
     static const char *const up[] = { SETTING_GAMEPAD_BUTTON_DPAD_UP, SETTING_GAMEPAD_LSTICK_YM };
     static const char *const down[] = { SETTING_GAMEPAD_BUTTON_DPAD_DOWN, SETTING_GAMEPAD_LSTICK_YP };
+    static const char *const settings[] = { SETTING_GAMEPAD_BUTTON_START };
     add_default_controls(SCMD_UP, up, sizeof(up) / sizeof(up[0]));
     add_default_controls(SCMD_DOWN, down, sizeof(down) / sizeof(down[0]));
+    add_default_controls(SCMD_SETTINGS, settings, sizeof(settings) / sizeof(settings[0]));
 }
 
 // A function to convert a string percent setting to an int value
@@ -904,8 +968,10 @@ void convert_percent_to_int(char *string, int *result, int max_value)
 // A function to make sure all settings are in their correct range
 void validate_settings(Geometry *geo)
 {
-    if (!config.titles_enabled)
+    if (!config.titles_enabled) {
         config.title_padding = 0;
+        config.title_padding_pct = 0;
+    }
 
     // Convert % opacity settings to 0-255
     if (config.title_opacity[0] != '\0') {
@@ -982,18 +1048,6 @@ void validate_settings(Geometry *geo)
     if (config.highlight_hpadding > (config.icon_spacing / 2))
         config.highlight_hpadding = config.icon_spacing / 2;
 
-    // Make sure title padding is in valid range. IconSize is an optional cap now, so the range
-    // is measured against it when set, and against the old fixed default when not.
-    int reference_size = config.icon_size ? (int) config.icon_size : DEFAULT_ICON_SIZE;
-    if (config.title_padding < 0 || config.title_padding > reference_size / 2) {
-        int title_padding = reference_size / 10;
-        log_error("Text padding value %i invalid, changing to %i",
-            config.title_padding, 
-            title_padding
-        );
-        config.title_padding = title_padding;
-    }
-
     // Convert the vertical centre setting to px and check its limits
     int vcenter = INVALID_PERCENT_VALUE;
     float f_screen_height = (float) geo->screen_height;
@@ -1030,9 +1084,9 @@ void validate_settings(Geometry *geo)
 // A function to retreive menu struct from the linked list via the menu name
 Menu *get_menu(const char *menu_name)
 {
-    for (Menu *menu = config.first_menu; menu != NULL; menu = menu->next) {
-        if (MATCH(menu_name, menu->name))
-            return menu;
+    for (Menu *m = config.first_menu; m != NULL; m = m->next) {
+        if (MATCH(menu_name, m->name))
+            return m;
     }
     log_error("Menu '%s' not found in config file", menu_name);
     return NULL;
@@ -1041,8 +1095,8 @@ Menu *get_menu(const char *menu_name)
 // A function to allocate memory to and initialize a menu struct
 Menu *create_menu(const char *menu_name, size_t *num_menus)
 {
-    Menu *menu = malloc(sizeof(Menu));
-    *menu = (Menu) {
+    Menu *new_menu = malloc(sizeof(Menu));
+    *new_menu = (Menu) {
         .first_entry = NULL,
         .items = NULL,
         .next = NULL,
@@ -1052,10 +1106,10 @@ Menu *create_menu(const char *menu_name, size_t *num_menus)
         .position = { 0, 0 },
         .rendered_size = 0
     };
-    menu->name = strdup(menu_name);
+    new_menu->name = strdup(menu_name);
     (*num_menus)++;
 
-    return menu;
+    return new_menu;
 }
 
 // A function to give every menu an array of its entries by index, for the layout maths

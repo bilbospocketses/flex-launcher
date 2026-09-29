@@ -8,6 +8,7 @@
 #include <launcher_config.h>
 #include "util.h"
 #include "debug.h"
+#include "fileio.h"
 #include "platform/platform.h"
 #ifdef __unix__
 #include "platform/unix.h"
@@ -24,16 +25,27 @@ static int init_log()
     // Determine log path
     char log_file_path[MAX_PATH_CHARS + 1];
 #ifdef __unix__
+    char home[MAX_PATH_CHARS + 1];
     char log_file_directory[MAX_PATH_CHARS + 1];
-    join_paths(log_file_directory, sizeof(log_file_directory), 4, getenv("HOME"), ".local", "share", EXECUTABLE_TITLE);
-    make_directory(log_file_directory);
-    join_paths(log_file_path, sizeof(log_file_path), 2, log_file_directory, FILENAME_LOG);
+    if (home_directory(home, sizeof(home))) {
+        join_paths(log_file_directory, sizeof(log_file_directory), 4, home, ".local", "share", EXECUTABLE_TITLE);
+        make_directory(log_file_directory);
+        join_paths(log_file_path, sizeof(log_file_path), 2, log_file_directory, FILENAME_LOG);
+    }
+    else {
+        // No home folder to keep a log file in, as for a service run under a user id with no
+        // account: the log goes to stderr, which a service manager keeps
+        log_file = stderr;
+        fputs("No home folder: HOME is not set and the user database gives no usable home for this user, "
+              "so the log goes to stderr\n", stderr);
+    }
 #else
     join_paths(log_file_path, sizeof(log_file_path), 2, config.exe_path, FILENAME_LOG);
 #endif
 
     // Open log
-    log_file = fopen(log_file_path, "wb");
+    if (log_file == NULL)
+        log_file = fileio_open(log_file_path, "wb");
     if (log_file == NULL) {
 #ifdef __unix__
         printf("Failed to create log file");
@@ -46,7 +58,7 @@ print_compiler_info(log_file);
 fputs("\n", log_file);
 #ifdef __unix__
     if (config.debug)
-        printf("Debug mode enabled\nLog is outputted to %s\n", log_file_path);
+        printf("Debug mode enabled\nLog is outputted to %s\n", log_file != stderr ? log_file_path : "stderr");
 #endif
     return 0;
 }
@@ -66,13 +78,21 @@ void output_log(LogLevel log_level, const char *format, ...)
     static char buffer[MAX_LOG_LINE_BYTES];
     va_list args;
     va_start(args, format);
-    size_t length = (size_t) vsnprintf(buffer, MAX_LOG_LINE_BYTES - 1, format, args);
+    int wanted = vsnprintf(buffer, sizeof(buffer), format, args);
+    size_t length = wanted > 0 ? (size_t) wanted : 0;
+
+    // vsnprintf returns the length the whole line needs: a longer line is cut to the buffer, and
+    // still ends its line
+    if (length >= sizeof(buffer)) {
+        length = sizeof(buffer) - 1;
+        memcpy(buffer + length - strlen(endline), endline, strlen(endline));
+    }
     fwrite(buffer, 1, length, log_file);
     if (config.debug)
         fflush(log_file);
     
 #ifdef __unix__
-    if (log_level > LOGLEVEL_DEBUG)
+    if (log_level > LOGLEVEL_DEBUG && log_file != stderr)
         fputs(buffer, stderr);
 #endif
     va_end(args);
@@ -91,6 +111,12 @@ void print_compiler_info(FILE *stream)
     fprintf(stream, "Compiler:   Microsoft C/C++ %.2f\n", (float) _MSC_VER / 100.0f);
 #endif
 
+}
+
+// A function to show a string setting, or (null) when it is unset
+const char *debug_string(const char *value)
+{
+    return value != NULL ? value : "(null)";
 }
 
 // A function to print the parsed settings to the log
@@ -135,12 +161,21 @@ void debug_settings()
     log_debug("======================== Titles ========================\n");
     DEBUG_BOOL(SETTING_TITLES_ENABLED, config.titles_enabled);
     DEBUG_STR(SETTING_TITLE_FONT, config.title_font_path);
-    DEBUG_INT(SETTING_TITLE_FONT_SIZE, config.title_font_size);
+    char title_value[40];
+    if (config.title_font_size_pct)
+        snprintf(title_value, sizeof(title_value), "%i%% of the button", config.title_font_size_pct);
+    else
+        snprintf(title_value, sizeof(title_value), "%u", config.title_font_size);
+    DEBUG_STR(SETTING_TITLE_FONT_SIZE, title_value);
     DEBUG_COLOR(SETTING_TITLE_FONT_COLOR, config.title_font_color);
     DEBUG_BOOL(SETTING_TITLE_SHADOWS, config.title_shadows);
     DEBUG_COLOR(SETTING_TITLE_SHADOW_COLOR, config.title_shadow_color);
     DEBUG_MODE(SETTING_TITLE_OVERSIZE_MODE, MODE_SETTING_OVERSIZE, config.title_oversize_mode);
-    DEBUG_INT(SETTING_TITLE_PADDING, config.title_padding);
+    if (config.title_padding_pct)
+        snprintf(title_value, sizeof(title_value), "%i%% of the button", config.title_padding_pct);
+    else
+        snprintf(title_value, sizeof(title_value), "%i", config.title_padding);
+    DEBUG_STR(SETTING_TITLE_PADDING, title_value);
     log_debug("");
 
     log_debug("====================== Highlight =======================\n");
@@ -204,7 +239,9 @@ void debug_menu_entries(Menu *first_menu, size_t num_menus)
         if (compute_menu_layout(menu, &geometry, why, sizeof(why)))
             log_debug("Layout: cannot be shown: %s", why);
         else {
-            log_debug("Layout: %i x %i grid, %i px buttons", geometry.columns, geometry.rows, geometry.button);
+            char titles[32];
+            describe_titles(&geometry, titles, sizeof(titles));
+            log_debug("Layout: %i x %i grid, %i px buttons, %s", geometry.columns, geometry.rows, geometry.button, titles);
             if (why[0] != '\0')
                 log_debug("Layout note: %s", why);
         }

@@ -67,8 +67,10 @@ jobs:
         with:
           committish: ${{env.VCPKG_COMMITTISH}}
 
+      # EXTRA_WARNINGS is /W4 /WX, so a new MSVC warning fails the build. It reaches only our own
+      # targets: vcpkg builds its ports in a process of its own, with the triplet's flags
       - name: Configure
-        run: cmake -B build -G "${{env.CMAKE_GENERATOR}}" -D "CMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{env.VCPKG_TRIPLET}}
+        run: cmake -B build -G "${{env.CMAKE_GENERATOR}}" -D "CMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{env.VCPKG_TRIPLET}} -DEXTRA_WARNINGS=ON
 
       - name: Build
         run: cmake --build build --target package --config ${{ env.CMAKE_BUILD_TYPE }}
@@ -262,12 +264,78 @@ jobs:
           .venv/bin/python -m unittest discover -s branding/library -p "test_*.py" -v
           .venv/bin/python branding/library/check-library.py
 
-  # Single required status check for the master branch ruleset. It passes only
-  # when every platform build and the icon library check succeeded; `if: always()`
+  # What only a running launcher shows: the settings screen, key handling and startup paths,
+  # driven by key presses under a virtual display (tests/headless). It runs in its own container
+  # because the harness turns off address randomization for ASan (setarch -R), which Docker's
+  # default seccomp profile refuses. One leg per image: Debian, and Fedora, whose SDL2 is
+  # sdl2-compat (SDL2's API over SDL3) rather than SDL2 itself. One run.sh serves both; what
+  # differs between them is detected, not named. A failed leg fails this job, and with it
+  # build-and-test; fail-fast is off so the other leg still reports.
+  headless:
+    name: Headless (${{ matrix.distro }})
+    runs-on: ubuntu-24.04
+    # A backstop for a hang the harness helpers' own timeouts miss (GitHub's default is 6 hours)
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: Debian
+            dockerfile: Dockerfile
+            image: streamflex-test-debian
+          - distro: Fedora
+            dockerfile: Dockerfile.fedora
+            image: streamflex-test-fedora
+    env:
+      DOCKERFILE: ${{ matrix.dockerfile }}
+      IMAGE: ${{ matrix.image }}
+    steps:
+      - name: Checkout Git repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the test image
+        id: build_image
+        run: docker build -t "$IMAGE" -f "tests/headless/$DOCKERFILE" tests/headless
+
+      # Both passes run even when the first fails, so one run shows every failure; the step then
+      # fails if either did
+      - name: Run the headless checks
+        run: |
+          mkdir -p "$RUNNER_TEMP/headless"
+          status=0
+          docker run --rm --security-opt seccomp=unconfined \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/headless:/out" \
+            "$IMAGE" bash /src/tests/headless/run.sh ci || status=1
+          docker run --rm --security-opt seccomp=unconfined \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/headless:/out" \
+            "$IMAGE" bash /src/tests/headless/run.sh ci-scrollfail scrollfail || status=1
+          exit $status
+
+      # Every check again, with LeakSanitizer on. It runs even when the step before it failed, so
+      # a leak is reported beside any other failure, but not without an image to run in
+      - name: Look for memory leaks
+        if: (success() || failure()) && steps.build_image.outcome == 'success'
+        run: |
+          mkdir -p "$RUNNER_TEMP/headless"
+          docker run --rm --security-opt seccomp=unconfined \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/headless:/out" \
+            "$IMAGE" bash /src/tests/headless/run.sh ci-leaks leaks
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        name: Upload the logs of a failed run
+        if: failure()
+        with:
+          name: Headless (${{ matrix.distro }}) logs
+          path: ${{ runner.temp }}/headless
+
+  # Single required status check for the master branch ruleset. It passes only when every
+  # platform build, the icon library check and both headless legs succeeded; `if: always()`
   # makes it report a failure (rather than being skipped) when a job fails or is cancelled.
   build-and-test:
     runs-on: ubuntu-24.04
-    needs: [build_windows, build_linux, build_rpi, build_arch, library_check]
+    needs: [build_windows, build_linux, build_rpi, build_arch, library_check, headless]
     if: always()
     steps:
       - name: Check platform builds
@@ -277,7 +345,7 @@ jobs:
           echo "Build results: $RESULTS"
           for r in $RESULTS; do
             if [ "$r" != "success" ]; then
-              echo "::error::A platform build did not succeed ($r)"
+              echo "::error::A required job did not succeed ($r)"
               exit 1
             fi
           done

@@ -178,17 +178,17 @@ The user chose the full scope ("all settings, plus editing menus"); the split on
 ### Saving
 
 1. **Read fresh.** The file is read again from disk at save time, and only the changed keys are applied to that text. A hand edit made while the launcher ran (over SSH, say) therefore survives, unless it touched the same key.
-2. **Backup.** The current file is copied to `config.ini.bak`, replacing any earlier backup.
+2. **Backup.** The current file is copied to `config.ini.bak.tmp` and moved over `config.ini.bak` the same way the file itself is replaced (step 4), so an earlier backup survives until the new one is ready, and a hidden backup does not block the save. A path too long for the backup's name fails the save with "the path is too long".
 3. **Write.** The new text goes into `config.ini.tmp` in the same folder, and is flushed to the disk before the file is closed.
 4. **Replace.**
    - **Linux:** `rename()`. The new file takes the old one's permission bits. When `config.ini` is a symbolic link, the file it points to is the one written, and the link stays.
-   - **Windows:** `MoveFileExW()` with `MOVEFILE_REPLACE_EXISTING` and `MOVEFILE_WRITE_THROUGH`, retried for about a second when the file is held open, as antivirus scanners do.
+   - **Windows:** `MoveFileExW()` with `MOVEFILE_REPLACE_EXISTING` and `MOVEFILE_WRITE_THROUGH`, retried for about a second when the file is held open, as antivirus scanners do. The file keeps its hidden and system attributes.
 5. On any failure, the temporary file is removed and the screen shows the failure (see **Saving, discarding and failures**).
 
 ### Where it writes
 
 - **Normally:** to the file the launcher loaded, including one given with `-c`.
-- **Linux, when the loaded file is the packaged system copy** (under `PATH_CONFIG_SYSTEM`) and cannot be written: the first save writes `~/.config/streamflex/config.ini`, creating the folder, starting from the loaded file's text. The launcher already searches that folder before the system copy.
+- **Linux, when the loaded file is the packaged system copy** (under `PATH_CONFIG_SYSTEM`) and cannot be written: the first save writes `~/.config/streamflex/config.ini`, creating the folder, starting from the loaded file's text. When that file already exists (a second save in the same session, or one the user made meanwhile), the save reads it fresh and applies the changes to it instead. The launcher already searches that folder before the system copy.
 - **Otherwise, when the file cannot be written**, the save fails with its reason. This includes a file in the working folder or beside the executable (either would still shadow `~/.config` on the next start), and on Windows a copy in a protected folder such as Program Files.
 
 ### UTF-8 paths on Windows

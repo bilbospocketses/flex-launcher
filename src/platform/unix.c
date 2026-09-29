@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <pwd.h>
 #include <stdbool.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -12,13 +13,13 @@
 #include "unix.h"
 #include "../util.h"
 #include "../debug.h"
+#include "../fileio.h"
+#include "../browser.h"
 #include "platform.h"
-#include "slideshow.h"
 
 static int desktop_handler(void *user, const char *section, const char *name, const char *value);
 static void strip_field_codes(char *cmd);
 static bool ends_with(const char *string, const char *phrase);
-static int image_filter(const struct dirent *file);
 
 // A function to handle .desktop lines
 static int desktop_handler(void *user, const char *section, const char *name, const char *value)
@@ -77,6 +78,26 @@ void make_directory(const char *directory)
         }
     }
     mkdir(buffer, S_IRWXU);
+}
+
+// A function to find the user's home folder: HOME, else the user database's entry, as a login shell does
+bool home_directory(char *buffer, size_t size)
+{
+    const char *home = getenv("HOME");
+    char entry_text[4096];
+    struct passwd entry;
+    struct passwd *found = NULL;
+
+    // An empty HOME names no folder any more than a missing one does
+    if (home == NULL || home[0] == '\0') {
+        home = NULL;
+        if (getpwuid_r(getuid(), &entry, entry_text, sizeof(entry_text), &found) == 0 && found != NULL)
+            home = found->pw_dir;
+    }
+    if (home == NULL || home[0] == '\0')
+        return false;
+    int written = snprintf(buffer, size, "%s", home);
+    return written > 0 && (size_t) written < size;
 }
 
 // A function to determine if a string ends with a phrase
@@ -167,42 +188,44 @@ bool start_process(char *cmd, bool application)
     return true;
 }
 
-// A function to determine if a file is an image file
-int image_filter(const struct dirent *file)
-{
-    size_t len_file = strlen(file->d_name);
-    size_t len_extension;
-    for (size_t i = 0; i < NUM_IMAGE_EXTENSIONS; i++) {
-        len_extension = strlen(extensions[i]);
-        if (len_file > len_extension && 
-        !strcmp(file->d_name + len_file - len_extension, extensions[i]))
-            return 1;
-    }
-    return 0;
-}
-
-// A function to scan a directory for images
+// A function to scan the slideshow directory for image files, by the rule the settings' folder
+// browser uses (browser_is_image_file): any case of extension, hidden files left out. It lists the
+// folder as the browser does (fileio_list), so a link onto a network mount is never followed, and
+// an entry the file system gives no kind for costs at most one lookup of the entry itself.
 void scan_slideshow_directory(Slideshow *slideshow, const char *directory)
 {
-    struct dirent **files;
-    slideshow->num_images = scandir(directory, &files, image_filter, NULL);
-    slideshow->images = malloc((size_t) slideshow->num_images * sizeof(char*));
+    FileioEntry *entries = NULL;
+    int count = fileio_list(directory, &entries);
     char file_path[MAX_PATH_CHARS + 1];
-    for (int i = 0; i < slideshow->num_images; i++) {
-        join_paths(file_path, sizeof(file_path), 2, directory, files[i]->d_name);
-        slideshow->images[i] = strdup(file_path);
-        free(files[i]);
+    for (int i = 0; i < count; i++) {
+        if (!browser_is_image_file(&entries[i]))
+            continue;
+        join_paths(file_path, sizeof(file_path), 2, directory, entries[i].name);
+        char **grown = realloc(slideshow->images, (size_t) (slideshow->num_images + 1) * sizeof(char*));
+        if (grown == NULL)
+            break;
+        slideshow->images = grown;
+        slideshow->images[slideshow->num_images] = strdup(file_path);
+        slideshow->num_images++;
     }
-    free(files);
+    fileio_free_list(entries, count);
 }
 
+// A function to get the 2 letter region code from LANG ("en_US.UTF-8" gives "US"). It cuts up a
+// copy: strtok() on getenv()'s own string would cut the environment's LANG short for everything
+// launched afterwards, and with LANG unset would go on from another caller's string.
 void get_region(char *buffer)
 {
-    char *lang = getenv("LANG");
-    char *token = strtok(lang, "_");
+    const char *lang = getenv("LANG");
+    if (lang == NULL)
+        return;
+    char copy[64];
+    snprintf(copy, sizeof(copy), "%s", lang);
+    char *rest = NULL;
+    char *token = strtok_r(copy, "_", &rest);
     if (token == NULL)
         return;
-    token = strtok(NULL, ".");
+    token = strtok_r(NULL, ".", &rest);
     if (token != NULL && strlen(token) == 2)
         copy_string(buffer, token, 3);
 }

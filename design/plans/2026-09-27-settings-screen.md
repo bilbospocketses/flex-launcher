@@ -27,7 +27,7 @@ Each of these was a wrong or loose assumption about the code. The plan follows t
 
 1. **The title padding key is `[Titles] Padding`, not `TitlePadding`** (`SETTING_TITLE_PADDING` is `"Padding"`). Wherever the spec says `TitlePadding`, read `Padding`.
 2. **inih reads at most 199 bytes of a line.** It reads into a 200-byte buffer (`INI_MAX_LINE`), and splits a longer line in two. So "values it refuses" includes any line longer than 199 bytes (`INIDOC_MAX_LINE`). A deep path can hit that limit: the browser shows such a path and says why it cannot be chosen.
-3. **inih treats an indented line after a key as the key's continuation** (`INI_ALLOW_MULTILINE`), not as a new key. `inidoc` follows suit: it leaves continuation lines as they are, and never places a new key between a key and its continuation.
+3. **inih treats an indented line after a key as the key's continuation** (`INI_ALLOW_MULTILINE`), not as a new key, and keeps doing so across blank, comment and unreadable lines until the next key or section header. Each continuation is another handler call, so the last one is the value the launcher keeps. `inidoc` follows suit: changing a key replaces its continuation lines along with its value, removing a key removes them too, and a new key is never placed where it would gain a continuation (such an insert is refused, leaving the file unchanged). *(Amended during Task 3's review: the plan first said continuation lines were left as they are, which let an edit read back correctly while the launcher read something else.)*
 4. **`OversizeMode=Truncate` has never parsed.**
    - The parser's name is `Truncated` (`mode_settings` in `src/util.c`), while the docs and the spec say `Truncate`.
    - The sample config ships `OversizeMode=Shrink`, which gives one menu several title sizes. That is exactly what the approved title rule ("every title in a menu is the same size") replaces.
@@ -43,6 +43,7 @@ Each of these was a wrong or loose assumption about the code. The plan follows t
 12. **Grid summaries read columns × rows** (`6 × 3`), matching the launcher's log (`6 x 3 grid`), not the mockup's `3 × 6`.
 13. **The preview keeps the screen's own shape,** not a fixed 16:9. The preview is the whole screen scaled down, so a 16:10 or ultra-wide display would be distorted if it were forced into 16:9. On a 16:9 screen the two are the same.
 14. **The caption says "(reduced to fit the screen)"** when `layout_compute()` shrank a grid, instead of naming the new column count. The grid it shows is already the reduced one (`9 × 3`), so the count would say the same thing twice.
+15. **A menu's own page has a fourth row, a note** (`MENU_NOTE`: "The lowest step, All menus, follows the shared grid."), below the spec's three. It is text only and the cursor skips it, so the three setting rows behave exactly as the spec says. It explains the step the spec gives each row, which otherwise reads as a value.
 
 ## Existing bugs fixed on the way
 
@@ -848,7 +849,7 @@ bool fileio_copy(const char *from, const char *to);
 bool fileio_replace(const char *from, const char *to);     // Windows: retries while the file is held
 bool fileio_remove(const char *path);
 bool fileio_make_dirs(const char *path);
-bool fileio_real_path(const char *path, char *out, size_t size);  // follows symbolic links
+bool fileio_real_path(const char *path, char *out, size_t size);  // on Linux, follows symbolic links; on Windows, the path as given; false (out empty) when it does not fit
 int fileio_list(const char *folder, FileioEntry **entries); // count, or -1
 void fileio_free_list(FileioEntry *entries, int count);
 const char *fileio_last_error(void);             // why the last call failed, in a few words
@@ -1019,7 +1020,7 @@ static void test_replace_waits_for_a_held_file(void)
 static void test_wide(void)
 {
     wchar_t *wide = fileio_wide("caf\xC3\xA9 \"x\"");
-    CHECK(wide != NULL && wcscmp(wide, L"café \"x\"") == 0);
+    CHECK(wide != NULL && wcscmp(wide, L"caf\x00e9 \"x\"") == 0);   // An escape: MSVC reads the source as cp1252
     free(wide);
     CHECK(fileio_wide("bad \xC3") == NULL);   // A lead byte with nothing after it
     CHECK(strstr(fileio_last_error(), "UTF-8") != NULL);
@@ -2726,7 +2727,7 @@ static void test_system_copy_falls_back_to_the_user_config(void)
     reset(user_config, NULL);
     set_read_only(system_config, true);
     char prefix[CONFIG_SAVE_PATH_MAX];
-    fileio_real_path(DIR "/system", prefix, sizeof(prefix) - 1);
+    CHECK(fileio_real_path(DIR "/system", prefix, sizeof(prefix) - 1));
     strcat(prefix, "/");
     ConfigEdit edit = { "Layout", "Rows", NULL, "2", INIDOC_AFTER_LAST_KEY };
     ConfigSaveResult result;
@@ -2899,7 +2900,11 @@ bool config_save(const char *loaded, const char *system_prefix, const char *user
 {
     memset(result, 0, sizeof(*result));
     char source[CONFIG_SAVE_PATH_MAX];
-    fileio_real_path(loaded, source, sizeof(source));
+    if (!fileio_real_path(loaded, source, sizeof(source))) {
+        snprintf(result->path, sizeof(result->path), "%s", loaded);
+        snprintf(result->why, sizeof(result->why), "%s", fileio_last_error());
+        return false;
+    }
     snprintf(result->path, sizeof(result->path), "%s", source);
 
     if (!fileio_is_writable(source)) {
@@ -5052,7 +5057,7 @@ ctest --test-dir C:/Users/jscha/source/repos/streamflex/build -C Release -R sett
 
 Expected: `100% tests passed, 0 tests failed out of 1`.
 
-- [ ] **Step 7: Read the table's keys through `setting_parse()` at startup.** In `src/util.c`, add `#include "settings.h"` after `#include "fileio.h"`. Replace the `[Layout]` branch's `Columns`, `MaxButtons`, `Rows` and `IconSize` handling (from `int count;` through the `IconSize` block) with:
+- [ ] **Step 7: Read the table's keys through `setting_parse()` at startup.** In `src/util.c`, add `#include "settings.h"` after `#include "fileio.h"`. Replace the start of the `[Layout]` branch, from its `else if (MATCH(section, "Layout")) {` line through the `IconSize` block's closing brace, with the code below. It handles `Columns`, `MaxButtons`, `Rows` and `IconSize`; the `IconSpacing` and `VCenter` branches after it and the section's closing brace stay as they are.
 
 ```c
     else if (MATCH(section, "Layout")) {
@@ -5290,7 +5295,8 @@ for f in f40-truncate f40-truncated; do
     result "OversizeMode $(grep -o 'OversizeMode=[A-Za-z]*' "$FX/$f.ini") parses as Truncate" $ok
 done
 
-# Shrink mode on long titles in a dense grid: stops at the minimum, cuts the rest, leaks nothing
+# Shrink mode on long titles in a dense grid: stops at the minimum and cuts the rest, without a
+# crash (the harness runs with detect_leaks=0, so the font leak's fix is checked by reading)
 run_quick f40-shrink
 ok=1
 [ "$(cat "$out/f40-shrink.code")" = 0 ] && sanitizer_clean f40-shrink && ok=0
@@ -6222,7 +6228,7 @@ static void test_places(void)
 
 and call `test_places();` in `main()` before `return check_report();`.
 
-- [ ] **Step 2: Register the test, and link the Windows shell libraries.** In `tests/CMakeLists.txt`, after `link_inih()`'s definition, add:
+- [ ] **Step 2: Register the test, and link the Windows shell libraries.** In `tests/CMakeLists.txt`, after the `test_utf8` block and before the `test_fileio` block, add the function below. It must come before every call to it: CMake reads the file top to bottom, and `test_fileio`, `test_inidoc` and `test_config_save` sit above `link_inih()`'s definition.
 
 ```cmake
 # fileio.c finds the Windows places (Pictures, drives) through the shell
@@ -6254,7 +6260,7 @@ cmake --build C:/Users/jscha/source/repos/streamflex/build --config Release --ta
 
 Expected: the build fails, because `browser.h` does not exist.
 
-- [ ] **Step 4: Add the places to `fileio`.** In `src/fileio.h`, before `#endif`:
+- [ ] **Step 4: Add the places to `fileio`.** In `src/fileio.h`, after the `#ifdef _WIN32` block and before the include guard's closing `#endif` (the places are for every platform, so not inside the Windows block):
 
 ```c
 typedef struct {
@@ -6318,12 +6324,13 @@ int fileio_places(FileioPlace **places)
         free(path);
     }
     CoTaskMemFree(wide);
-    const wchar_t *profile = _wgetenv(L"USERPROFILE");
-    if (profile != NULL) {
-        char *path = to_utf8(profile);
+    wide = NULL;
+    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Profile, 0, NULL, &wide))) {
+        char *path = to_utf8(wide);
         add_place(places, &count, "Home", path);
         free(path);
     }
+    CoTaskMemFree(wide);
 
     // An empty card reader or DVD drive must not pop up "There is no disk in the drive"
     UINT old_mode = SetErrorMode(SEM_FAILCRITICALERRORS);
@@ -7005,7 +7012,7 @@ Entry1=One;apps;:quit
 Expected:
 - `f30-one` fails: today's code copies the image's path into `Image`.
 - `f30-nodir` fails: the launcher crashes in `directory_exists(NULL)` (ASan `SEGV`).
-- `f30-missing` passes today, because the old code logs the same line. The `Mode: Image` half is what now pins the refactor.
+- `f30-missing` fails on its `Mode: Image` half: today's fallback rewrites the setting to `Color` before the debug output is written. Its log line already matches; the `Mode: Image` half is what pins the refactor.
 
 - [ ] **Step 4: What is shown, apart from what was chosen.** In `src/launcher.h`, add `char *config_path; // The file the settings were read from` to `Config` after `char *exe_path;`, and at the end of the file:
 
@@ -9376,7 +9383,7 @@ Add to `### Fixed`:
   tests/headless/      Headless checks: the launcher under Xvfb, driven by key presses (see run.sh); CI runs them
   ```
 
-- In the `build-and-test` bullet, replace `and the \`Icon library\` check all succeed.` with `the \`Icon library\` check and the headless checks all succeed.`
+- In the `build-and-test` bullet, replace `builds and the \`Icon library\` check all succeed.` with `builds, the \`Icon library\` check and the headless checks all succeed.`
 
 - [ ] **Step 5: Build, test, and read the docs page**
 

@@ -15,6 +15,7 @@
 #include "library.h"
 #include "debug.h"
 #include "clock.h"
+#include "settings_screen.h"
 #include "platform/platform.h"
 
 static void init_sdl(void);
@@ -25,20 +26,23 @@ static int load_menu(Menu *menu, bool set_back_menu, bool reset_position);
 static int load_menu_by_name(const char *menu_name, bool set_back_menu, bool reset_position);
 static void update_slideshow(void);
 static void resume_slideshow(void);
+static void fall_back_from_slideshow(SDL_Surface *surface);
 static void update_screensaver(void);
 static void update_clock(bool block);
 static void init_slideshow(void);
+static void stop_slideshow(void);
 static void init_screensaver(void);
 static void calculate_layout_area(void);
 static int apply_layout(Menu *menu);
-static void render_buttons(Menu *menu, int size);
+static void render_buttons(Menu *menu, const LayoutGeometry *geometry);
 static void place_entries(void);
 static void move_selection(LayoutDirection direction);
 static void load_submenu(const char *submenu);
 static void load_back_menu(Menu *menu);
 static void draw_screen(void);
-static void handle_keypress(SDL_Keysym *key);
+static void handle_keypress(SDL_Keysym *key, bool repeat);
 static bool hotkey_bound(SDL_Keycode keycode);
+static bool menu_key(SDL_Keycode keycode);
 static void execute_command(const char *command);
 static void poll_gamepad(void);
 static void init_gamepad(Gamepad **gamepad, int device_index);
@@ -58,6 +62,7 @@ Config config = {
     .application_timeout              = DEFAULT_APPLICATION_TIMEOUT * 1000,
     .titles_enabled                   = DEFAULT_TITLES_ENABLED,
     .title_font_size                  = DEFAULT_FONT_SIZE,
+    .title_font_size_pct              = DEFAULT_FONT_SIZE_PERCENT,
     .title_font_color.r               = DEFAULT_TITLE_FONT_COLOR_R,
     .title_font_color.g               = DEFAULT_TITLE_FONT_COLOR_G,
     .title_font_color.b               = DEFAULT_TITLE_FONT_COLOR_B,
@@ -94,7 +99,8 @@ Config config = {
     .highlight_outline_color.a        = DEFAULT_HIGHLIGHT_OUTLINE_COLOR_A,
     .highlight_outline_size           = DEFAULT_HIGHLIGHT_OUTLINE_SIZE,
     .highlight_rx                     = DEFAULT_HIGHLIGHT_CORNER_RADIUS,
-    .title_padding                    = -1,
+    .title_padding                    = 0,
+    .title_padding_pct                = DEFAULT_TITLE_PADDING_PERCENT,
     .max_buttons                      = DEFAULT_MAX_BUTTONS,
     .rows                             = DEFAULT_ROWS,
     .icon_spacing                     = -1,
@@ -167,8 +173,10 @@ SDL_Window *window                    = NULL;
 SDL_Renderer *renderer                = NULL;
 SDL_Texture *background_texture       = NULL;
 SDL_Texture *background_overlay       = NULL;
+SDL_Texture *background_override      = NULL; // The image being browsed in settings, shown in their preview
 Menu *default_menu                    = NULL;
 Menu *current_menu                    = NULL;
+ModeBackground background_shown       = BACKGROUND_COLOR; // What is on screen: the colour when the chosen background failed
 Entry *current_entry                  = NULL;
 Highlight *highlight                  = NULL;
 Scroll *scroll                        = NULL;
@@ -186,6 +194,7 @@ SDL_Event event;
 SDL_SysWMinfo wm_info;
 SDL_DisplayMode display_mode;
 TextInfo title_info;
+static TTF_Font *fixed_title_font = NULL; // The title font at the fixed FontSize
 Ticks ticks;
 Geometry geo;
 LayoutGeometry layout;                     // The current menu's layout
@@ -215,8 +224,16 @@ static void init_sdl()
     SDL_GetDesktopDisplayMode(0, &display_mode);
     geo.screen_width = display_mode.w;
     geo.screen_height = display_mode.h;
+
+    // SDL reports 0 when the display does not say (Xvfb, some VMs and remote desktops), and
+    // every timing below divides by the rate: create_window() reads it again from display_mode
+    if (display_mode.refresh_rate <= 0) {
+        log_debug("The display reports no refresh rate, using %i Hz", DEFAULT_REFRESH_RATE);
+        display_mode.refresh_rate = DEFAULT_REFRESH_RATE;
+    }
     refresh_period = 1000 / (Uint32) display_mode.refresh_rate;
     geo.screen_margin = (int) (SCREEN_MARGIN * (float) geo.screen_height);
+    geo.title_min_size = (int) (TITLE_MIN_SIZE * (float) geo.screen_height + 0.5F);
 }
 
 // A function to create the window and renderer
@@ -251,13 +268,15 @@ static void create_window()
         if (!repeat_period)
             repeat_period = 1;
     }
-    if (slideshow != NULL)
-        slideshow->transition_change_rate = 255.0f / ((float) config.slideshow_transition_time / (float) refresh_period);
-
     renderer = SDL_CreateRenderer(window, -1, renderer_flags);
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     if (renderer == NULL)
         log_fatal("Could not initialize renderer\n%s", SDL_GetError());
+
+    // Which video driver and renderer SDL chose: X11 or Wayland, OpenGL or software
+    SDL_RendererInfo renderer_info;
+    if (SDL_GetRendererInfo(renderer, &renderer_info) == 0)
+        log_debug("Video: SDL's %s driver, the %s renderer", SDL_GetCurrentVideoDriver(), renderer_info.name);
 
     // Set background color
     set_draw_color();
@@ -265,8 +284,6 @@ static void create_window()
 #ifdef _WIN32
     SDL_VERSION(&wm_info.version);
     SDL_GetWindowWMInfo(window, &wm_info);
-    if (config.background_mode == BACKGROUND_TRANSPARENT)
-        make_window_transparent();
 #endif
 }
 
@@ -282,9 +299,9 @@ static void init_sdl_image()
 void set_draw_color()
 {
     SDL_Color *color = NULL;
-    if (config.background_mode == BACKGROUND_COLOR)
+    if (background_shown == BACKGROUND_COLOR)
         color = &config.background_color;
-    else if (config.background_mode == BACKGROUND_TRANSPARENT)
+    else if (background_shown == BACKGROUND_TRANSPARENT)
         color = &config.chroma_key_color;
 
     if (color == NULL)
@@ -308,7 +325,8 @@ static void init_sdl_ttf()
         .font_size = (int) config.title_font_size,
         .shadow = config.title_shadows,
         .font_path = &config.title_font_path,
-        .max_width = 0, // Set per menu to its button size, in render_buttons
+        .max_width = 0, // Set per menu in render_buttons: its button size, less room for a shadow
+        .min_size = geo.title_min_size,
         .oversize_mode = config.title_oversize_mode,
         .color = &config.title_font_color
     };
@@ -322,16 +340,28 @@ static void init_sdl_ttf()
     int error = load_font(&title_info, FILENAME_DEFAULT_FONT);
     if (error)
         log_fatal("Could not load title font");
+    fixed_title_font = title_info.font;
     geo.font_height = config.titles_enabled ? TTF_FontHeight(title_info.font) : 0;
+
+    // A percentage FontSize sizes each menu's titles from its buttons, so measure the font's line
+    // height per point once, at a large size, for the layout to reserve room for any size
+    TTF_Font *probe = TTF_OpenFont(config.title_font_path, TITLE_MEASURE_SIZE);
+    geo.title_line_pm = probe != NULL ? TTF_FontHeight(probe) * 1000 / TITLE_MEASURE_SIZE : 1500;
+    if (probe != NULL)
+        TTF_CloseFont(probe);
 }
 
 // A function to close subsystems and free memory before quitting
 static void cleanup()
 {
-    // Wait until all threads have completed
-    SDL_WaitThread(Slideshowhread, NULL);
+    settings_close_now();
+    if (background_override != NULL)
+        SDL_DestroyTexture(background_override);
+
+    // Wait until all threads have completed; the slideshow's may have read an image, which is freed
+    stop_slideshow();
     SDL_WaitThread(clock_thread, NULL);
-    
+
     // Destroy renderer and window
     if (renderer != NULL) {
         SDL_DestroyRenderer(renderer);
@@ -345,13 +375,20 @@ static void cleanup()
     // Quit subsystems
     SDL_Quit();
     IMG_Quit();
+
+    // Close every font while SDL_ttf is still open: the titles' and the clock's
+    title_fonts_free();
+    if (fixed_title_font != NULL)
+        TTF_CloseFont(fixed_title_font);
+    fixed_title_font = NULL;
+    title_info.font = NULL;
+    if (clk != NULL && clk->text_info.font != NULL)
+        TTF_CloseFont(clk->text_info.font);
     TTF_Quit();
     quit_svg();
-    if (config.background_mode == BACKGROUND_SLIDESHOW)
-        quit_slideshow();
 
-    // Close log file if open
-    if (log_file != NULL)
+    // Close log file if open; a log on stderr (no home folder) is not ours to close
+    if (log_file != NULL && log_file != stderr)
         fclose(log_file);
 
     // Free dynamically allocated memory
@@ -359,6 +396,7 @@ static void cleanup()
     free(config.background_image);
     free(config.title_font_path);
     free(config.exe_path);
+    free(config.config_path);
     free(config.slideshow_directory);
     free(config.clock_font_path);
     free(config.gamepad_mappings_file);
@@ -425,11 +463,57 @@ static bool hotkey_bound(SDL_Keycode keycode)
     return false;
 }
 
-// A function to handle key presses from keyboard
-static void handle_keypress(SDL_Keysym *key)
+// A function to tell whether a key is the built-in Menu key, which opens settings unless a hotkey
+// has it: a keyboard's context-menu key (SDLK_APPLICATION) or a remote's Menu button (SDLK_MENU)
+static bool menu_key(SDL_Keycode keycode)
+{
+    return (keycode == SDLK_APPLICATION || keycode == SDLK_MENU) && !hotkey_bound(keycode);
+}
+
+// A function to handle key presses from keyboard; `repeat` marks the keyboard's own repeats of a
+// held key
+static void handle_keypress(SDL_Keysym *key, bool repeat)
 {
     if (config.debug)
         log_debug("Key %s (#%X) detected", SDL_GetKeyName(key->sym), key->sym);
+
+    // A held Menu key opens (or closes) settings once: its repeats would strobe them
+    if (repeat && menu_key(key->sym))
+        return;
+
+    // While settings are open, the built-in keys are their commands; other keys run their hotkey,
+    // which execute_command() hands to settings (and settings ignore unless it is one of theirs)
+    if (settings_is_open()) {
+        const char *command = NULL;
+        switch (key->sym) {
+            case SDLK_LEFT:
+                command = SCMD_LEFT;
+                break;
+            case SDLK_RIGHT:
+                command = SCMD_RIGHT;
+                break;
+            case SDLK_UP:
+                command = SCMD_UP;
+                break;
+            case SDLK_DOWN:
+                command = SCMD_DOWN;
+                break;
+            case SDLK_RETURN:
+                command = SCMD_SELECT;
+                break;
+            case SDLK_BACKSPACE:
+                command = SCMD_BACK;
+                break;
+            default:
+                if (menu_key(key->sym))
+                    command = SCMD_SETTINGS;
+                break;
+        }
+        if (command != NULL) {
+            settings_handle_command(command);
+            return;
+        }
+    }
 
     // Check default keys. Up and Down give way to a hotkey bound to the same key, so an
     // existing config's binding keeps working after the upgrade.
@@ -454,41 +538,77 @@ static void handle_keypress(SDL_Keysym *key)
     else if (key->sym == SDLK_BACKSPACE)
         load_back_menu(current_menu);
 
+    // The Menu key opens settings, unless a hotkey has it
+    else if (menu_key(key->sym))
+        execute_command(SCMD_SETTINGS);
+
     //Check hotkeys
     else {
         for (Hotkey *i = hotkeys; i != NULL; i = i->next) {
             if (key->sym == i->keycode) {
-                execute_command(i->cmd);
+                // A hotkey for :settings acts once however long it is held, as the Menu key does
+                if (!repeat || strcmp(i->cmd, SCMD_SETTINGS) != 0)
+                    execute_command(i->cmd);
                 break;
             }
         }
     }
 }
 
-// A function to quit the slideshow mode in case of error or program exit
+// A function to free the slideshow, if there is one
 void quit_slideshow()
 {
-    // Free allocated image paths
+    if (slideshow == NULL)
+        return;
     for (int i = 0; i < slideshow->num_images; i++)
         free(slideshow->images[i]);
     free(slideshow->images);
     free(slideshow->order);
     free(slideshow);
+    slideshow = NULL;
 }
 
-// A function to initialize the slideshow background mode
-static void init_slideshow()
+// A function to stop a slideshow that can no longer show two images, on the main thread: show the
+// one image that still loads (surface, the same image as the one on show), or the colour when none
+// does. The Mode setting stays Slideshow, so the folder is tried again when the background is next
+// set up.
+static void fall_back_from_slideshow(SDL_Surface *surface)
 {
-    if (!directory_exists(config.slideshow_directory)) {
-        log_error("Slideshow directory '%s' does not exist, "
-            "Switching to color background mode",
+    if (surface != NULL) {
+        log_error("Could only load one image from slideshow directory %s, showing it as a single image",
             config.slideshow_directory
         );
-        config.background_mode = BACKGROUND_COLOR;
-        set_draw_color();
+        SDL_FreeSurface(surface);
+        background_shown = BACKGROUND_IMAGE;
+    }
+    else {
+        log_error("Could not load any image from slideshow directory %s, showing the background color",
+            config.slideshow_directory
+        );
+        if (background_texture != NULL) {
+            SDL_DestroyTexture(background_texture);
+            background_texture = NULL;
+        }
+        background_shown = BACKGROUND_COLOR;
+    }
+    if (slideshow->transition_texture != NULL)
+        SDL_DestroyTexture(slideshow->transition_texture);
+    quit_slideshow();
+    set_draw_color();
+}
+
+// A function to scan the slideshow folder. What is shown falls back to the colour, or to a single
+// image, when the folder is missing or holds fewer than two images; the settings are left alone.
+static void init_slideshow()
+{
+    if (config.slideshow_directory == NULL || !directory_exists(config.slideshow_directory)) {
+        log_error("Slideshow directory '%s' does not exist, "
+            "Switching to color background mode",
+            config.slideshow_directory != NULL ? config.slideshow_directory : "(none)"
+        );
+        background_shown = BACKGROUND_COLOR;
         return;
     }
-    // Allocate and initialize slideshow struct
     slideshow = malloc(sizeof(Slideshow));
     *slideshow = (Slideshow) {
         .i = -1,
@@ -498,33 +618,26 @@ static void init_slideshow()
         .transition_alpha = 0.f,
         .transition_change_rate = 0.f,
         .images = NULL,
-        .order = NULL
+        .order = NULL,
+        .only_one = false
     };
-
-    // Find background images from directory
     scan_slideshow_directory(slideshow, config.slideshow_directory);
-    
-    // Handle errors
     if (!slideshow->num_images) {
         log_error("No images found in slideshow directory '%s', "
-            "Changing background mode to color", 
+            "Changing background mode to color",
             config.slideshow_directory
         );
-        config.background_mode = BACKGROUND_COLOR;
-        quit_slideshow();
-    } 
-    else if (slideshow->num_images == 1) {
-        log_error("Only one image found in slideshow directory %s"
-            "Changing background mode to single image", 
-            config.slideshow_directory
-        );
-        free(config.background_image);
-        config.background_image = strdup(slideshow->images[0]);
-        config.background_mode = BACKGROUND_IMAGE;
+        background_shown = BACKGROUND_COLOR;
         quit_slideshow();
     }
-
-    // Generate array of random numbers for image order, load first image
+    else if (slideshow->num_images == 1) {
+        log_error("Only one image found in slideshow directory %s, showing it as a single image",
+            config.slideshow_directory
+        );
+        background_texture = load_texture_from_file(slideshow->images[0]);
+        background_shown = background_texture != NULL ? BACKGROUND_IMAGE : BACKGROUND_COLOR;
+        quit_slideshow();
+    }
     else {
         slideshow->order = malloc(sizeof(int) * (size_t) slideshow->num_images);
         random_array(slideshow->order, slideshow->num_images);
@@ -575,13 +688,88 @@ static void init_screensaver()
     SDL_FillRect(surface, NULL, color);
     screensaver->texture = load_texture(surface);
     screensaver->alpha = 0.0f;
-    SDL_SetTextureAlphaMod(screensaver->texture, 0.0f);
+    SDL_SetTextureAlphaMod(screensaver->texture, 0);
 }
 
 // A function to resume the slideshow after a launched application returns
 static void resume_slideshow()
 {
     ticks.slideshow_load = ticks.main;
+}
+
+// A function to work out the slideshow's fade speed from its fade time and the frame rate
+void update_slideshow_timing()
+{
+    if (slideshow != NULL && config.slideshow_transition_time > 0)
+        slideshow->transition_change_rate = 255.0f / ((float) config.slideshow_transition_time / (float) refresh_period);
+}
+
+// A function to stop the slideshow, when the background changes and at quit: wait for an image
+// being loaded on its thread, then free it all
+static void stop_slideshow()
+{
+    if (Slideshowhread != NULL) {
+        SDL_WaitThread(Slideshowhread, NULL);
+        Slideshowhread = NULL;
+    }
+    if (slideshow != NULL) {
+        // The next image may be read but not yet on its way in (only its surface), or fading in
+        if (slideshow->transition_surface != NULL || slideshow->transition_texture != NULL)
+            log_debug("Slideshow: dropped the fade in progress");
+        if (slideshow->transition_surface != NULL)
+            SDL_FreeSurface(slideshow->transition_surface);
+        if (slideshow->transition_texture != NULL)
+            SDL_DestroyTexture(slideshow->transition_texture);
+        quit_slideshow();
+    }
+}
+
+// A function to set the background up for config.background_mode: at startup, and whenever the
+// settings screen changes it. What is shown (background_shown) falls back to the colour when an
+// image or slideshow cannot be used; the setting itself stays as it was chosen.
+void reload_background()
+{
+    stop_slideshow();
+    state.slideshow_transition = false;
+    SDL_AtomicSet(&state.slideshow_background_rendering, 0);
+    SDL_AtomicSet(&state.slideshow_background_ready, 0);
+    if (background_texture != NULL) {
+        SDL_DestroyTexture(background_texture);
+        background_texture = NULL;
+    }
+
+    background_shown = config.background_mode;
+    if (config.background_mode == BACKGROUND_IMAGE) {
+        if (config.background_image == NULL)
+            log_error("Background 'Image' setting not specified in config file");
+        else
+            background_texture = load_texture_from_file(config.background_image);
+        if (background_texture == NULL) {
+            log_error("Couldn't load background image, defaulting to color background");
+            background_shown = BACKGROUND_COLOR;
+        }
+    }
+    else if (config.background_mode == BACKGROUND_SLIDESHOW) {
+        init_slideshow();
+        if (background_shown == BACKGROUND_SLIDESHOW) {
+            SDL_Surface *surface = load_next_slideshow_background(slideshow, false);
+            if (surface != NULL) {
+                background_texture = load_texture(surface);
+                ticks.slideshow_load = ticks.main;
+            }
+            else
+                fall_back_from_slideshow(NULL);
+        }
+    }
+    update_slideshow_timing();
+#ifdef _WIN32
+    if (background_shown == BACKGROUND_TRANSPARENT)
+        make_window_transparent();
+    else
+        make_window_opaque();
+#endif
+    set_draw_color();
+    log_debug("Background set up: %s", get_mode_setting(MODE_SETTING_BACKGROUND, (int) background_shown));
 }
 
 // A function to load a menu
@@ -644,16 +832,33 @@ int compute_menu_layout(const Menu *menu, LayoutGeometry *geometry, char *why, s
     LayoutOverrides global = { (int) config.rows, (int) config.max_buttons, (int) config.icon_size };
     LayoutOverrides builtin = { DEFAULT_ROWS, DEFAULT_MAX_BUTTONS, 0 };
     LayoutOverrides effective = layout_resolve(menu->overrides, global, builtin);
+    bool titles = config.titles_enabled;
+    bool scaled = titles && config.title_font_size_pct > 0 && !menu->fixed_titles;
     LayoutParams params = {
-        .rows        = effective.rows,
-        .columns     = effective.columns,
-        .icon_cap    = effective.icon_cap,
-        .spacing     = config.icon_spacing,
-        .title_block = config.title_padding + geo.font_height,
-        .hpad        = config.highlight_hpadding,
-        .vpad        = config.highlight_vpadding
+        .rows              = effective.rows,
+        .columns           = effective.columns,
+        .icon_cap          = effective.icon_cap,
+        .spacing           = config.icon_spacing,
+        .title_block       = titles && !scaled ? geo.font_height : 0,
+        .hpad              = config.highlight_hpadding,
+        .vpad              = config.highlight_vpadding,
+        .title_padding     = titles ? config.title_padding : 0,
+        .title_padding_pct = titles ? config.title_padding_pct : 0,
+        .title_size_pct    = scaled ? config.title_font_size_pct : 0,
+        .title_min_size    = geo.title_min_size,
+        .title_line_pm     = geo.title_line_pm
     };
+    params.title_shadow = titles && config.title_shadows;
     return layout_compute(&params, &layout_area, (int) menu->num_entries, geometry, why, why_size);
+}
+
+// A function to describe a menu's titles for the log: "36 pt titles", or "no titles"
+void describe_titles(const LayoutGeometry *geometry, char *out, size_t size)
+{
+    if (!config.titles_enabled)
+        snprintf(out, size, "no titles");
+    else
+        snprintf(out, size, "%i pt titles", geometry->title_size > 0 ? geometry->title_size : (int) config.title_font_size);
 }
 
 // A function to lay out the current menu: size its buttons for its grid, re-render its
@@ -666,20 +871,34 @@ static int apply_layout(Menu *menu)
         return 1;
     }
 
+    // A title size whose font cannot be opened gives way to the fixed FontSize, and the menu is
+    // laid out again for that font's height, so its titles fit the room kept for them
+    if (layout.title_size > 0 && title_font(layout.title_size) == NULL) {
+        log_error("Menu '%s': its titles use the fixed %u pt font instead", menu->name, config.title_font_size);
+        menu->fixed_titles = true;
+        menu->rendered_size = 0;
+        if (compute_menu_layout(menu, &layout, why, sizeof(why))) {
+            log_error("Menu '%s' cannot be shown: %s", menu->name, why);
+            return 1;
+        }
+    }
+
     // A reduced grid is reported when the menu is first laid out at this size, not on every load
     if (why[0] != '\0' && menu->rendered_size != layout.button)
         log_error("Menu '%s': %s", menu->name, why);
-    log_debug("Menu '%s': %i x %i grid, %i px buttons", menu->name, layout.columns, layout.rows, layout.button);
+    char titles[32];
+    describe_titles(&layout, titles, sizeof(titles));
+    log_debug("Menu '%s': %i x %i grid, %i px buttons, %s", menu->name, layout.columns, layout.rows, layout.button, titles);
 
     if (menu->rendered_size != layout.button) {
-        render_buttons(menu, layout.button);
+        render_buttons(menu, &layout);
         menu->rendered_size = layout.button;
     }
-    if (config.highlight && (highlight->button != layout.button ||
-    highlight->hpad != layout.hpad || highlight->vpad != layout.vpad)) {
+    if (config.highlight && (highlight->button != layout.button || highlight->hpad != layout.hpad ||
+    highlight->vpad != layout.vpad || highlight->title_block != layout.title_block)) {
         if (highlight->texture != NULL)
             SDL_DestroyTexture(highlight->texture);
-        int button_height = layout.button + config.title_padding + geo.font_height;
+        int button_height = layout.button + layout.title_block;
         highlight->texture = render_highlight(layout.button + 2*layout.hpad,
                                  button_height + 2*layout.vpad,
                                  &highlight->rect
@@ -687,16 +906,29 @@ static int apply_layout(Menu *menu)
         highlight->button = layout.button;
         highlight->hpad = layout.hpad;
         highlight->vpad = layout.vpad;
+        highlight->title_block = layout.title_block;
     }
     menu->position = layout_clamp(&layout, (int) menu->num_entries, menu->position);
     place_entries();
     return 0;
 }
 
-// A function to render all buttons (icon and title) of a menu at a button size
-static void render_buttons(Menu *menu, int size)
+// A function to render all buttons (icon and title) of a menu for its layout: the icons at the
+// button size, and the titles in the menu's own title size
+static void render_buttons(Menu *menu, const LayoutGeometry *geometry)
 {
-    title_info.max_width = size;
+    int size = geometry->button;
+    title_info.font = fixed_title_font;
+    title_info.font_size = (int) config.title_font_size;
+    if (geometry->title_size > 0) {
+        TTF_Font *font = title_font(geometry->title_size);
+        if (font != NULL) {
+            title_info.font = font;
+            title_info.font_size = geometry->title_size;
+        }
+    }
+    int line_height = TTF_FontHeight(title_info.font);
+    title_info.max_width = layout_title_width(config.title_shadows, size, line_height);   // Room for the shadow
     for (unsigned int i = 0; i < menu->num_entries; i++) {
         Entry *entry = menu->items[i];
         if (entry->icon != NULL)
@@ -710,10 +942,18 @@ static void render_buttons(Menu *menu, int size)
             if (entry->title_texture != NULL)
                 SDL_DestroyTexture(entry->title_texture);
             entry->title_texture = render_text_texture(entry->title, &title_info, &entry->text_rect, &h);
-            entry->title_offset = (config.title_oversize_mode == OVERSIZE_SHRINK && h != geo.font_height)
-                                  ? (geo.font_height - h) / 2 : 0;
+            entry->title_offset = (config.title_oversize_mode == OVERSIZE_SHRINK && h != line_height)
+                                  ? (line_height - h) / 2 : 0;
+            if (config.title_oversize_mode != OVERSIZE_NONE && entry->text_rect.w > size)
+                log_debug("Menu '%s': the title '%s' is %i px wide, over its %i px button",
+                    menu->name, entry->title, entry->text_rect.w, size);
         }
     }
+
+    // Keep no pointer to a cached font: another menu's title size may close it
+    title_info.font = fixed_title_font;
+    title_info.font_size = (int) config.title_font_size;
+    log_debug("Menu '%s': rendered its buttons at %i px", menu->name, size);
 }
 
 // A function to position the visible buttons and the highlight for the current menu
@@ -726,7 +966,7 @@ static void place_entries()
             continue;
         entry->icon_rect = (SDL_Rect) { x, y, layout.button, layout.button };
         entry->text_rect.x = x + (layout.button - entry->text_rect.w) / 2;
-        entry->text_rect.y = y + layout.button + entry->title_offset + config.title_padding;
+        entry->text_rect.y = y + layout.button + entry->title_offset + layout.title_padding;
     }
     current_entry = current_menu->items[current_menu->position.selected];
     if (config.highlight) {
@@ -758,77 +998,142 @@ static void load_back_menu(Menu *menu)
     load_menu(menu->back, false, config.reset_on_back);
 }
 
-// A function to update the screen with all visible textures
-static void draw_screen()
+// A function to render every menu's titles again after the title size changed: the menu on show
+// now, the others when they are next opened
+void reload_titles()
 {
-    // Draw background
-    SDL_RenderClear(renderer);
-    if (!(state.application_launching && config.on_launch == ON_LAUNCH_BLANK)) {
-        if (config.background_mode == BACKGROUND_IMAGE || config.background_mode == BACKGROUND_SLIDESHOW)
-            SDL_RenderCopy(renderer, background_texture, NULL, NULL);
-
-        if (config.background_mode == BACKGROUND_SLIDESHOW && state.slideshow_transition)
-            SDL_RenderCopy(renderer, slideshow->transition_texture, NULL, NULL);
-
-        // Draw background overlay
-        if (config.background_overlay)
-            SDL_RenderCopy(renderer, background_overlay, NULL, NULL);
-
-        // Draw scroll indicators: a strip's point left and right from the bottom corners,
-        // a grid's are the same arrow turned to point up and down from the top and bottom margins
-        if (config.scroll_indicators) {
-            int count = (int) current_menu->num_entries;
-            LayoutPosition position = current_menu->position;
-            if (layout.rows == 1) {
-                if (layout_can_scroll(&layout, count, position, LAYOUT_RIGHT))
-                    SDL_RenderCopy(renderer, scroll->texture, NULL, &scroll->rect_right);
-                if (layout_can_scroll(&layout, count, position, LAYOUT_LEFT))
-                    SDL_RenderCopyEx(renderer, scroll->texture, NULL, &scroll->rect_left, 0, NULL, SDL_FLIP_HORIZONTAL);
-            }
-            else {
-                if (layout_can_scroll(&layout, count, position, LAYOUT_UP))
-                    SDL_RenderCopyEx(renderer, scroll->texture, NULL, &scroll->rect_up, 270.0, NULL, SDL_FLIP_NONE);
-                if (layout_can_scroll(&layout, count, position, LAYOUT_DOWN))
-                    SDL_RenderCopyEx(renderer, scroll->texture, NULL, &scroll->rect_down, 90.0, NULL, SDL_FLIP_NONE);
-            }
-        }
-
-        // Draw clock
-        if (config.clock_enabled) {
-            SDL_RenderCopy(renderer, clk->time_texture, NULL, &clk->time_rect);
-            if (config.clock_show_date)
-                SDL_RenderCopy(renderer, clk->date_texture, NULL, &clk->date_rect);
-        }
-
-        // Draw highlight
-        if (config.highlight)
-            SDL_RenderCopy(renderer,
-                highlight->texture,
-                NULL,
-                &highlight->rect
-            );
-
-        // Draw the visible buttons
-        for (unsigned int i = 0; i < current_menu->num_entries; i++) {
-            int x, y;
-            if (!layout_slot(&layout, current_menu->position, (int) i, &x, &y))
-                continue;
-            Entry *entry = current_menu->items[i];
-            SDL_Texture *icon = (entry->icon_selected != NULL && (int) i == current_menu->position.selected)
-                                ? entry->icon_selected : entry->icon;
-            SDL_RenderCopy(renderer, icon, NULL, &entry->icon_rect);
-            if (config.titles_enabled)
-                SDL_RenderCopy(renderer, entry->title_texture, NULL, &entry->text_rect);
-        }
-
-        // Draw screensaver
-        if (state.screensaver_active)
-            SDL_RenderCopy(renderer, screensaver->texture, NULL, NULL);
+    // A new size may open where the last one failed
+    for (Menu *menu = config.first_menu; menu != NULL; menu = menu->next) {
+        menu->rendered_size = 0;
+        menu->fixed_titles = false;
     }
-    else
-        SDL_RenderFillRect(renderer, NULL);
+    apply_layout(current_menu);
+}
 
-    // Output to screen
+// A function to close the title fonts no menu uses any more, once settings have changed the sizes
+void trim_title_fonts()
+{
+    int *sizes = calloc(config.num_menus > 0 ? config.num_menus : 1, sizeof(int));
+    if (sizes == NULL)
+        return;
+    int count = 0;
+    for (Menu *menu = config.first_menu; menu != NULL; menu = menu->next) {
+        LayoutGeometry geometry;
+        char why[256];
+        if (compute_menu_layout(menu, &geometry, why, sizeof(why)) == 0 && geometry.title_size > 0)
+            sizes[count++] = geometry.title_size;
+    }
+    title_fonts_keep(sizes, count);
+    free(sizes);
+}
+
+// A function to lay the menu on show out again after its grid changed
+void refresh_layout()
+{
+    apply_layout(current_menu);
+}
+
+// A function to show a menu without changing its back link or remembered position
+int show_menu(Menu *menu)
+{
+    return load_menu(menu, false, false);
+}
+
+// A function to go to the default menu, as :home does; non-zero when it cannot be shown
+int show_home()
+{
+    return load_menu(default_menu, false, true);
+}
+
+// A function to fill the screen with a grey checkerboard. In the settings preview it stands for a
+// transparent background: a texture cannot show the desktop through.
+static void draw_checkerboard()
+{
+    int square = geo.screen_height / 18 > 8 ? geo.screen_height / 18 : 8;
+    for (int y = 0; y < geo.screen_height; y += square) {
+        for (int x = 0; x < geo.screen_width; x += square) {
+            Uint8 shade = ((x / square) + (y / square)) % 2 == 0 ? 0x55 : 0x88;
+            SDL_Rect cell = { x, y, square, square };
+            SDL_SetRenderDrawColor(renderer, shade, shade, shade, 0xFF);
+            SDL_RenderFillRect(renderer, &cell);
+        }
+    }
+}
+
+// A function to draw the launcher's scene: the background, its overlay, the scroll indicators,
+// the clock, the highlight and the visible buttons. The settings screen draws it into its preview
+// (preview true), where a transparent background shows as a checkerboard and an image being
+// browsed replaces the background.
+void draw_scene(bool preview)
+{
+    set_draw_color();
+    SDL_RenderClear(renderer);
+    if (preview && background_override != NULL)
+        SDL_RenderCopy(renderer, background_override, NULL, NULL);
+    else if (preview && background_shown == BACKGROUND_TRANSPARENT)
+        draw_checkerboard();
+    else {
+        if (background_shown == BACKGROUND_IMAGE || background_shown == BACKGROUND_SLIDESHOW)
+            SDL_RenderCopy(renderer, background_texture, NULL, NULL);
+        if (background_shown == BACKGROUND_SLIDESHOW && state.slideshow_transition)
+            SDL_RenderCopy(renderer, slideshow->transition_texture, NULL, NULL);
+    }
+
+    // Draw background overlay
+    if (config.background_overlay)
+        SDL_RenderCopy(renderer, background_overlay, NULL, NULL);
+
+    // Draw scroll indicators: a strip's point left and right from the bottom corners,
+    // a grid's are the same arrow turned to point up and down from the top and bottom margins
+    if (config.scroll_indicators) {
+        int count = (int) current_menu->num_entries;
+        LayoutPosition position = current_menu->position;
+        if (layout.rows == 1) {
+            if (layout_can_scroll(&layout, count, position, LAYOUT_RIGHT))
+                SDL_RenderCopy(renderer, scroll->texture, NULL, &scroll->rect_right);
+            if (layout_can_scroll(&layout, count, position, LAYOUT_LEFT))
+                SDL_RenderCopyEx(renderer, scroll->texture, NULL, &scroll->rect_left, 0, NULL, SDL_FLIP_HORIZONTAL);
+        }
+        else {
+            if (layout_can_scroll(&layout, count, position, LAYOUT_UP))
+                SDL_RenderCopyEx(renderer, scroll->texture, NULL, &scroll->rect_up, 270.0, NULL, SDL_FLIP_NONE);
+            if (layout_can_scroll(&layout, count, position, LAYOUT_DOWN))
+                SDL_RenderCopyEx(renderer, scroll->texture, NULL, &scroll->rect_down, 90.0, NULL, SDL_FLIP_NONE);
+        }
+    }
+
+    // Draw clock
+    if (config.clock_enabled) {
+        SDL_RenderCopy(renderer, clk->time_texture, NULL, &clk->time_rect);
+        if (config.clock_show_date)
+            SDL_RenderCopy(renderer, clk->date_texture, NULL, &clk->date_rect);
+    }
+
+    // Draw highlight
+    if (config.highlight)
+        SDL_RenderCopy(renderer,
+            highlight->texture,
+            NULL,
+            &highlight->rect
+        );
+
+    // Draw the visible buttons
+    for (unsigned int i = 0; i < current_menu->num_entries; i++) {
+        int x, y;
+        if (!layout_slot(&layout, current_menu->position, (int) i, &x, &y))
+            continue;
+        Entry *entry = current_menu->items[i];
+        SDL_Texture *icon = (entry->icon_selected != NULL && (int) i == current_menu->position.selected)
+                            ? entry->icon_selected : entry->icon;
+        SDL_RenderCopy(renderer, icon, NULL, &entry->icon_rect);
+        if (config.titles_enabled)
+            SDL_RenderCopy(renderer, entry->title_texture, NULL, &entry->text_rect);
+    }
+}
+
+// A function to show the frame, and without VSync wait out the rest of its time
+void present_frame()
+{
     SDL_RenderPresent(renderer);
     if (!config.vsync) {
         Uint32 elapsed = SDL_GetTicks() - ticks.main;
@@ -837,23 +1142,46 @@ static void draw_screen()
     }
 }
 
+// A function to update the screen: the scene and the screensaver's dimming, or a blank screen
+// while an application is launching
+static void draw_screen()
+{
+    if (!(state.application_launching && config.on_launch == ON_LAUNCH_BLANK)) {
+        draw_scene(false);
+        if (state.screensaver_active)
+            SDL_RenderCopy(renderer, screensaver->texture, NULL, NULL);
+    }
+    else {
+        SDL_RenderClear(renderer);
+        SDL_RenderFillRect(renderer, NULL);
+    }
+    present_frame();
+}
+
 // A function to execute the user's command
 static void execute_command(const char *command)
 {
+    // While settings are open the remote's keys belong to them, and everything else waits
+    if (settings_is_open()) {
+        settings_handle_command(command);
+        return;
+    }
+
     // Copy command into separate buffer
     char *cmd = strdup(command);
 
     // Parse special commands
     if (cmd[0] == ':') {
         char *delimiter = " ";
-        char *special_command = strtok(cmd, delimiter);
+        char *rest = NULL;
+        char *special_command = strtok_r(cmd, delimiter, &rest);
         if (!strcmp(special_command, SCMD_SUBMENU)) {
-            char *submenu = strtok(NULL, "");
+            char *submenu = strtok_r(NULL, "", &rest);
             if (submenu != NULL)
                 load_submenu(submenu);
         }
         else if (!strcmp(special_command, SCMD_FORK)) {
-            char *fork_command = strtok(NULL, "");
+            char *fork_command = strtok_r(NULL, "", &rest);
             if (fork_command != NULL)
                 start_process(fork_command, false);
         }
@@ -879,6 +1207,14 @@ static void execute_command(const char *command)
             scmd_restart();
         else if (!strcmp(special_command, SCMD_SLEEP))
             scmd_sleep();
+        else if (!strcmp(special_command, SCMD_SETTINGS)) {
+            // Settings never open over an application being launched, which is about to take the
+            // screen: no application runs behind them
+            if (state.application_launching || state.application_running)
+                log_debug("Settings: not opened while an application is launching or running");
+            else
+                settings_open();
+        }
     }
 
     // Launch external application
@@ -995,10 +1331,7 @@ static void poll_gamepad()
 
             // Check if axis value exceeds dead zone
             if (i->type == TYPE_AXIS_POS || i->type == TYPE_AXIS_NEG) {
-                if (i->type == TYPE_AXIS_POS)
-                    value_multiplier = 1;
-                else if (i->type == TYPE_AXIS_NEG)
-                    value_multiplier = -1;
+                value_multiplier = i->type == TYPE_AXIS_POS ? 1 : -1;
                 if (value_multiplier*SDL_GameControllerGetAxis(gamepad->controller, i->index) > GAMEPAD_DEADZONE) {
                     i->repeat++;
                     pressed = true;
@@ -1028,11 +1361,37 @@ static void poll_gamepad()
         }
         else if (i->repeat == delay_period) {
             ticks.last_input = ticks.main;
-            execute_command(i->cmd);
+
+            // :settings acts on the first press only: repeating it would strobe settings open and shut
+            if (strcmp(i->cmd, SCMD_SETTINGS) != 0)
+                execute_command(i->cmd);
             i->repeat -= repeat_period;
         }
     }
 }
+
+#ifdef STREAMFLEX_TEST_HOOKS
+// A function only the headless harness builds, since it has no gamepad: with STREAMFLEX_TEST_PAD
+// set, it attaches a virtual one, and holds its Start button while the file that names exists
+static void test_pad_update()
+{
+    static SDL_Joystick *pad = NULL;
+    static bool attached = false;
+    const char *held = getenv("STREAMFLEX_TEST_PAD");
+    if (held == NULL || !config.gamepad_enabled)
+        return;
+    if (!attached) {
+        attached = true;
+        int index = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER,
+                        SDL_CONTROLLER_AXIS_MAX, SDL_CONTROLLER_BUTTON_MAX, 0);
+        pad = index >= 0 ? SDL_JoystickOpen(index) : NULL;
+        if (pad == NULL)
+            log_error("Test hook: no virtual gamepad\n%s", SDL_GetError());
+    }
+    if (pad != NULL)
+        SDL_JoystickSetVirtualButton(pad, SDL_CONTROLLER_BUTTON_START, file_exists(held) ? SDL_PRESSED : SDL_RELEASED);
+}
+#endif
 
 // A function to update the slideshow
 static void update_slideshow()
@@ -1041,20 +1400,30 @@ static void update_slideshow()
     if (!state.slideshow_transition && (ticks.main - ticks.slideshow_load > config.slideshow_image_duration) &&
     !state.slideshow_paused) {
         
-        // Render the new background image in a separate thread so we don't block the main thread
-        if (!state.slideshow_background_rendering && !state.slideshow_background_ready) {
+        // Render the new background image in a separate thread so we don't block the main thread.
+        // It is marked as rendering before it starts: a thread that finished first would find
+        // the mark still unset, and leave it set for good once the main thread set it.
+        if (!SDL_AtomicGet(&state.slideshow_background_rendering) && !SDL_AtomicGet(&state.slideshow_background_ready)) {
+            SDL_AtomicSet(&state.slideshow_background_rendering, 1);
             Slideshowhread = SDL_CreateThread(load_next_slideshow_background_async, "Slideshow Thread", (void*) slideshow);
-            state.slideshow_background_rendering = true;
         }
 
         // Convert background to texture after the rendering thread has completed
-        else if (state.slideshow_background_ready) {
+        else if (SDL_AtomicGet(&state.slideshow_background_ready)) {
             SDL_WaitThread(Slideshowhread, NULL);
             Slideshowhread = NULL;
+
+            // The loader found no image that loads, or only the one on show: stop the slideshow
+            if (slideshow->transition_surface == NULL || slideshow->only_one) {
+                SDL_AtomicSet(&state.slideshow_background_ready, 0);
+                fall_back_from_slideshow(slideshow->transition_surface);
+                return;
+            }
             if (config.slideshow_transition_time > 0) {
                 slideshow->transition_texture = load_texture(slideshow->transition_surface);
                 SDL_SetTextureAlphaMod(slideshow->transition_texture, 0);
                 state.slideshow_transition = true;
+                log_debug("Slideshow: fading in the next image");
             }
             else {
                 SDL_DestroyTexture(background_texture);
@@ -1062,7 +1431,7 @@ static void update_slideshow()
                 ticks.slideshow_load = ticks.main;
             }
         slideshow->transition_surface = NULL;
-        state.slideshow_background_ready = false;
+        SDL_AtomicSet(&state.slideshow_background_ready, 0);
         }
     }
     else if (state.slideshow_transition) {
@@ -1090,9 +1459,10 @@ static void update_screensaver()
 {
     // Activate the screensaver if the launcher has been idle for the required time
     if (!state.screensaver_active && ticks.main - ticks.last_input > config.screensaver_idle_time) {
+        log_debug("Screensaver on");
         state.screensaver_active = true;
         state.screensaver_transition = true;
-        if (config.background_mode == BACKGROUND_SLIDESHOW && config.screensaver_pause_slideshow)
+        if (background_shown == BACKGROUND_SLIDESHOW && config.screensaver_pause_slideshow)
             state.slideshow_paused = true;
     }
     else {
@@ -1110,11 +1480,12 @@ static void update_screensaver()
 
         // User has pressed input, deactivate the screensaver
         if (state.screensaver_active && ticks.last_input == ticks.main) {
+            log_debug("Screensaver off");
             SDL_SetTextureAlphaMod(screensaver->texture, 0);
             screensaver->alpha = 0.0f;
             state.screensaver_active = false;
             state.screensaver_transition = false;
-            if (config.background_mode == BACKGROUND_SLIDESHOW) {
+            if (background_shown == BACKGROUND_SLIDESHOW) {
                 state.slideshow_paused = false;
                 
                 // Reset the slideshow time so we don't have a transition immediately 
@@ -1188,14 +1559,14 @@ static inline void post_launch()
         connect_gamepad(-1, true, false);
     if (config.clock_enabled)
         update_clock(true);
-    if (config.background_mode == BACKGROUND_SLIDESHOW)
+    if (background_shown == BACKGROUND_SLIDESHOW)
         resume_slideshow();
     if (config.on_launch == ON_LAUNCH_BLANK)
         set_draw_color();
 
 #ifdef _WIN32
     SDL_EventState(SDL_SYSWMEVENT, SDL_DISABLE);
-    if (config.background_mode == BACKGROUND_TRANSPARENT)
+    if (background_shown == BACKGROUND_TRANSPARENT)
         hide_cursor(current_entry);
 #endif
 }
@@ -1204,15 +1575,25 @@ static inline void post_launch()
 void quit(int status)
 {
     log_debug("Quitting program");
-    if (status != EXIT_SUCCESS)
+    bool message_box = status != EXIT_SUCCESS;
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: STREAMFLEX_TEST_NO_MESSAGE_BOX leaves the message box
+    // out, which some SDLs show and wait on
+    if (getenv("STREAMFLEX_TEST_NO_MESSAGE_BOX") != NULL)
+        message_box = false;
+#endif
+    if (message_box)
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, 
             PROJECT_NAME, 
             "A critical error occurred. Check the log file for details.", 
             NULL
         );
+    // Close settings first, saving nothing: while they are open they would swallow the QuitCmd
+    settings_close_now();
     if (config.quit_cmd != NULL) {
         execute_command(config.quit_cmd);
         free(config.quit_cmd);
+        config.quit_cmd = NULL;   // cleanup() frees it too
     }
     cleanup();
     exit(status);
@@ -1242,7 +1623,7 @@ int main(int argc, char *argv[])
 
     // Parse config file for settings and menu entries
     parse_config_file(config_file_path);
-    free(config_file_path);
+    config.config_path = config_file_path;   // The settings screen saves here
     build_menu_items();
     resolve_library_icons();
     if (config.gamepad_enabled)
@@ -1260,10 +1641,6 @@ int main(int argc, char *argv[])
     init_sdl_image();
     init_sdl_ttf();
     validate_settings(&geo);
-    
-    // Initialize slideshow
-    if (config.background_mode == BACKGROUND_SLIDESHOW)
-        init_slideshow();
 
     // Initialize Nanosvg, create window and renderer
     init_svg();
@@ -1285,26 +1662,8 @@ int main(int argc, char *argv[])
         }
     }
 
-    // Render background
-    if (config.background_mode == BACKGROUND_IMAGE) {
-        if (config.background_image == NULL)
-            log_error("Background 'Image' setting not specified in config file");
-        else
-            background_texture = load_texture_from_file(config.background_image);
-
-        // Switch to color mode if loading background image failed
-        if (background_texture == NULL) {
-            config.background_mode = BACKGROUND_COLOR;
-            log_error("Couldn't load background image, defaulting to color background");
-            set_draw_color();
-        }
-    }
-
-    // Render first slideshow image
-    else if (config.background_mode == BACKGROUND_SLIDESHOW) {
-        SDL_Surface *surface = load_next_slideshow_background(slideshow, false);
-        background_texture = load_texture(surface);
-    }
+    // Set the background up
+    reload_background();
 
     // Initialize screensaver
     if (config.screensaver_enabled)
@@ -1320,7 +1679,7 @@ int main(int argc, char *argv[])
     // Allocate the highlight; its texture is rendered for each button size as menus load
     if (config.highlight) {
         highlight = malloc(sizeof(Highlight));
-        *highlight = (Highlight) { .texture = NULL, .button = 0, .hpad = 0, .vpad = 0 };
+        *highlight = (Highlight) { .texture = NULL, .button = 0, .hpad = 0, .vpad = 0, .title_block = 0 };
     }
 
     // Render scroll indicators
@@ -1386,6 +1745,9 @@ int main(int argc, char *argv[])
     log_debug("Begin program loop");
     while (1) {
         ticks.main = SDL_GetTicks();
+#ifdef STREAMFLEX_TEST_HOOKS
+        test_pad_update();
+#endif
         while (SDL_PollEvent(&event)) {
             switch(event.type) {
                 case SDL_QUIT:
@@ -1394,11 +1756,11 @@ int main(int argc, char *argv[])
 
                 case SDL_KEYDOWN:
                     ticks.last_input = ticks.main;
-                    handle_keypress(&event.key.keysym);
+                    handle_keypress(&event.key.keysym, event.key.repeat != 0);
                     break;
                 
                 case SDL_MOUSEBUTTONDOWN:
-                    if (config.mouse_select && event.button.button == SDL_BUTTON_LEFT) {
+                    if (config.mouse_select && !settings_is_open() && event.button.button == SDL_BUTTON_LEFT) {
                         ticks.last_input = ticks.main;
                         execute_command(current_entry->cmd);
                     }
@@ -1464,9 +1826,10 @@ int main(int argc, char *argv[])
         if (!(state.application_running || state.application_launching)) {
             if (gamepads != NULL)
                 poll_gamepad();
-            if (config.background_mode == BACKGROUND_SLIDESHOW)
+            if (background_shown == BACKGROUND_SLIDESHOW)
                 update_slideshow();
-            if (config.screensaver_enabled)
+            // Settings never start the screensaver, but the key that opened them must still end it
+            if (config.screensaver_enabled && (!settings_is_open() || state.screensaver_active))
                 update_screensaver();
             if (config.clock_enabled)
                 update_clock(false);
@@ -1477,7 +1840,9 @@ int main(int argc, char *argv[])
             if (config.on_launch == ON_LAUNCH_BLANK)
                 set_draw_color();
         }
-        if (state.application_running)
+        if (settings_is_open())
+            settings_draw();
+        else if (state.application_running)
             SDL_Delay(APPLICATION_WAIT_PERIOD);
         else
             draw_screen();

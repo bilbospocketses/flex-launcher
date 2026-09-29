@@ -1,0 +1,9 @@
+# The headless harness runs in Linux; its scripts must keep LF line endings on a Windows checkout
+tests/headless/*.sh text eol=lf
+tests/headless/checks/*.sh text eol=lf
+tests/headless/*.py text eol=lf
+tests/headless/Dockerfile text eol=lf
+tests/headless/Dockerfile.fedora text eol=lf
+# The hands-on QA helpers run in the Ubuntu guest, so the same holds for them
+tests/qa/*.sh text eol=lf
+tests/qa/*.py text eol=lf

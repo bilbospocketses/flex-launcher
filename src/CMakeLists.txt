@@ -16,6 +16,22 @@ set(SOURCES
   utf8.h
   library.c
   library.h
+  alloc.c
+  alloc.h
+  fileio.c
+  fileio.h
+  inidoc.c
+  inidoc.h
+  config_save.c
+  config_save.h
+  settings.c
+  settings.h
+  browser.c
+  browser.h
+  settings_screen.c
+  settings_screen.h
+  test_hooks.c
+  test_hooks.h
 )
 if (UNIX)
   add_executable(${EXECUTABLE_TITLE} ${SOURCES})
@@ -51,6 +67,9 @@ else ()
 	${INIH}
   ${GETOPT}
 	PowrProf
+	shell32
+	ole32
+	uuid
   )
   target_include_directories(${EXECUTABLE_TITLE} PUBLIC ${INIH_INCLUDE_DIR} ${GETOPT_INCLUDE_DIR})
 endif ()

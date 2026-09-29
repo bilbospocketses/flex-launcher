@@ -29,8 +29,9 @@ static void calculate_text_metrics(TTF_Font *font, const char *text, int *h, int
 {
     int ymin = 0;
     int ymax = 0; 
-    int xmin, xmax, xadvance;
-    int current_ymin, current_ymax;
+    // Zero for an empty text, or a glyph TTF_GlyphMetrics cannot measure (it then sets none of them)
+    int xmin = 0, xmax = 0, xadvance = 0;
+    int current_ymin = 0, current_ymax = 0;
     char *p = (char*) text;
     Uint16 code_point;
     int bytes;
@@ -88,6 +89,16 @@ static void calculate_clock_geometry(Clock *clk)
     clk->y_offset = (line_skip - h_time) / 2;
 }
 
+// A function to convert a time to local time in the caller's struct, where localtime() uses a shared one
+static struct tm *to_local_time(const time_t *seconds, struct tm *result)
+{
+#ifdef _MSC_VER
+    return localtime_s(result, seconds) == 0 ? result : NULL;
+#else
+    return localtime_r(seconds, result);
+#endif
+}
+
 // A function to get the current time from the operating system
 void get_time(Clock *clk)
 {
@@ -100,7 +111,7 @@ void get_time(Clock *clk)
 
     // Get current time
     time(&clk->current_time);
-    clk->time_info = localtime(&clk->current_time);
+    clk->time_info = to_local_time(&clk->current_time, &clk->local_time);
     
     // Set render flags if time and/or date changed
     if (clk->time_info == NULL || previous_min != clk->time_info->tm_min) {
@@ -137,7 +148,6 @@ static void format_date(Clock *clk)
         format = DATE_STRING_BIG;
     char weekday[MAX_CLOCK_CHARS + 1];
     char date[MAX_CLOCK_CHARS + 1];
-    size_t bytes = sizeof(clk->date_string);
 
     // Get weekday name
     if (config.clock_include_weekday) {
@@ -153,20 +163,18 @@ static void format_date(Clock *clk)
         weekday, 
         sizeof(clk->date_string)
     );
-    bytes -= strlen(weekday);
-    if (bytes) {
-        // Get date
-        strftime(date, 
-            sizeof(date), 
-            format, 
-            clk->time_info
-        );
-        bytes -= strlen(date);
-        strncat(clk->date_string, 
-            date,
-            bytes
-        );
-    }
+
+    // Get date, and add as much of it as fits after the weekday
+    strftime(date,
+        sizeof(date),
+        format,
+        clk->time_info
+    );
+    size_t used = strlen(clk->date_string);
+    copy_string(clk->date_string + used,
+        date,
+        sizeof(clk->date_string) - used
+    );
 }
 
 // A function to calculate the x and y coordinates of the clock text

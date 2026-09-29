@@ -15,6 +15,7 @@
 #define COLOR_MASKS RMASK, GMASK, BMASK, AMASK
 
 // Launcher parameters
+#define DEFAULT_REFRESH_RATE 60
 #define MIN_FPS_LIMIT 10
 #define MIN_ICON_SIZE 32
 #define MAX_ICON_SIZE 1024
@@ -31,15 +32,14 @@
 #define MAX_CLOCK_MARGIN 0.1F
 #define MIN_VCENTER 0.25F
 #define MAX_VCENTER 0.75F
-#define MIN_SLIDESHOW_IMAGE_DURATION 5000
-#define MAX_SLIDESHOW_IMAGE_DURATION 3600000
-#define MAX_SLIDESHOW_TRANSITION_TIME 3000
 #define MIN_SCREENSAVER_IDLE_TIME 3
 #define MAX_SCREENSAVER_IDLE_TIME 900
 #define SCREENSAVER_TRANSITION_TIME 1500
 #define APPLICATION_WAIT_PERIOD 100
 #define MIN_APPLICATION_TIMEOUT 3
 #define MAX_APPLICATION_TIMEOUT 30
+#define TITLE_MIN_SIZE 0.02F       // The readable minimum title size: 2% of the screen height
+#define TITLE_MEASURE_SIZE 1000    // Point size a title font's line height is measured at
 
 // Special commands
 #define SCMD_SELECT ":select"
@@ -56,6 +56,7 @@
 #define SCMD_SHUTDOWN ":shutdown"
 #define SCMD_RESTART ":restart"
 #define SCMD_SLEEP ":sleep"
+#define SCMD_SETTINGS ":settings"
 
 typedef enum {
     MODE_SETTING_BACKGROUND,
@@ -114,8 +115,8 @@ typedef struct {
     bool application_running;
     bool has_focus;
     bool slideshow_transition;
-    bool slideshow_background_rendering;
-    bool slideshow_background_ready;
+    SDL_atomic_t slideshow_background_rendering; // Both also written by the slideshow's loader thread
+    SDL_atomic_t slideshow_background_ready;
     bool slideshow_paused;
     bool screensaver_active;
     bool screensaver_transition;
@@ -159,6 +160,7 @@ typedef struct menu {
     LayoutOverrides overrides;        // Per-menu Rows/Columns/IconSize; 0 = from [Layout]
     LayoutPosition  position;         // Selected entry and scroll position
     int             rendered_size;    // Button size the textures were rendered at; 0 = not yet
+    bool            fixed_titles;     // Its percentage title size's font failed to open: the fixed FontSize stands in
     struct menu     *next;
     struct menu     *back;
 } Menu;
@@ -193,7 +195,9 @@ typedef struct {
     int screen_width;
     int screen_height;
     int screen_margin;
-    int font_height;
+    int font_height;    // The fixed FontSize's line height
+    int title_min_size; // The readable minimum title size, in points
+    int title_line_pm;  // The title font's line height per point, in thousandths
     int vcenter; // The VCenter setting in px from the top of the screen
 } Geometry;
 
@@ -204,6 +208,7 @@ typedef struct {
     int button;
     int hpad;
     int vpad;
+    int title_block;
 } Highlight;
 
 // Struct for scroll indicators: left and right for a strip, up and down for a grid
@@ -225,6 +230,7 @@ typedef struct {
     float transition_change_rate;
     SDL_Surface *transition_surface;
     SDL_Texture *transition_texture;
+    bool only_one;   // Set by the loader: the only image that loads is the one already on show
 } Slideshow;
 
 // Screensaver
@@ -257,12 +263,14 @@ typedef struct {
     bool titles_enabled;
     char *title_font_path; // Path to title TTF font file
     unsigned int title_font_size;
+    int title_font_size_pct;    // FontSize as a percentage of the button; 0 = the fixed title_font_size
     SDL_Color title_font_color; // Color struct for title text
     bool title_shadows;
     SDL_Color title_shadow_color;
     char title_opacity[PERCENT_MAX_CHARS];
     ModeOversize title_oversize_mode; 
     int title_padding;
+    int title_padding_pct;      // Padding as a percentage of the button; 0 = the fixed title_padding
     bool highlight;
     SDL_Color highlight_fill_color;
     SDL_Color highlight_outline_color;
@@ -294,6 +302,7 @@ typedef struct {
     char *gamepad_mappings_file;
     bool debug;
     char *exe_path;
+    char *config_path; // The file the settings were read from
     Menu *first_menu;
     size_t num_menus;
     bool clock_enabled;
@@ -319,3 +328,16 @@ void set_draw_color(void);
 void quit(int status);
 void print_version(FILE *stream);
 int compute_menu_layout(const Menu *menu, LayoutGeometry *geometry, char *why, size_t why_size);
+void describe_titles(const LayoutGeometry *geometry, char *out, size_t size);
+
+extern ModeBackground background_shown;
+extern SDL_Texture *background_override;
+void draw_scene(bool preview);
+void present_frame(void);
+void reload_background(void);
+void update_slideshow_timing(void);
+void reload_titles(void);
+void trim_title_fonts(void);
+void refresh_layout(void);
+int show_menu(Menu *menu);
+int show_home(void);

@@ -1,10 +1,10 @@
-#include <io.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <windows.h>
 #include <psapi.h>
+#include <powrprof.h>
 #include <SDL.h>
 #include <SDL_syswm.h>
 #include "../launcher.h"
@@ -12,7 +12,9 @@
 #include "platform.h"
 #include "../util.h"
 #include "../debug.h"
-#include "slideshow.h"
+#include "../fileio.h"
+#include "../alloc.h"
+#include "../browser.h"
 
 static void parse_command(char *cmd, char *file, size_t file_size, char **params);
 static char *path_basename(const char *path);
@@ -29,21 +31,13 @@ UINT exit_hotkey                = 0;
 // A function to determine if a file exists on the filesystem
 bool file_exists(const char *path)
 {
-    return _access(path, 4) ? false : true;
+    return fileio_exists(path);
 }
 
 // A function to determine if a directory exists on the filesystem
 bool directory_exists(const char *path)
 {
-    if (!file_exists(path))
-        return false;
-    else {
-        DWORD attributes = GetFileAttributesA(path);
-        if (attributes & FILE_ATTRIBUTE_DIRECTORY)
-            return true;
-        else
-            return false;
-    }
+    return fileio_is_dir(path);
 }
 
 // A function that parses the command string into a file and parameters
@@ -86,7 +80,7 @@ static void parse_command(char *cmd, char *file, size_t file_size, char **params
                 // Copy parameters
                 if (*p != '\0')
                     *params = strdup(p);
-                    break;
+                break;
             }
 
             // If a space was detected after the quote
@@ -104,8 +98,9 @@ static void parse_command(char *cmd, char *file, size_t file_size, char **params
         p++;
     }
 
-    // If there were no quotes or spaces, copy whole command into file buffer
-    if (start && file[0] == '\0')
+    // If there were no quotes or spaces, copy whole command into file buffer. `start` points into
+    // the command, which the loops above have already read, so it is never NULL here.
+    if (file[0] == '\0')
         copy_string(file, start, file_size);
 }
 
@@ -125,6 +120,13 @@ void make_window_transparent()
     );
 }
 
+// A function to make the window solid again after a transparent background
+void make_window_opaque()
+{
+    HWND hwnd = wm_info.info.win.window;
+    SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) & ~WS_EX_LAYERED);
+}
+
 // When the window is transparent, we need to hide the cursor behind the non-transparent icon
 void hide_cursor(Entry *entry)
 {
@@ -133,32 +135,42 @@ void hide_cursor(Entry *entry)
     );
 }
 
-// A function to launch an application
+// A function to launch an application. The command is UTF-8, as every string from the config is,
+// so it goes to Windows as UTF-16: the ANSI call misread any character outside the system code page.
 bool start_process(char *cmd, bool application)
 {
     bool ret = false;
     char file[MAX_PATH_CHARS + 1];
     char *params = NULL;
     int cmd_show = application ? SW_SHOWMAXIMIZED : SW_HIDE;
-    
+
     // Parse command into file and parameters strings
     parse_command(cmd, file, sizeof(file), &params);
 
-    // Set up info struct
-    SHELLEXECUTEINFOA info = {
-        .cbSize = sizeof(SHELLEXECUTEINFOA),
-        .fMask = SEE_MASK_NOCLOSEPROCESS,
-        .hwnd = NULL,
-        .lpVerb = "open",
-        .lpFile = file,
-        .lpParameters = params,
-        .lpDirectory = NULL,
-        .nShow = cmd_show,
-        .lpIDList = NULL,
-        .lpClass = NULL,
-    };
+    wchar_t *wide_file = fileio_wide(file);
+    wchar_t *wide_params = params != NULL ? fileio_wide(params) : NULL;
+    BOOL successful = FALSE;
+    if (wide_file == NULL || (params != NULL && wide_params == NULL))
+        log_error("Could not launch '%s': %s", file, fileio_last_error());
+    else {
+        // Set up info struct
+        SHELLEXECUTEINFOW info = {
+            .cbSize = sizeof(SHELLEXECUTEINFOW),
+            .fMask = 0,
+            .hwnd = NULL,
+            .lpVerb = L"open",
+            .lpFile = wide_file,
+            .lpParameters = wide_params,
+            .lpDirectory = NULL,
+            .nShow = cmd_show,
+            .lpIDList = NULL,
+            .lpClass = NULL,
+        };
+        successful = ShellExecuteExW(&info);
+    }
+    alloc_free(wide_file);
+    alloc_free(wide_params);
 
-    BOOL successful = ShellExecuteExA(&info);
     if (!application)
         ret = true;
     else {
@@ -177,32 +189,25 @@ bool start_process(char *cmd, bool application)
     return ret;
 }
 
-// A function to scan the slideshow directory for image files
+// A function to scan the slideshow directory for image files, by the rule the settings' folder
+// browser uses (browser_is_image_file): any case of extension, hidden files left out
 void scan_slideshow_directory(Slideshow *slideshow, const char *directory)
 {
-    WIN32_FIND_DATAA data;
-    HANDLE handle;
-    char file_search[MAX_PATH_CHARS + 1];
+    FileioEntry *entries = NULL;
+    int count = fileio_list(directory, &entries);
     char file_output[MAX_PATH_CHARS + 1];
-    char extension[10];
-
-    // Generate a wildcard file search string for all supported image file extensions
-    for (int i = 0; i < NUM_IMAGE_EXTENSIONS; i++) {
-        copy_string(extension, "*", sizeof(extension));
-        strcat(extension, extensions[i]);
-        join_paths(file_search, sizeof(file_search), 2, directory, extension);
-
-        // Store every result into the slideshow struct
-        handle = FindFirstFileA(file_search, &data);
-        if (handle != INVALID_HANDLE_VALUE) {
-            do {
-                join_paths(file_output, sizeof(file_output), 2, directory, data.cFileName);
-                slideshow->images = realloc(slideshow->images, (slideshow->num_images + 1) * sizeof(char*));
-                slideshow->images[slideshow->num_images] = strdup(file_output);
-                slideshow->num_images++;
-            } while (FindNextFileA(handle, &data) != 0);
-        }
+    for (int i = 0; i < count; i++) {
+        if (!browser_is_image_file(&entries[i]))
+            continue;
+        join_paths(file_output, sizeof(file_output), 2, directory, entries[i].name);
+        char **grown = realloc(slideshow->images, (size_t) (slideshow->num_images + 1) * sizeof(char*));
+        if (grown == NULL)
+            break;
+        slideshow->images = grown;
+        slideshow->images[slideshow->num_images] = strdup(file_output);
+        slideshow->num_images++;
     }
+    fileio_free_list(entries, count);
 }
 
 // A function to get the 2 letter region code

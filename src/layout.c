@@ -40,6 +40,43 @@ bool layout_parse_icon_size(const char *value, int *size)
     return true;
 }
 
+// A function to read "N" or "N%": a whole number from min_number to max_number, or a percentage
+// from min_percent to max_percent
+static bool parse_number_or_percent(const char *value, int min_number, int max_number,
+                                    int min_percent, int max_percent, int *number, bool *percent)
+{
+    if (value == NULL)
+        return false;
+    size_t length = strlen(value);
+    bool is_percent = length > 1 && value[length - 1] == '%';
+    size_t digits = is_percent ? length - 1 : length;
+    if (digits == 0 || digits > 4)
+        return false;
+    int n = 0;
+    for (size_t i = 0; i < digits; i++) {
+        if (!isdigit((unsigned char) value[i]))
+            return false;
+        n = n * 10 + (value[i] - '0');
+    }
+    if (is_percent ? (n < min_percent || n > max_percent) : (n < min_number || n > max_number))
+        return false;
+    *number = n;
+    *percent = is_percent;
+    return true;
+}
+
+// A function to read a FontSize: a percentage of the button ("14%") or a fixed point size ("36")
+bool layout_parse_title_size(const char *value, int *size, bool *percent)
+{
+    return parse_number_or_percent(value, 1, LAYOUT_MAX_TITLE_POINTS, 1, LAYOUT_MAX_TITLE_PERCENT, size, percent);
+}
+
+// A function to read a title Padding: a percentage of the button ("8%") or a number of px ("20")
+bool layout_parse_title_padding(const char *value, int *padding, bool *percent)
+{
+    return parse_number_or_percent(value, 0, LAYOUT_MAX_BUTTON, 0, LAYOUT_MAX_PADDING_PERCENT, padding, percent);
+}
+
 // A function to return the smaller of two ints
 static int min_int(int a, int b)
 {
@@ -52,6 +89,77 @@ static int max_int(int a, int b)
     return a > b ? a : b;
 }
 
+// A function to take a whole percentage of a size, rounded to the nearest px
+static int percent_of(int size, int percent)
+{
+    return (size * percent + 50) / 100;
+}
+
+// A function to size a menu's titles for its button: a percentage FontSize follows the button but
+// never drops below the readable minimum; a fixed one is 0 here (its height is title_block)
+int layout_title_size(const LayoutParams *params, int button)
+{
+    if (params->title_size_pct <= 0)
+        return 0;
+    return max_int(percent_of(button, params->title_size_pct), params->title_min_size);
+}
+
+// A function to find the space between a button and its title: a percentage of the button, or
+// a fixed number of px capped at half the button
+int layout_title_padding(const LayoutParams *params, int button)
+{
+    if (params->title_padding_pct > 0)
+        return percent_of(button, params->title_padding_pct);
+    return min_int(max_int(params->title_padding, 0), max_int(button, 0) / 2);
+}
+
+// A function to find how far a title's shadow sits below and right of it: 1/40 of the title's line
+// height, at least 2 px. render_text() draws it this far off, so the layout keeps the same room.
+int layout_shadow_offset(int line_height)
+{
+    return max_int(line_height / 40, 2);
+}
+
+// A function to find how wide a title may be drawn under its button: the button, less the shadow
+// that reaches past the title's right edge
+int layout_title_width(bool shadow, int button, int line_height)
+{
+    return shadow ? max_int(button - layout_shadow_offset(line_height), 0) : button;
+}
+
+// A function to find everything under a button: its padding, its title's line height, and its
+// shadow's offset below that. A percentage size's line is measured per point at a large size; one
+// px more covers rounding. A title drawn in a smaller font (Shrink) has a line and a shadow no taller.
+int layout_title_block(const LayoutParams *params, int button)
+{
+    int size = layout_title_size(params, button);
+    int line = size > 0 ? (size * params->title_line_pm + 999) / 1000 + 1 : 0;
+    line += max_int(params->title_block, 0);
+    if (params->title_shadow && line > 0)
+        line += layout_shadow_offset(line);
+    return line + layout_title_padding(params, button);
+}
+
+// A function to find the largest button for which `rows` rows fit the area's height, each with
+// its title block under it. The block grows with the button, so this searches instead of dividing.
+// It returns -1 when not even a 0 px button fits.
+static int fit_height(const LayoutParams *params, const LayoutArea *area, int rows, int spacing, int vpad)
+{
+    int room = area->h - (rows - 1) * spacing - 2 * vpad;
+    if (room < 0 || rows * layout_title_block(params, 0) > room)
+        return -1;
+    int low = 0;
+    int high = room / rows;
+    while (low < high) {
+        int middle = low + (high - low + 1) / 2;
+        if (rows * (middle + layout_title_block(params, middle)) <= room)
+            low = middle;
+        else
+            high = middle - 1;
+    }
+    return low;
+}
+
 // A function to find the largest button for which `count` slots fit in `length` px, with
 // `spacing` between slots, `pad` px of highlight at each end and `extra` px under each slot
 static int fit(int length, int count, int spacing, int pad, int extra)
@@ -60,10 +168,22 @@ static int fit(int length, int count, int spacing, int pad, int extra)
 }
 
 // A function to size and place a menu's buttons for its grid shape
-int layout_compute(const LayoutParams *params, const LayoutArea *area, int entry_count,
+int layout_compute(const LayoutParams *given, const LayoutArea *area, int entry_count,
                    LayoutGeometry *geometry, char *why, size_t why_size)
 {
     LayoutGeometry g;
+
+    // Keep the title arithmetic inside int however large the title settings are, as the gap and
+    // paddings are below: a fixed line no taller than the area, a fixed padding no larger than the
+    // largest button, and the percentages, sizes and line height within their parsers' limits
+    LayoutParams limited = *given;
+    const LayoutParams *params = &limited;
+    limited.title_block = min_int(max_int(given->title_block, 0), max_int(area->h, 0));
+    limited.title_padding = min_int(max_int(given->title_padding, 0), LAYOUT_MAX_BUTTON);
+    limited.title_padding_pct = min_int(max_int(given->title_padding_pct, 0), LAYOUT_MAX_PADDING_PERCENT);
+    limited.title_size_pct = min_int(max_int(given->title_size_pct, 0), LAYOUT_MAX_TITLE_PERCENT);
+    limited.title_min_size = min_int(max_int(given->title_min_size, 0), LAYOUT_MAX_TITLE_POINTS);
+    limited.title_line_pm = min_int(max_int(given->title_line_pm, 0), LAYOUT_MAX_LINE_PM);
     int cap = params->icon_cap > 0 ? min_int(params->icon_cap, LAYOUT_MAX_BUTTON) : LAYOUT_MAX_BUTTON;
     int width_fit, height_fit;
     if (why_size > 0)
@@ -85,7 +205,7 @@ int layout_compute(const LayoutParams *params, const LayoutArea *area, int entry
         if (g.rows > 1)
             g.vpad = min_int(g.vpad, spacing / 2);
         width_fit = fit(area->w, g.columns, spacing, g.hpad, 0);
-        height_fit = fit(area->h, g.rows, spacing, g.vpad, params->title_block);
+        height_fit = fit_height(params, area, g.rows, spacing, g.vpad);
         if (width_fit < LAYOUT_MIN_BUTTON && g.columns > 1)
             g.columns--;
         else if (height_fit < LAYOUT_MIN_BUTTON && g.rows > 1)
@@ -100,6 +220,9 @@ int layout_compute(const LayoutParams *params, const LayoutArea *area, int entry
                 LAYOUT_MIN_BUTTON, area->w, area->h);
         return -1;
     }
+    g.title_size = layout_title_size(params, g.button);
+    g.title_padding = layout_title_padding(params, g.button);
+    g.title_block = layout_title_block(params, g.button);
     if ((g.columns != params->columns || g.rows != params->rows) && why_size > 0)
         snprintf(why, why_size, "not enough screen space for %i x %i buttons, reducing to %i x %i",
             params->columns, params->rows, g.columns, g.rows);
@@ -110,9 +233,9 @@ int layout_compute(const LayoutParams *params, const LayoutArea *area, int entry
     int used_columns = min_int(count, g.columns);
     int used_rows = min_int(g.rows, (count + g.columns - 1) / g.columns);
     int block_w = used_columns * g.button + (used_columns - 1) * spacing;
-    int block_h = used_rows * (g.button + params->title_block) + (used_rows - 1) * spacing;
+    int block_h = used_rows * (g.button + g.title_block) + (used_rows - 1) * spacing;
     g.x_advance = g.button + spacing;
-    g.y_advance = g.button + params->title_block + spacing;
+    g.y_advance = g.button + g.title_block + spacing;
     g.x_origin = area->x + (area->w - block_w) / 2;
 
     // Centre the occupied rows on VCenter, then keep the block and its highlight inside the area

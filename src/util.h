@@ -10,6 +10,11 @@
 #define PATH_SEPARATOR "/"
 #endif
 
+// strtok_r is POSIX; MSVC has the same function, with the same arguments, as strtok_s
+#ifdef _MSC_VER
+#define strtok_r(string, delimiters, context) strtok_s(string, delimiters, context)
+#endif
+
 #define UNUSED(x) (void)(x)
 #define SELECTED_SUFFIX "_selected"
 #define LEN(x) ((sizeof(x)/sizeof(x[0])) - sizeof(x[0]))

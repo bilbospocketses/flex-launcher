@@ -4,5 +4,6 @@
 
 int utf8_length(const char *string);
 void utf8_truncate(char *string, int width, int max_width);
+int utf8_shorten(char *string);
 
 #endif

@@ -17,6 +17,7 @@ void scmd_sleep(void);
 // Linux-specific function prototypes
 #ifdef __unix__
 void make_directory(const char *directory);
+bool home_directory(char *buffer, size_t size);
 void print_usage(void);
 #endif
 
@@ -27,6 +28,7 @@ void set_exit_hotkey(SDL_Keycode keycode);
 void register_exit_hotkey(void);
 void check_exit_hotkey(SDL_SysWMmsg *msg);
 void set_foreground_window(void);
-void set_window_transparent(void);
+void make_window_transparent(void);
+void make_window_opaque(void);
 void hide_cursor(Entry* entry);
 #endif

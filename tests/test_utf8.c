@@ -10,7 +10,7 @@
 static void place(char *buffer, size_t size, const char *title)
 {
     memset(buffer, 'G', size);
-    strcpy(buffer + GUARD, title);
+    memcpy(buffer + GUARD, title, strlen(title) + 1);
 }
 
 static int guard_intact(const char *buffer)
@@ -77,6 +77,29 @@ static void test_truncate_degenerate(void)
     CHECK(strcmp(b + GUARD, "...") == 0);
 }
 
+// A function to test that a cut title loses the character before its "...", a whole UTF-8
+// character at a time, down to "...", and that an uncut title is left alone
+static void test_shorten(void)
+{
+    char b[64];
+    place(b, sizeof(b), "Tel...");
+    CHECK(utf8_shorten(b + GUARD) == 1);
+    CHECK(strcmp(b + GUARD, "Te...") == 0);
+
+    place(b, sizeof(b), "T\xC3\xA9...");       // a two-byte character before the dots
+    CHECK(utf8_shorten(b + GUARD) == 1);
+    CHECK(strcmp(b + GUARD, "T...") == 0);
+    CHECK(utf8_shorten(b + GUARD) == 1);
+    CHECK(strcmp(b + GUARD, "...") == 0);
+    CHECK(utf8_shorten(b + GUARD) == 0);       // nothing left to remove
+    CHECK(strcmp(b + GUARD, "...") == 0);
+    CHECK(guard_intact(b));
+
+    place(b, sizeof(b), "TV");                 // never cut, so not shortened
+    CHECK(utf8_shorten(b + GUARD) == 0);
+    CHECK(strcmp(b + GUARD, "TV") == 0);
+}
+
 int main(void)
 {
     test_truncate_ordinary();
@@ -84,5 +107,6 @@ int main(void)
     test_truncate_two_chars();
     test_truncate_multibyte();
     test_truncate_degenerate();
+    test_shorten();
     return check_report();
 }

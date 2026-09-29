@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <ini.h>
 #include "library.h"
+#include "fileio.h"
 
 typedef struct {
     char name[LIBRARY_NAME_MAX + 1];
@@ -138,7 +139,7 @@ int library_load(const char *root)
     if (manifest == NULL)
         return -1;
     snprintf(manifest, manifest_size, "%s%s%s", root, separator, LIBRARY_MANIFEST);
-    FILE *file = fopen(manifest, "r");
+    FILE *file = fileio_open(manifest, "r");
     if (file == NULL) {
         warn("Icon library: could not open %s", manifest);
         free(manifest);
@@ -171,7 +172,7 @@ int library_load(const char *root)
         if (path == NULL)
             continue;
         snprintf(path, path_size, "%s%s%s", root, separator, icon->file);
-        FILE *probe = fopen(path, "rb");
+        FILE *probe = fileio_open(path, "rb");
         if (probe == NULL) {
             warn("Icon library: [%s] file %s does not exist, skipping it", icon->name, path);
             free(path);

@@ -12,15 +12,23 @@
 #include "util.h"
 #include "debug.h"
 #include <ini.h>
+// Vendored code is not held to our warning level (see src/external/README.md)
+#ifdef _MSC_VER
+#pragma warning(push, 0)
+// Level 0 does not reach the back end's C4702, which needs its own disable
+#pragma warning(disable: 4702)
+#endif
 #define NANOSVG_IMPLEMENTATION
 #include <nanosvg.h>
 #define NANOSVGRAST_IMPLEMENTATION
 #include <nanosvgrast.h>
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 extern Config config;
 extern State state;
 extern SDL_Renderer *renderer;
-extern SDL_Texture *background_texture;
 NSVGrasterizer *rasterizer = NULL;
 
 // A function to initalize SVG rasterization
@@ -40,20 +48,91 @@ void quit_svg()
     nsvgDeleteRasterizer(rasterizer);
 }
 
-// A function to load the next slideshow background from the struct
+#define MAX_TITLE_FONTS 16
+
+// Title fonts by point size, for menus whose titles scale with their buttons
+static struct {
+    int size;
+    TTF_Font *font;
+} title_fonts[MAX_TITLE_FONTS];
+static int title_font_count = 0;
+
+// A function to get the title font at a point size, opening it the first time. SDL_ttf 2.0.15
+// cannot resize an open font, so each size is its own; the cache keeps MAX_TITLE_FONTS of them
+// and closes the oldest to make room.
+TTF_Font *title_font(int size)
+{
+    for (int i = 0; i < title_font_count; i++) {
+        if (title_fonts[i].size == size)
+            return title_fonts[i].font;
+    }
+    TTF_Font *font = TTF_OpenFont(config.title_font_path, size);
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: STREAMFLEX_TEST_FAIL_TITLE_SIZE names a size that fails
+    const char *fail = getenv("STREAMFLEX_TEST_FAIL_TITLE_SIZE");
+    if (fail != NULL && atoi(fail) == size && font != NULL) {
+        TTF_CloseFont(font);
+        font = NULL;
+        TTF_SetError("the test hook failed it");
+    }
+#endif
+    if (font == NULL) {
+        log_error("Could not open the title font at %i pt\n%s", size, TTF_GetError());
+        return NULL;
+    }
+    if (title_font_count == MAX_TITLE_FONTS) {
+        TTF_CloseFont(title_fonts[0].font);
+        memmove(&title_fonts[0], &title_fonts[1], (MAX_TITLE_FONTS - 1) * sizeof(title_fonts[0]));
+        title_font_count--;
+    }
+    title_fonts[title_font_count].size = size;
+    title_fonts[title_font_count].font = font;
+    title_font_count++;
+    return font;
+}
+
+// A function to close every cached title font
+void title_fonts_free(void)
+{
+    for (int i = 0; i < title_font_count; i++)
+        TTF_CloseFont(title_fonts[i].font);
+    title_font_count = 0;
+}
+
+// A function to close the cached title fonts at sizes not in a list: when settings close, the
+// sizes no menu uses any more
+void title_fonts_keep(const int *sizes, int count)
+{
+    int kept = 0;
+    for (int i = 0; i < title_font_count; i++) {
+        bool used = false;
+        for (int j = 0; j < count && !used; j++)
+            used = title_fonts[i].size == sizes[j];
+        if (used)
+            title_fonts[kept++] = title_fonts[i];
+        else {
+            log_debug("Titles: closed the %i pt title font, which no menu uses now", title_fonts[i].size);
+            TTF_CloseFont(title_fonts[i].font);
+        }
+    }
+    title_font_count = kept;
+}
+
+// A function to load the next slideshow image that loads. It also runs on the slideshow thread, so
+// it touches nothing but the slideshow: textures, the draw colour and what is shown belong to the
+// main thread. It returns NULL when no image in the folder loads, and sets slideshow->only_one when
+// the only one that does is the image already on show; the main thread falls back from either.
 SDL_Surface *load_next_slideshow_background(Slideshow *slideshow, bool transition)
 {
     SDL_Surface *surface = NULL;
     int initial_index = slideshow->i;
-    int attempts = 0;
-    do {
-        // Increment slideshow background index and load background
-        (slideshow->i)++;
-        if (slideshow->i >= slideshow->num_images)
-            slideshow->i = 0;
+
+    // Try each image once at most, starting after the one on show (i is -1 before the first)
+    for (int attempts = 0; surface == NULL && attempts < slideshow->num_images; attempts++) {
+        slideshow->i = (slideshow->i + 1) % slideshow->num_images;
         surface = IMG_Load(slideshow->images[slideshow->order[slideshow->i]]);
-        
-        // If the loaded image has no alpha channel (e.g. JPEG), create one 
+
+        // If the loaded image has no alpha channel (e.g. JPEG), create one
         // so that we can have transparency for the background transition
         if (surface != NULL && surface->format->format == SDL_PIXELFORMAT_RGB24 && transition) {
             SDL_Surface *tmp = SDL_CreateRGBSurfaceWithFormat(0,
@@ -62,38 +141,16 @@ SDL_Surface *load_next_slideshow_background(Slideshow *slideshow, bool transitio
                                    32,
                                    SDL_PIXELFORMAT_ARGB8888
                                 );
-            Uint32 color = SDL_MapRGBA(tmp->format, 0, 0, 0, 0xFF);
-            SDL_FillRect(tmp, NULL, color);
-            SDL_BlitSurface(surface, NULL, tmp, NULL);
-            SDL_FreeSurface(surface);
-            surface = tmp;
-            attempts++;
-        } 
-    } while (surface == NULL && slideshow->i != initial_index && attempts < slideshow->num_images);
-    
-    // Switch to color background mode if we failed to load any image from the array
-    if (surface == NULL) {
-        log_error(
-            "Could not load any image from slideshow directory %s\n"
-            "Changing background to color mode", 
-            config.slideshow_directory
-        );
-        quit_slideshow();
-        config.background_mode = BACKGROUND_COLOR;
-        set_draw_color();
+            if (tmp != NULL) {
+                Uint32 color = SDL_MapRGBA(tmp->format, 0, 0, 0, 0xFF);
+                SDL_FillRect(tmp, NULL, color);
+                SDL_BlitSurface(surface, NULL, tmp, NULL);
+                SDL_FreeSurface(surface);
+                surface = tmp;
+            }
+        }
     }
-
-    // If only one image in the entire slideshow array was valid, switch to
-    // single image background mode
-    else if (slideshow->i == initial_index && surface != NULL) {
-        log_error(
-            "Could only load one image from slideshow directory %s\n"
-            "Changing background to single image mode",
-            config.slideshow_directory
-        );
-        background_texture = SDL_CreateTextureFromSurface(renderer, surface);
-        config.background_mode = BACKGROUND_IMAGE;
-    }
+    slideshow->only_one = surface != NULL && slideshow->i == initial_index;
     return surface;
 }
 
@@ -102,8 +159,8 @@ int load_next_slideshow_background_async(void *data)
 {
     Slideshow *slideshow = (Slideshow*) data;
     slideshow->transition_surface = load_next_slideshow_background(slideshow, true);
-    state.slideshow_background_rendering = false;
-    state.slideshow_background_ready = true;
+    SDL_AtomicSet(&state.slideshow_background_rendering, 0);
+    SDL_AtomicSet(&state.slideshow_background_ready, 1);
     return 0;
 }
 
@@ -319,6 +376,17 @@ int render_scroll_indicators(Scroll *scroll, int height, Geometry *geo)
     return 0;
 }
 
+// A function to cut a line of text with "..." to fit a width, measured in the font it is drawn in:
+// utf8_truncate() estimates from the average character's width, and wide letters can leave the
+// estimate too long, so one more character goes until it fits. Leaves the width and height in w, h.
+static void truncate_to_fit(TTF_Font *font, char *text, int max_width, int *w, int *h)
+{
+    utf8_truncate(text, *w, max_width);
+    TTF_SizeUTF8(font, text, w, h);
+    while (*w > max_width && utf8_shorten(text))
+        TTF_SizeUTF8(font, text, w, h);
+}
+
 // A function to render text
 SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *text_height)
 {
@@ -336,41 +404,48 @@ SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *
     if (info->oversize_mode != OVERSIZE_NONE && w > info->max_width) {
 
         // Truncate mode:
-        if (info->oversize_mode == OVERSIZE_TRUNCATE) {
-            utf8_truncate(text_buffer, w, info->max_width);
-            TTF_SizeUTF8(info->font, text_buffer, &w, &h);
-        }
+        if (info->oversize_mode == OVERSIZE_TRUNCATE)
+            truncate_to_fit(info->font, text_buffer, info->max_width, &w, &h);
 
-        // Shrink mode:
+        // Shrink mode: work out the size that fits from the measured width, never going below
+        // the readable minimum, then cut whatever still does not fit
         else if (info->oversize_mode == OVERSIZE_SHRINK) {
-            int reduced_font_size = (int) info->font_size - 1;
-            reduced_font = TTF_OpenFont(*info->font_path, reduced_font_size);
-            TTF_SizeUTF8(reduced_font, text_buffer, &w, &h);
+            int size = info->font_size * info->max_width / w;
+            if (size < info->min_size)
+                size = info->min_size;
+            if (size > 0 && size < info->font_size) {
+                reduced_font = TTF_OpenFont(*info->font_path, size);
 
-            // Keep trying smaller font until it fits
-            while (w > info->max_width && reduced_font_size > 0) {
-                TTF_CloseFont(reduced_font);
-                reduced_font = NULL;
-                reduced_font_size--;
-                reduced_font = TTF_OpenFont(*info->font_path, reduced_font_size);
-                TTF_SizeUTF8(reduced_font, text_buffer, &w, &h);
+                // The font's own rounding can leave it a pixel or two too wide: step down to the minimum
+                while (reduced_font != NULL) {
+                    TTF_SizeUTF8(reduced_font, text_buffer, &w, &h);
+                    if (w <= info->max_width || size <= info->min_size)
+                        break;
+                    TTF_CloseFont(reduced_font);
+                    reduced_font = TTF_OpenFont(*info->font_path, --size);
+#ifdef STREAMFLEX_TEST_HOOKS
+                    // Only the headless harness builds this: every step down fails to open
+                    if (getenv("STREAMFLEX_TEST_FAIL_SHRINK_STEP") != NULL && reduced_font != NULL) {
+                        log_debug("Test hook: the step down to %i pt fails", size);
+                        TTF_CloseFont(reduced_font);
+                        reduced_font = NULL;
+                    }
+#endif
+                }
             }
 
-            if (reduced_font_size)
-                output_font = reduced_font;
-            else
-                reduced_font = NULL;
+            // A smaller font that failed to open leaves the title at the menu's size, and w from
+            // the font just closed; truncate_to_fit() measures it again in the font it is drawn in
+            if (w > info->max_width)
+                truncate_to_fit(reduced_font != NULL ? reduced_font : info->font, text_buffer, info->max_width, &w, &h);
         }
     }
-    if (reduced_font == NULL)
-        output_font = info->font;
+    output_font = reduced_font != NULL ? reduced_font : info->font;
 
     // Render surface
     SDL_Surface *surface = NULL;
     if (info->shadow) {
-        int shadow_offset = h / 40;
-        if (shadow_offset < 2)
-            shadow_offset = 2;
+        int shadow_offset = layout_shadow_offset(h);
         SDL_Surface *foreground = TTF_RenderUTF8_Blended(output_font,
                                       text_buffer,
                                       *info->color
@@ -389,8 +464,8 @@ SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *
         SDL_FillRect(surface, NULL, color);
         SDL_Rect shadow_rect = {shadow_offset, shadow_offset, shadow->w, shadow->h};
         SDL_BlitSurface(shadow, NULL, surface, &shadow_rect);
-        SDL_Rect rect = {0, 0, foreground->w, foreground->h};
-        SDL_BlitSurface(foreground, NULL, surface, &rect);
+        SDL_Rect foreground_rect = {0, 0, foreground->w, foreground->h};
+        SDL_BlitSurface(foreground, NULL, surface, &foreground_rect);
         SDL_FreeSurface(foreground);
         SDL_FreeSurface(shadow);
     }
@@ -431,6 +506,20 @@ static bool is_relative_path(const char *path)
     return true;
 }
 
+// A function to find a bundled font: next to the executable, else where the packages install it
+char *find_default_font(const char *font)
+{
+    const char *prefixes[2];
+    char fonts_exe_buffer[MAX_PATH_CHARS + 1];
+    prefixes[0] = join_paths(fonts_exe_buffer, sizeof(fonts_exe_buffer), 3, config.exe_path, PATH_ASSETS_EXE, PATH_FONTS_EXE);
+#ifdef __unix__
+    prefixes[1] = PATH_FONTS_SYSTEM;
+#else
+    prefixes[1] = PATH_FONTS_RELATIVE;
+#endif
+    return find_file(font, 2, prefixes);
+}
+
 // A function to load a font from a file
 int load_font(TextInfo *info, const char *default_font)
 {
@@ -454,15 +543,7 @@ int load_font(TextInfo *info, const char *default_font)
     // Try to load default font if we failed loading from config file
     if (info->font == NULL) {
         log_error("Could not initialize font from config file");
-        const char *prefixes[2];
-        char fonts_exe_buffer[MAX_PATH_CHARS + 1];
-        prefixes[0] = join_paths(fonts_exe_buffer, sizeof(fonts_exe_buffer), 3, config.exe_path, PATH_ASSETS_EXE, PATH_FONTS_EXE);
-#ifdef __unix__
-        prefixes[1] = PATH_FONTS_SYSTEM;
-#else
-        prefixes[1] = PATH_FONTS_RELATIVE;
-#endif
-        char *default_font_path = find_file(default_font, 2, prefixes);
+        char *default_font_path = find_default_font(default_font);
 
         // Replace user font with default in config
         if (default_font_path != NULL) {
