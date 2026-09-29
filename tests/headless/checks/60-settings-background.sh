@@ -87,6 +87,17 @@ cmp -s "$FX/f60-colour.ini" "$cfg" && grep -q 'Settings: \[Background\] Mode Ima
     && grep -q 'Settings: nothing changed' "$out/f60-incomplete.log" && ran_clean f60-incomplete && ok=0
 result "settings: Image with no image chosen goes back to Colour and saves nothing (exit $(cat "$out/f60-incomplete.code"))" $ok
 
+# The same on a renderer without render targets (the harness build's
+# STREAMFLEX_TEST_NO_RENDER_TARGETS): the menu is drawn behind the settings, and the caption and
+# its note are drawn all the same
+cfg=$(writable_config f60-colour)
+STREAMFLEX_TEST_NO_RENDER_TARGETS=1 CFG=$cfg run_keys f60-notargets Menu Return Right BackSpace BackSpace
+ok=1
+cmp -s "$FX/f60-colour.ini" "$cfg" && grep -q 'Settings: the renderer has no render targets' "$out/f60-notargets.log" \
+    && grep -q 'Settings: the note under the preview says No image was chosen, so Mode went back to Colour' "$out/f60-notargets.log" \
+    && ran_clean f60-notargets && ok=0
+result "settings: without render targets the caption and its note are still drawn (exit $(cat "$out/f60-notargets.code"))" $ok
+
 # Slideshow: Mode to Slideshow, open the browser on the Folder row, use Pictures
 cfg=$(writable_config f60-colour)
 CFG=$cfg run_keys f60-slideshow Menu Return Right Right Down Return Return BackSpace BackSpace

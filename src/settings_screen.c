@@ -81,6 +81,7 @@ static char fitted_source[NOTE_TEXT_MAX];     // The note fit_note() fitted last
 static int fitted_width = -1;                 // ...to this width...
 static int fitted_height = -1;                // ...and this height...
 static char fitted_note[NOTE_TEXT_MAX];       // ...and what it came to
+static char drawn_note[512];                  // The note under the preview last drawn, for the log
 static int shown_first = -1;                  // The rows last on show, for the log
 static int shown_last = -1;
 static int shown_count = -1;
@@ -1165,8 +1166,9 @@ static void draw_column(void)
     draw_text(font_small, hint, x, hint_y, column_width, ALPHA_DIM, false);
 }
 
-// A function to draw the caption under the preview: which menu, its grid and titles, and any note
-static void draw_caption(void)
+// A function to draw the caption, two lines from (x, y) at most `width` wide: which menu, its grid
+// and titles, and any note
+static void draw_caption(int x, int y, int width)
 {
     char caption[512];
     char titles[32];
@@ -1176,10 +1178,14 @@ static void draw_caption(void)
     bool reduced = compute_menu_layout(current_menu, &geometry, why, sizeof(why)) == 0 && why[0] != '\0';
     snprintf(caption, sizeof(caption), "Preview: %s \xC2\xB7 %i \xC3\x97 %i, %i px buttons, %s%s", current_menu->name,
         layout.columns, layout.rows, layout.button, titles, reduced ? " (reduced to fit the screen)" : "");
-    int y = preview_rect.y + preview_rect.h + margin / 2;
-    draw_text(font_small, caption, preview_rect.x, y, preview_rect.w, ALPHA_VALUE, false);
+    draw_text(font_small, caption, x, y, width, ALPHA_VALUE, false);
     const char *note = browser != NULL ? browser_caption() : settings_notice(model);
-    draw_text(font_small, note, preview_rect.x, y + TTF_FontHeight(font_small), preview_rect.w, 255, false);
+    draw_text(font_small, note, x, y + TTF_FontHeight(font_small), width, 255, false);
+    if (strcmp(note, drawn_note) != 0) {
+        copy_string(drawn_note, note, sizeof(drawn_note));
+        if (note[0] != '\0')
+            log_debug("Settings: the note under the preview says %s", note);
+    }
 }
 
 // A function to draw one frame of the screen and present it
@@ -1197,14 +1203,19 @@ void settings_draw(void)
         SDL_RenderCopy(renderer, preview, NULL, &preview_rect);
         SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, ALPHA_FRAME);
         SDL_RenderDrawRect(renderer, &preview_rect);
-        draw_caption();
+        draw_caption(preview_rect.x, preview_rect.y + preview_rect.h + margin / 2, preview_rect.w);
     }
     else {
-        // No render targets: the scene fills the screen and the column sits on a dark backing
+        // No render targets: the scene fills the screen, the column sits on a dark backing, and
+        // the caption on another along the bottom of the rest of the screen
         draw_scene(true);
-        SDL_Rect backing = { 0, 0, column_width + 2 * margin, geo.screen_height };
         SDL_SetRenderDrawColor(renderer, BACKDROP.r, BACKDROP.g, BACKDROP.b, 220);
+        SDL_Rect backing = { 0, 0, column_width + 2 * margin, geo.screen_height };
         SDL_RenderFillRect(renderer, &backing);
+        int caption_h = 2 * TTF_FontHeight(font_small) + margin;
+        SDL_Rect strip = { backing.w, geo.screen_height - caption_h, geo.screen_width - backing.w, caption_h };
+        SDL_RenderFillRect(renderer, &strip);
+        draw_caption(strip.x + margin, strip.y + margin / 2, strip.w - 2 * margin);
     }
     draw_column();
     present_frame();
@@ -1254,8 +1265,17 @@ void settings_open(void)
     shown_first = -1;
     shown_last = -1;
     shown_count = -1;
+    drawn_note[0] = '\0';
     measure_layout();
-    if (SDL_RenderTargetSupported(renderer)) {
+    bool targets = SDL_RenderTargetSupported(renderer);
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: it draws as a renderer without render targets would
+    if (getenv("STREAMFLEX_TEST_NO_RENDER_TARGETS") != NULL)
+        targets = false;
+#endif
+    if (!targets)
+        log_debug("Settings: the renderer has no render targets, so the menu is drawn behind them");
+    else {
         preview = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, geo.screen_width, geo.screen_height);
         if (preview == NULL)
             log_error("Settings: no preview texture, the menu is drawn behind the settings instead\n%s", SDL_GetError());
