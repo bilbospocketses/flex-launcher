@@ -73,9 +73,9 @@ static const char *fake_check(const char *path, void *context)
 }
 
 static const BrowserPlace PLACES[] = {
-    { "Pictures", "/home/me/Pictures" },
-    { "Home", "/home/me" },
-    { "/", "/" }
+    { "Pictures", "/home/me/Pictures", false },
+    { "Home", "/home/me", false },
+    { "/", "/", false }
 };
 
 // A function to test the rows of a folder: folders first, then images, each sorted without regard
@@ -164,7 +164,7 @@ static void test_start_places(void)
     browser = browser_open(BROWSER_IMAGE, "/gone/away.png", PLACES, 3, fake_list, NULL, NULL);
     CHECK_STR(browser_folder(browser), "/home/me/Pictures");
     browser_free(browser);
-    static const BrowserPlace gone[] = { { "Gone", "/gone" } };
+    static const BrowserPlace gone[] = { { "Gone", "/gone", false } };
     browser = browser_open(BROWSER_IMAGE, "", gone, 1, fake_list, NULL, NULL);
     CHECK(browser_folder(browser) == NULL);
     CHECK_INT(browser_row_count(browser), 1);
