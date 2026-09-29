@@ -30,6 +30,8 @@ set(SOURCES
   browser.h
   settings_screen.c
   settings_screen.h
+  test_hooks.c
+  test_hooks.h
 )
 if (UNIX)
   add_executable(${EXECUTABLE_TITLE} ${SOURCES})
