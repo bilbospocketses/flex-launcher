@@ -105,7 +105,7 @@ This is the Windows half of Task 13's hands-on check for the settings screen (su
 - **Expected:**
   - Settings are open. **Frame** `W1b-held-menu.png`.
   - The new lines hold exactly **one** `Settings opened` and **no** `Settings closed`.
-  - They also hold **at least two** `Key Application (#40000065) detected` lines. This proves the repeats reached StreamFlex. If there is only one, the repeats were not delivered, and the check is BLOCKED rather than PASS. (Before recording BLOCKED, confirm from Batch C's final code that a key repeat still reaches the `Key … detected` log line.)
+  - They also hold **at least two** `Key Application (#40000065) detected` lines. This proves the repeats reached StreamFlex. If there is only one, the repeats were not delivered, and the check is BLOCKED rather than PASS. (A repeat is logged before StreamFlex drops it, so one line means the guest sent no repeats.)
 - Then **Backspace** to close.
 - **Both Menu keycodes** open settings: `Application` (0x40000065) and `Menu` (0x40000076). Part 1 covers the first; the second is N/A on Windows, as below.
 - **SDLK_MENU (0x40000076)** has no Windows virtual key. Write "N/A on Windows; checked on Ubuntu" in the report.

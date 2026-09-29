@@ -166,7 +166,7 @@ Take a mark before each part, and close settings after each part with Back (`But
    Both codes open settings, as the configuration guide says: `Application` (#40000065) and `Menu` (#40000076).
 4. **The Menu keys held.** For each key that arrived in part 3: `Send-QaGuestKeys -Keys '<key> 2000'`, wait 1 s, then take a **Frame**.
    - Expected: settings are open. The new lines hold **at least two** `Key … detected` lines for that key, which shows the auto-repeat reached StreamFlex, exactly one `Settings opened`, and no `Settings closed`.
-   - With only one Key line, the hold did not repeat: BLOCKED, not PASS. (Before recording BLOCKED, confirm from Batch C's final code that a key repeat still reaches the `Key … detected` log line.)
+   - With only one Key line, the hold did not repeat: BLOCKED, not PASS. (A repeat is logged before StreamFlex drops it, so one line means the guest sent no repeats.)
 5. **Settings cannot open while an app runs (#116).** This uses the *Café* entry, so do it after U7's setup, or run `add-cafe-entry` now. Launch *Café* (OK on it). The moment the editor starts, and again once it is in front, send Start (`send "press ButtonStart"`) and key `compose`.
    - Expected: the new lines hold no `Settings opened` and no settings screen appears, in StreamFlex or after the editor closes. There may be no pad line at all (see U7b).
 - **PASS** when parts 1 to 5 all hold for every code that arrived.

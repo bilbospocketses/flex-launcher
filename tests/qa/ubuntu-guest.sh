@@ -96,7 +96,8 @@ setup() {
     modprobe uinput || die "modprobe uinput failed"
     [ -c /dev/uinput ] || die "/dev/uinput is still missing after modprobe"
 
-    # The gamepad: the shipped config says Enabled=false under [Gamepad]
+    # The gamepad: the shipped config already says Enabled=true under [Gamepad], so the sed is a
+    # no-op kept for an older package; the check after it is what matters
     [ -f /root/config.ini.shipped ] || cp -p "$SYSTEM_CONFIG" /root/config.ini.shipped
     sed -i '/^\[Gamepad\]/,/^\[/ s/^Enabled=false$/Enabled=true/' "$SYSTEM_CONFIG"
     sed -n '/^\[Gamepad\]/,/^\[/p' "$SYSTEM_CONFIG" | grep -qx 'Enabled=true' \
