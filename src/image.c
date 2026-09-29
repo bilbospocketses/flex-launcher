@@ -464,8 +464,8 @@ SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *
         SDL_FillRect(surface, NULL, color);
         SDL_Rect shadow_rect = {shadow_offset, shadow_offset, shadow->w, shadow->h};
         SDL_BlitSurface(shadow, NULL, surface, &shadow_rect);
-        SDL_Rect rect = {0, 0, foreground->w, foreground->h};
-        SDL_BlitSurface(foreground, NULL, surface, &rect);
+        SDL_Rect foreground_rect = {0, 0, foreground->w, foreground->h};
+        SDL_BlitSurface(foreground, NULL, surface, &foreground_rect);
         SDL_FreeSurface(foreground);
         SDL_FreeSurface(shadow);
     }

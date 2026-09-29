@@ -1079,9 +1079,9 @@ void validate_settings(Geometry *geo)
 // A function to retreive menu struct from the linked list via the menu name
 Menu *get_menu(const char *menu_name)
 {
-    for (Menu *menu = config.first_menu; menu != NULL; menu = menu->next) {
-        if (MATCH(menu_name, menu->name))
-            return menu;
+    for (Menu *m = config.first_menu; m != NULL; m = m->next) {
+        if (MATCH(menu_name, m->name))
+            return m;
     }
     log_error("Menu '%s' not found in config file", menu_name);
     return NULL;
@@ -1090,8 +1090,8 @@ Menu *get_menu(const char *menu_name)
 // A function to allocate memory to and initialize a menu struct
 Menu *create_menu(const char *menu_name, size_t *num_menus)
 {
-    Menu *menu = malloc(sizeof(Menu));
-    *menu = (Menu) {
+    Menu *new_menu = malloc(sizeof(Menu));
+    *new_menu = (Menu) {
         .first_entry = NULL,
         .items = NULL,
         .next = NULL,
@@ -1101,10 +1101,10 @@ Menu *create_menu(const char *menu_name, size_t *num_menus)
         .position = { 0, 0 },
         .rendered_size = 0
     };
-    menu->name = strdup(menu_name);
+    new_menu->name = strdup(menu_name);
     (*num_menus)++;
 
-    return menu;
+    return new_menu;
 }
 
 // A function to give every menu an array of its entries by index, for the layout maths

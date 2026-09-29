@@ -688,7 +688,7 @@ static void init_screensaver()
     SDL_FillRect(surface, NULL, color);
     screensaver->texture = load_texture(surface);
     screensaver->alpha = 0.0f;
-    SDL_SetTextureAlphaMod(screensaver->texture, 0.0f);
+    SDL_SetTextureAlphaMod(screensaver->texture, 0);
 }
 
 // A function to resume the slideshow after a launched application returns
@@ -1330,10 +1330,7 @@ static void poll_gamepad()
 
             // Check if axis value exceeds dead zone
             if (i->type == TYPE_AXIS_POS || i->type == TYPE_AXIS_NEG) {
-                if (i->type == TYPE_AXIS_POS)
-                    value_multiplier = 1;
-                else if (i->type == TYPE_AXIS_NEG)
-                    value_multiplier = -1;
+                value_multiplier = i->type == TYPE_AXIS_POS ? 1 : -1;
                 if (value_multiplier*SDL_GameControllerGetAxis(gamepad->controller, i->index) > GAMEPAD_DEADZONE) {
                     i->repeat++;
                     pressed = true;

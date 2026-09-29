@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <windows.h>
 #include <psapi.h>
+#include <powrprof.h>
 #include <SDL.h>
 #include <SDL_syswm.h>
 #include "../launcher.h"

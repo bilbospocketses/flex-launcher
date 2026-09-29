@@ -29,8 +29,9 @@ static void calculate_text_metrics(TTF_Font *font, const char *text, int *h, int
 {
     int ymin = 0;
     int ymax = 0; 
-    int xmin, xmax, xadvance;
-    int current_ymin, current_ymax;
+    // Zero for an empty text, or a glyph TTF_GlyphMetrics cannot measure (it then sets none of them)
+    int xmin = 0, xmax = 0, xadvance = 0;
+    int current_ymin = 0, current_ymax = 0;
     char *p = (char*) text;
     Uint16 code_point;
     int bytes;

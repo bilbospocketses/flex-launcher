@@ -102,6 +102,12 @@ void print_compiler_info(FILE *stream)
 
 }
 
+// A function to show a string setting, or (null) when it is unset
+const char *debug_string(const char *value)
+{
+    return value != NULL ? value : "(null)";
+}
+
 // A function to print the parsed settings to the log
 void debug_settings()
 {
