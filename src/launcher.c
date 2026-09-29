@@ -30,6 +30,7 @@ static void fall_back_from_slideshow(SDL_Surface *surface);
 static void update_screensaver(void);
 static void update_clock(bool block);
 static void init_slideshow(void);
+static void stop_slideshow(void);
 static void init_screensaver(void);
 static void calculate_layout_area(void);
 static int apply_layout(Menu *menu);
@@ -352,10 +353,10 @@ static void cleanup()
     if (background_override != NULL)
         SDL_DestroyTexture(background_override);
 
-    // Wait until all threads have completed
-    SDL_WaitThread(Slideshowhread, NULL);
+    // Wait until all threads have completed; the slideshow's may have read an image, which is freed
+    stop_slideshow();
     SDL_WaitThread(clock_thread, NULL);
-    
+
     // Destroy renderer and window
     if (renderer != NULL) {
         SDL_DestroyRenderer(renderer);
@@ -369,10 +370,17 @@ static void cleanup()
     // Quit subsystems
     SDL_Quit();
     IMG_Quit();
+
+    // Close every font while SDL_ttf is still open: the titles' and the clock's
     title_fonts_free();
+    if (fixed_title_font != NULL)
+        TTF_CloseFont(fixed_title_font);
+    fixed_title_font = NULL;
+    title_info.font = NULL;
+    if (clk != NULL && clk->text_info.font != NULL)
+        TTF_CloseFont(clk->text_info.font);
     TTF_Quit();
     quit_svg();
-    quit_slideshow();
 
     // Close log file if open
     if (log_file != NULL)
@@ -689,12 +697,10 @@ void update_slideshow_timing()
         slideshow->transition_change_rate = 255.0f / ((float) config.slideshow_transition_time / (float) refresh_period);
 }
 
-// A function to set the background up for config.background_mode: at startup, and whenever the
-// settings screen changes it. What is shown (background_shown) falls back to the colour when an
-// image or slideshow cannot be used; the setting itself stays as it was chosen.
-void reload_background()
+// A function to stop the slideshow, when the background changes and at quit: wait for an image
+// being loaded on its thread, then free it all
+static void stop_slideshow()
 {
-    // Stop the slideshow: wait for an image being loaded on its thread, then free it all
     if (Slideshowhread != NULL) {
         SDL_WaitThread(Slideshowhread, NULL);
         Slideshowhread = NULL;
@@ -709,6 +715,14 @@ void reload_background()
             SDL_DestroyTexture(slideshow->transition_texture);
         quit_slideshow();
     }
+}
+
+// A function to set the background up for config.background_mode: at startup, and whenever the
+// settings screen changes it. What is shown (background_shown) falls back to the colour when an
+// image or slideshow cannot be used; the setting itself stays as it was chosen.
+void reload_background()
+{
+    stop_slideshow();
     state.slideshow_transition = false;
     state.slideshow_background_rendering = false;
     state.slideshow_background_ready = false;

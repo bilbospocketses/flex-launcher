@@ -155,6 +155,20 @@ ok=1
 result "settings: switching modes while the slideshow loads its next image drops that image (exit $(cat "$out/f60-loading.code"))" $ok
 [ -e /tmp/loader-held ] || echo "      the loader thread was never held on b.png"
 
+# Quitting while the loader thread is held the same way: quit waits for the thread, then frees
+# the image it read (a.png again, once b.png fails) and says so. The leak pass finds one left.
+quit_while_held() { kill -TERM "$2"; sleep 1; : > /tmp/loader-release; }
+rm -f /tmp/loader-held /tmp/loader-release "$LOG"
+hold_pipe "$TESTER_HOME/loading/b.png" /tmp/loader-held /tmp/loader-release &
+holder=$!
+CFG=$FX/f60-loading.ini run_keys f61-quit +loader_held +quit_while_held
+kill "$holder"; wait "$holder" 2> /dev/null
+ok=1
+[ -e /tmp/loader-held ] && ran_clean f61-quit \
+    && sed -n '/Quitting program/,$p' "$out/f61-quit.log" | grep -q 'Slideshow: dropped the fade in progress' && ok=0
+result "quitting while the slideshow loads its next image frees that image (exit $(cat "$out/f61-quit.code"))" $ok
+[ -e /tmp/loader-held ] || echo "      the loader thread was never held on b.png"
+
 # The Folder row shows the folder's name and its image count: counted when the page opens (the
 # running slideshow's Pictures) and again when a folder is chosen in the browser
 DOT=$(printf '\xC2\xB7')
