@@ -57,14 +57,15 @@ diff "$FX/f60-colour.ini" "$cfg" | sed 's/^/      /'
 # OK while the highlighted image is still decoding: the test hook (STREAMFLEX_TEST_DECODE_DELAY_MS,
 # in the harness's build only) makes each decode take 4 s, so OK lands while blue.png, the image
 # highlighted first, is still decoding and green.png waits behind it. OK waits for both, and
-# chooses green, the one highlighted.
+# chooses green, the one highlighted, only once green's decode is done.
 cfg=$(writable_config f60-colour)
 STREAMFLEX_TEST_DECODE_DELAY_MS=4000 CFG=$cfg UNTIL='Settings saved' \
     run_keys f60-slowdecode Menu Return Right Down Return Down Return BackSpace BackSpace
 ok=1
 grep -qx 'Image=/home/tester/Pictures/green.png' "$cfg" \
     && grep -q 'Settings: OK waited for the decode of /home/tester/Pictures/green.png' "$out/f60-slowdecode.log" \
-    && grep -q 'Settings: chose /home/tester/Pictures/green.png' "$out/f60-slowdecode.log" \
+    && precedes "$out/f60-slowdecode.log" 'Settings: the preview shows /home/tester/Pictures/green.png' \
+        'Settings: chose /home/tester/Pictures/green.png' \
     && ran_clean f60-slowdecode && ok=0
 result "settings: OK during a slow decode waits for it and chooses the highlighted image (exit $(cat "$out/f60-slowdecode.code"))" $ok
 grep -E 'Settings: (OK waited|chose|the preview shows)' "$out/f60-slowdecode.log" | sed 's/^/      /'
