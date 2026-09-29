@@ -447,9 +447,10 @@ int config_handler(void *user, const char *section, const char *name, const char
     }
     
     else if (MATCH(section, "Hotkeys")) {
-        char *keycode = strtok((char*) value, ";");
+        char *rest = NULL;
+        char *keycode = strtok_r((char*) value, ";", &rest);
         if (keycode != NULL) {
-            char *cmd = strtok(NULL, "");
+            char *cmd = strtok_r(NULL, "", &rest);
             if (cmd != NULL)
                 add_hotkey(keycode, cmd);
         }

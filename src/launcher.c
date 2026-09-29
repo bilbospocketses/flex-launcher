@@ -1173,14 +1173,15 @@ static void execute_command(const char *command)
     // Parse special commands
     if (cmd[0] == ':') {
         char *delimiter = " ";
-        char *special_command = strtok(cmd, delimiter);
+        char *rest = NULL;
+        char *special_command = strtok_r(cmd, delimiter, &rest);
         if (!strcmp(special_command, SCMD_SUBMENU)) {
-            char *submenu = strtok(NULL, "");
+            char *submenu = strtok_r(NULL, "", &rest);
             if (submenu != NULL)
                 load_submenu(submenu);
         }
         else if (!strcmp(special_command, SCMD_FORK)) {
-            char *fork_command = strtok(NULL, "");
+            char *fork_command = strtok_r(NULL, "", &rest);
             if (fork_command != NULL)
                 start_process(fork_command, false);
         }
