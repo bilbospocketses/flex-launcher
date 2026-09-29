@@ -6,7 +6,7 @@ import pathlib
 import tempfile
 import unittest
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
 HERE = pathlib.Path(__file__).resolve().parent
 _spec = importlib.util.spec_from_file_location("import_brand", HERE / "import-brand.py")
@@ -93,6 +93,24 @@ class ImportBrand(unittest.TestCase):
             self.assertEqual(out.getpixel((256, 256)), (10, 120, 200, 255))
             self.assertEqual(out.getpixel((0, 0))[3], 0)
         self.assertNotIn("fill", dict(ib.libtools.read_sections(self.brands_ini))["near"])
+
+    def test_chroma_key_pixels_are_made_black(self):
+        # Transparent mode on Windows shows through #010101, so opaque art of exactly that colour becomes black;
+        # the edge of the outline, where the art is not fully opaque, keeps its colour
+        info = self.run_import("keyed", self.art(512, colour=(1, 1, 1, 255)))
+        with Image.open(self.library / "brands" / "keyed.png") as out:
+            self.assertEqual(out.getpixel((256, 256)), (0, 0, 0, 255))
+            self.assertEqual(ib.libtools.key_pixels(out), 0)
+            red, green, blue, alpha = out.split()
+        edge = alpha.point(lambda v: 255 if 0 < v < 255 else 0)
+        still_key = edge
+        for band in (red, green, blue):
+            still_key = ImageChops.multiply(still_key, band.point(lambda v: 255 if v == 1 else 0))
+        edge_count = edge.histogram()[255]
+        self.assertGreater(edge_count, 0)
+        self.assertEqual(still_key.histogram()[255], edge_count)
+        self.assertGreater(info["off_key"], 0)
+        self.assertEqual(self.run_import("plain", self.art(512))["off_key"], 0)
 
     def test_a_malformed_fill_is_refused_not_a_traceback(self):
         path = self.art(600, round_logo=True)

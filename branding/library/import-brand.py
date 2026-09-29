@@ -6,6 +6,8 @@
 - A palette, greyscale or RGB image is converted to RGBA; an embedded colour profile is converted to sRGB.
 - Transparent pixels inside the outline (an old round or padded logo) are refused unless --fill names a solid
   colour to put behind the art. Choose the art's own background colour and say so in the task report.
+- Opaque pixels of exactly the default chroma key, #010101, become #000000: Transparent mode on Windows
+  shows through that colour.
 - Writes assets/icons/library/brands/<name>.png, and records source, art, fill, size and sha256 in
   branding/library/brands.ini. Set title, group, owner and android there by hand, then run build-library.py.
 Needs Pillow.
@@ -71,6 +73,7 @@ def import_brand(name, image_path, source, art=None, fill=None, library=libtools
         image = Image.alpha_composite(Image.new("RGBA", (size, size), rgb + (255,)), image)
 
     image.putalpha(ImageChops.darker(image.getchannel("A"), mask))
+    off_key = libtools.keep_off_key(image)
     destination = pathlib.Path(library) / "brands" / f"{name}.png"
     destination.parent.mkdir(parents=True, exist_ok=True)
     image.save(destination, format="PNG", optimize=True)
@@ -89,7 +92,7 @@ def import_brand(name, image_path, source, art=None, fill=None, library=libtools
         else:
             keys.pop(key, None)
     libtools.write_brands(sections, brands_ini)
-    return {"size": size, "sha256": digest, "reduced": width > size, "filled": fill is not None}
+    return {"size": size, "sha256": digest, "reduced": width > size, "filled": fill is not None, "off_key": off_key}
 
 
 def main():
@@ -107,6 +110,7 @@ def main():
         return 1
     note = " (reduced to 1024)" if info["reduced"] else ""
     note += f" (filled with {args.fill})" if info["filled"] else ""
+    note += f" ({info['off_key']} pixel(s) of the chroma key #010101 made #000000)" if info["off_key"] else ""
     print(f"imported {args.name}: {info['size']} px{note}, sha256 {info['sha256'][:12]}")
     keys = dict(libtools.read_sections(libtools.BRANDS_INI))[args.name]
     todo = [key for key in ("title", "group", "owner") if not keys.get(key)]

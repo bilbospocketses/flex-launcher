@@ -9,6 +9,7 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 ## [Unreleased]
 
 ### Fixed
+- **Transparent mode on Windows no longer punches holes in icons.** Windows shows through every pixel of the window that is exactly the chroma key colour (`#010101` unless `ChromaKeyColor` says otherwise), so icon art containing that colour turned partly see-through; the built-in Plex icon had a diagonal line and specks of it. Every icon, PNG or SVG, is now moved one step off the key as it loads, whatever the background mode, and the Plex icon itself no longer contains the colour. The icon library's check refuses brand art that contains it.
 - Settings and their messages name the config file by its full path. Started from its own folder, StreamFlex showed `Couldn't save to .\config.ini: ...` on screen and logged `.\config.ini`; it now says `C:\StreamFlex\config.ini`.
 - Choosing *Image* or *Slideshow* in settings before picking an image or folder no longer logs errors blaming the config file (on Linux they also reached the terminal). The preview shows the colour until one is chosen, and the debug log says so. A config that sets such a mode without an image or folder still reports it at startup.
 - The debug log (`-d`) names every folder the settings' folder browser moves into, not only the one it opens in.

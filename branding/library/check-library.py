@@ -5,7 +5,9 @@ Fails when:
   without re-running it);
 - icons.ini lists a file that does not exist, or a file in generic/ or brands/ is not listed;
 - a brand PNG is not square RGBA from 512 to 1024 px, is not transparent outside the shared outline and
-  opaque inside it, or does not match its sha256.
+  opaque inside it, or does not match its sha256;
+- a brand PNG has a fully opaque pixel of exactly the default chroma key, #010101, which Transparent mode
+  on Windows would show through.
 """
 import pathlib
 import subprocess
@@ -31,6 +33,10 @@ def check_brand(library, name, keys):
             problems.append(f"[{name}] {path.name} is {width}x{height}; brand art must be square, "
                             f"{libtools.BRAND_MIN} to {libtools.BRAND_MAX} px")
             return problems
+        keyed = libtools.key_pixels(image)
+        if keyed:
+            problems.append(f"[{name}] {path.name} has {keyed} opaque pixel(s) of exactly the chroma key "
+                            f"#010101, which Transparent mode on Windows shows through; make them #000000")
         alpha = image.getchannel("A")
         mask = libtools.outline_mask(width)
         outside = mask.point(lambda v: 255 if v == 0 else 0)
