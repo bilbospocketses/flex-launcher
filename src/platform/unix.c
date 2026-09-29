@@ -188,13 +188,21 @@ void scan_slideshow_directory(Slideshow *slideshow, const char *directory)
     fileio_free_list(entries, count);
 }
 
+// A function to get the 2 letter region code from LANG ("en_US.UTF-8" gives "US"). It cuts up a
+// copy: strtok() on getenv()'s own string would cut the environment's LANG short for everything
+// launched afterwards, and with LANG unset would go on from another caller's string.
 void get_region(char *buffer)
 {
-    char *lang = getenv("LANG");
-    char *token = strtok(lang, "_");
+    const char *lang = getenv("LANG");
+    if (lang == NULL)
+        return;
+    char copy[64];
+    snprintf(copy, sizeof(copy), "%s", lang);
+    char *rest = NULL;
+    char *token = strtok_r(copy, "_", &rest);
     if (token == NULL)
         return;
-    token = strtok(NULL, ".");
+    token = strtok_r(NULL, ".", &rest);
     if (token != NULL && strlen(token) == 2)
         copy_string(buffer, token, 3);
 }
