@@ -13,6 +13,10 @@
 #include <unistd.h>
 #endif
 
+#ifndef _WIN32
+typedef DIR Folder;   // dirent.h's DIR, which the fixture's name takes over below
+#endif
+
 // A folder and a file with non-ASCII names ("fileio-fixture-éß", "café.txt"), relative to the
 // folder CTest runs the test in
 #define DIR "fileio-fixture-\xC3\xA9\xC3\x9F"
@@ -62,7 +66,7 @@ static void remove_tree(const char *folder)
 static void remove_tree(const char *folder)
 {
     chmod(folder, 0755);
-    DIR *dir = opendir(folder);
+    Folder *dir = opendir(folder);
     if (dir != NULL) {
         struct dirent *entry;
         while ((entry = readdir(dir)) != NULL) {
