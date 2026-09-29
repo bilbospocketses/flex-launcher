@@ -278,6 +278,7 @@ jobs:
           persist-credentials: false
 
       - name: Build the test image
+        id: build_image
         run: docker build -t streamflex-test tests/headless
 
       # Both passes run even when the first fails, so one run shows every failure; the step then
@@ -295,9 +296,9 @@ jobs:
           exit $status
 
       # Every check again, with LeakSanitizer on. It runs even when the step before it failed, so
-      # a leak is reported beside any other failure
+      # a leak is reported beside any other failure, but not without an image to run in
       - name: Look for memory leaks
-        if: success() || failure()
+        if: (success() || failure()) && steps.build_image.outcome == 'success'
         run: |
           mkdir -p "$RUNNER_TEMP/headless"
           docker run --rm --security-opt seccomp=unconfined \
