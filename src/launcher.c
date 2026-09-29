@@ -546,7 +546,9 @@ static void handle_keypress(SDL_Keysym *key, bool repeat)
     else {
         for (Hotkey *i = hotkeys; i != NULL; i = i->next) {
             if (key->sym == i->keycode) {
-                execute_command(i->cmd);
+                // A hotkey for :settings acts once however long it is held, as the Menu key does
+                if (!repeat || strcmp(i->cmd, SCMD_SETTINGS))
+                    execute_command(i->cmd);
                 break;
             }
         }

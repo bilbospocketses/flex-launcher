@@ -109,6 +109,16 @@ for held in held:Menu:40000065 heldkb:MenuKB:40000076; do
     echo "      the key came $n times; settings opened $(grep -c 'Settings opened' "$out/f50-$name.log") times"
 done
 
+# The same for a hotkey the config binds to :settings (F1 here): held, it opens them once
+hold_f1() { xdotool keydown F1; sleep 2; xdotool keyup F1; sleep 1; }
+CFG=$FX/f50-hotkeyset.ini run_keys f50-heldhotkey +hold_f1
+n=$(grep -c 'Key F1 (#4000003A) detected' "$out/f50-heldhotkey.log")
+ok=1
+[ "$n" -gt 1 ] && [ "$(grep -c 'Settings opened' "$out/f50-heldhotkey.log")" = 1 ] \
+    && ! grep -q 'Settings closed' "$out/f50-heldhotkey.log" && ran_clean f50-heldhotkey && ok=0
+result "settings: a held hotkey bound to :settings opens them once, and they stay open (exit $(cat "$out/f50-heldhotkey.code"))" $ok
+echo "      the key came $n times; settings opened $(grep -c 'Settings opened' "$out/f50-heldhotkey.log") times"
+
 # A remote's Menu button opens settings as the keyboard's Menu key does, and closes them again
 CFG=$FX/f50-keys.ini run_keys f50-menukb XF86MenuKB XF86MenuKB
 ok=1
