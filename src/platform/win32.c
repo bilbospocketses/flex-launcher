@@ -79,7 +79,7 @@ static void parse_command(char *cmd, char *file, size_t file_size, char **params
                 // Copy parameters
                 if (*p != '\0')
                     *params = strdup(p);
-                    break;
+                break;
             }
 
             // If a space was detected after the quote
@@ -97,8 +97,9 @@ static void parse_command(char *cmd, char *file, size_t file_size, char **params
         p++;
     }
 
-    // If there were no quotes or spaces, copy whole command into file buffer
-    if (start && file[0] == '\0')
+    // If there were no quotes or spaces, copy whole command into file buffer. `start` points into
+    // the command, which the loops above have already read, so it is never NULL here.
+    if (file[0] == '\0')
         copy_string(file, start, file_size);
 }
 
