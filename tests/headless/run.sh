@@ -6,8 +6,8 @@
 #   run.sh <label>              every check in checks/, in name order
 #   run.sh <label> scrollfail   item 11 only: the scroll arrow's texture is forced to fail,
 #                               a path no config or input can reach
-#   run.sh <label> leaks        every fixture that quits by itself, with LeakSanitizer on: our
-#                               code must leak nothing (lsan.supp names the libraries' own leaks)
+#   run.sh <label> leaks        every check again, with LeakSanitizer on: a run that leaks fails
+#                               its check, and the leaks are listed at the end
 # The build defines STREAMFLEX_TEST_HOOKS, which only this harness does (see decode_image()).
 # Prints PASS or FAIL per check and exits non-zero when any failed. Every run's output, log and
 # exit code are kept in /out/<label>.
@@ -83,17 +83,26 @@ printf 'not a picture\n' > "$TESTER_HOME/broken/b.png"
 cp "$TESTER_HOME/Pictures/red.png" "$TESTER_HOME/mixed/"
 printf 'not a picture\n' > "$TESTER_HOME/mixed/broken.png"
 chown -R tester:tester "$TESTER_HOME"
-# The leak pass unwinds every allocation's whole stack (fast_unwind_on_malloc=0): Mesa's driver
-# is unloaded before LeakSanitizer reports, and the quick unwinder stops in it, leaving nothing
-# for lsan.supp to name. It is slower, so only this pass does it. It keeps setarch -R: the ASan
-# build crashes at random without it whether or not leaks are looked for.
+# The leak pass preloads Mesa's driver into the launcher. Unpreloaded, libGL unloads it at exit,
+# before LeakSanitizer looks, so the few blocks the driver still holds (from context creation and
+# its first flush) lose their only pointers and read as leaks, with stacks in an unknown module.
+# ASan must come first in the preload list. Only the launcher gets the preload (the env after
+# setarch): an ASan runtime in setarch starts before randomization is off, and crashes. Whole
+# stacks (fast_unwind_on_malloc=0) reach our code through libraries built without frame
+# pointers; that is slower, so only this pass does it. It keeps setarch -R: the ASan build
+# crashes at random without it whether or not leaks are looked for.
 asan_options=detect_leaks=0
+preload=()
 if [ "$fault" = leaks ]; then
     asan_options=detect_leaks=1:fast_unwind_on_malloc=0
+    libasan=$(readlink -f "$(gcc -print-file-name=libasan.so)")
+    driver=/usr/lib/$(gcc -print-multiarch)/dri/swrast_dri.so
+    [ -f "$libasan" ] && [ -f "$driver" ] || { echo "NO ASAN RUNTIME OR MESA DRIVER TO PRELOAD"; exit 2; }
+    preload=(env "LD_PRELOAD=$libasan $driver")
 fi
 TESTER=(setpriv --reuid=tester --regid=tester --init-groups --
         env HOME=$TESTER_HOME DISPLAY=:99 ASAN_OPTIONS=$asan_options UBSAN_OPTIONS=print_stacktrace=1
-            LSAN_OPTIONS=suppressions=$HERE/lsan.supp GALLIUM_DRIVER=softpipe setarch "$(uname -m)" -R)
+            GALLIUM_DRIVER=softpipe setarch "$(uname -m)" -R "${preload[@]}")
 
 # A function to give the launcher its config: the fixture NAME.ini, the file CFG names, or
 # none at all with CFG=none (the launcher then searches for one)
@@ -160,7 +169,8 @@ run_keys() {
     kill -TERM "$pid" 2> /dev/null
     for i in $(seq 50); do running "$pid" || break; sleep 0.2; done
     kill -KILL "$pid" 2> /dev/null
-    wait "$pid"; code=$?
+    # A killed run's "Killed" notice goes nowhere: its exit code, 137, says so
+    wait "$pid" 2> /dev/null; code=$?
     [ -z "$missing" ] || code="$code, and never logged '$missing'"
     echo "$code" > "$out/$name.code"
     cp "$LOG" "$out/$name.log" 2> /dev/null || : > "$out/$name.log"
@@ -202,12 +212,13 @@ in_range() {
 }
 
 # A function to map a point of the launcher's scene (the full 1920 x 1080 screen it would draw)
-# to the screen, inside the settings preview, whose place the live log gives
+# to the screen, inside the settings preview, whose place the live log gives. It fails when the
+# log has not said where the preview is.
 preview_point() {
     local rect px py pw ph
     rect=$(grep -o 'Settings: the preview is at [0-9]*,[0-9]*, [0-9]* x [0-9]*' "$LOG" | tail -1)
     read -r px py pw ph <<< "$(sed 's/.* at \([0-9]*\),\([0-9]*\), \([0-9]*\) x \([0-9]*\)/\1 \2 \3 \4/' <<< "$rect")"
-    [ -n "${ph:-}" ] || { echo "0,0"; return 1; }
+    [ -n "${ph:-}" ] || return 1
     echo "$((px + $1 * pw / 1920)),$((py + $2 * ph / 1080))"
 }
 
@@ -231,10 +242,10 @@ screen_shows() {
 # A function for a +key (see run_keys), called with the run's NAME and PID: wait for the log line
 # LINE, then for the settings preview to show each colour asked for, written sx,sy=r,g,b with the
 # point in the launcher's scene (or @x,y=r,g,b, a point of the screen). Writes "TAG yes" or
-# "TAG no" to NAME.seen for the check to read.
+# "TAG no" to NAME.seen for the check to read; a preview whose place was never logged is "no".
 look() {
     local name=$1 pid=$2 tag=$3 line=$4; shift 4
-    local asked=() p rest seen=no
+    local asked=() p rest point placed=yes seen=no
     # Xvfb has no window manager to carry out the launcher's fullscreen request, so its window
     # stays 1 x 1 and nothing it draws reaches the screen: give it the screen, as one would
     xdotool search --name '^StreamFlex$' windowmove %@ 0 0 windowsize %@ 1920 1080 > /dev/null 2>&1
@@ -243,10 +254,12 @@ look() {
             rest=${p#*,}
             case $p in
                 @*) asked+=("${p#@}") ;;
-                *) asked+=("$(preview_point "${p%%,*}" "${rest%%=*}")=${p#*=}") ;;
+                *) point=$(preview_point "${p%%,*}" "${rest%%=*}") || placed=no
+                   asked+=("$point=${p#*=}") ;;
             esac
         done
-        screen_shows "$name" "$tag" "${asked[@]}" && seen=yes
+        [ "$placed" = yes ] && screen_shows "$name" "$tag" "${asked[@]}" && seen=yes
+        [ "$placed" = yes ] || echo "$tag: the log never said where the preview is" >> "$out/$name.pixels"
     fi
     echo "$tag $seen" >> "$out/$name.seen"
 }
@@ -257,19 +270,26 @@ if [ "$fault" = scrollfail ]; then
     ran_clean f11-scroll && grep -q 'Could not render scroll indicator' "$out/f11-scroll.log" && ok=0
     result "item 11: a failed scroll arrow disables the arrows and exits cleanly (exit $(cat "$out/f11-scroll.code"))" $ok
     grep -m3 -E 'AddressSanitizer|double-free|runtime error' "$out/f11-scroll.err" | sed 's/^/      /'
-elif [ "$fault" = leaks ]; then
-    for cfg in $(grep -l '^StartupCmd=:quit' "$FX"/*.ini); do
-        name=$(basename "$cfg" .ini)
-        run_quick "$name"
-        ok=1
-        ran_clean "$name" && ok=0
-        result "no leaks: $name (exit $(cat "$out/$name.code"))" $ok
-        grep -m3 -E 'SUMMARY|^Direct leak|^Indirect leak' "$out/$name.err" | sed 's/^/      /'
-    done
 else
-    for check in "$HERE"/checks/*.sh; do
-        . "$check"
+    # A check file that does not parse would stop part-way through when sourced, and the checks
+    # after the error would be missing without a word, so each is parsed first
+    shopt -s nullglob
+    checks=("$HERE"/checks/*.sh)
+    [ "${#checks[@]}" -gt 0 ] || { echo "NO CHECKS FOUND in $HERE/checks"; exit 2; }
+    for check in "${checks[@]}"; do
+        if bash -n "$check" 2> "$out/parse.err"; then
+            . "$check"
+        else
+            result "$(basename "$check") parses" 1
+            sed 's/^/      /' "$out/parse.err"
+        fi
     done
+    if [ "$fault" = leaks ]; then
+        for err in "$out"/*.err; do
+            grep -q 'ERROR: LeakSanitizer' "$err" \
+                && echo "LEAK  $(basename "$err" .err): $(grep -m1 '^SUMMARY' "$err")"
+        done
+    fi
 fi
 echo "$failures failed"
 [ "$failures" = 0 ]

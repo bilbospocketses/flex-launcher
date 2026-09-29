@@ -1,8 +1,0 @@
-# LeakSanitizer suppressions for `run.sh <label> leaks`: leaks that belong to the libraries, each
-# named by a function of the library's own, never by a whole library. SDL_ttf, SDL_image and
-# FreeType allocate on our behalf (a font we open and forget is allocated inside them), so a
-# library-wide pattern would hide exactly the leaks this pass is for.
-
-# Mesa's software driver keeps 128 bytes from context creation (swrast_dri.so, reached through
-# glXCreateContext from SDL_CreateRenderer); the driver is unloaded before the report.
-leak:glXCreateContext
