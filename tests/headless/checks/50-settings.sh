@@ -216,3 +216,14 @@ grep -q "Settings opened over menu 'Games'" "$out/f50-home.log" && grep -q 'Sett
     && ran_clean f50-home && ok=0
 result "settings: :home closes them to the default menu, loading only it (exit $(cat "$out/f50-home.code"))" $ok
 grep -E 'Loading menu|Settings (opened|closed)|Key Home' "$out/f50-home.log" | sed 's/^/      /'
+
+# Settings do not open while an application is launching (sleep 6, which never takes the screen,
+# so the launch lasts ApplicationTimeout, 3 s): the Menu key is refused with a log line, and
+# opens them once the launch is over
+wait_launch() { sleep 3; }
+CFG=$FX/f50-launch.ini run_keys f50-launch Return Menu +wait_launch Menu
+ok=1
+precedes "$out/f50-launch.log" 'Settings: not opened while an application is launching' 'Settings opened' \
+    && [ "$(grep -c 'Settings opened' "$out/f50-launch.log")" = 1 ] && ran_clean f50-launch && ok=0
+result "settings: they do not open while an application is launching (exit $(cat "$out/f50-launch.code"))" $ok
+grep -E 'Settings (opened|: not opened)' "$out/f50-launch.log" | sed 's/^/      /'

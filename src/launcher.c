@@ -1200,8 +1200,14 @@ static void execute_command(const char *command)
             scmd_restart();
         else if (!strcmp(special_command, SCMD_SLEEP))
             scmd_sleep();
-        else if (!strcmp(special_command, SCMD_SETTINGS))
-            settings_open();
+        else if (!strcmp(special_command, SCMD_SETTINGS)) {
+            // Settings never open over an application being launched, which is about to take the
+            // screen: no application runs behind them
+            if (state.application_launching || state.application_running)
+                log_debug("Settings: not opened while an application is launching");
+            else
+                settings_open();
+        }
     }
 
     // Launch external application
