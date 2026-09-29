@@ -88,6 +88,7 @@ static SDL_Thread *decode_thread = NULL;
 static SDL_atomic_t decode_done;
 static char decode_path[BROWSER_PATH_MAX];  // What the thread is decoding
 static SDL_Surface *decode_surface = NULL;  // Its result; NULL when it failed
+static char decode_error[256];              // Why it failed, copied on the thread (SDL's error is per thread)
 static char wanted_path[BROWSER_PATH_MAX];  // What the preview should show; "" = the real background
 static char shown_path[BROWSER_PATH_MAX];   // What background_override holds
 static char broken_path[BROWSER_PATH_MAX];  // The last image that could not be decoded
@@ -465,6 +466,8 @@ static int decode_image(void *data)
         SDL_Delay((Uint32) atoi(delay));
 #endif
     decode_surface = IMG_Load(decode_path);
+    if (decode_surface == NULL)
+        copy_string(decode_error, IMG_GetError(), sizeof(decode_error));
     SDL_AtomicSet(&decode_done, 1);
     return 0;
 }
@@ -514,7 +517,7 @@ static void poll_decode(bool wait)
     decode_thread = NULL;
     if (decode_surface == NULL) {
         copy_string(broken_path, decode_path, sizeof(broken_path));
-        log_debug("Settings: could not open %s", decode_path);
+        log_debug("Settings: could not open %s: %s", decode_path, decode_error);
         if (browser != NULL && strcmp(browser_caption(), CANNOT_OPEN) == 0)
             log_debug("Settings: the caption says %s for %s", CANNOT_OPEN, decode_path);
     }
