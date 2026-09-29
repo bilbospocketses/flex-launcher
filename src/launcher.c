@@ -601,6 +601,12 @@ static void fall_back_from_slideshow(SDL_Surface *surface)
 // image, when the folder is missing or holds fewer than two images; the settings are left alone.
 static void init_slideshow()
 {
+    // While settings are open, a mode with no folder chosen yet is not a config problem
+    if (config.slideshow_directory == NULL && settings_is_open()) {
+        log_debug("Settings: no slideshow folder chosen yet, the preview shows the colour");
+        background_shown = BACKGROUND_COLOR;
+        return;
+    }
     if (config.slideshow_directory == NULL || !directory_exists(config.slideshow_directory)) {
         log_error("Slideshow directory '%s' does not exist, "
             "Switching to color background mode",
@@ -740,12 +746,17 @@ void reload_background()
 
     background_shown = config.background_mode;
     if (config.background_mode == BACKGROUND_IMAGE) {
-        if (config.background_image == NULL)
+        // While settings are open, a mode with no image chosen yet is not a config problem; an
+        // image that was chosen and fails to load is one, and says so as it does at startup
+        if (config.background_image == NULL && settings_is_open())
+            log_debug("Settings: no image chosen yet, the preview shows the colour");
+        else if (config.background_image == NULL)
             log_error("Background 'Image' setting not specified in config file");
         else
             background_texture = load_texture_from_file(config.background_image);
         if (background_texture == NULL) {
-            log_error("Couldn't load background image, defaulting to color background");
+            if (config.background_image != NULL || !settings_is_open())
+                log_error("Couldn't load background image, defaulting to color background");
             background_shown = BACKGROUND_COLOR;
         }
     }

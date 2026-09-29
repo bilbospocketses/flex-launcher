@@ -44,6 +44,25 @@ grep -qx 'checkerboard yes' "$out/f60-transparent.seen" && grep -q 'Settings: no
 result "settings: the Transparent preview is a checkerboard (exit $(cat "$out/f60-transparent.code"))" $ok
 sed 's/^/      /' "$out/f60-transparent.seen"
 
+# The same run stepped Mode through Image and Slideshow, twice each, with neither an image nor a
+# folder chosen yet. Each previews the colour, as designed: the debug log says so, and no error
+# about a config problem reaches stderr, since there is none.
+ok=1
+! grep -qE "Background 'Image' setting|Couldn't load background image|Slideshow directory .* does not exist" "$out/f60-transparent.err" \
+    && grep -q 'Settings: no image chosen yet, the preview shows the colour' "$out/f60-transparent.log" \
+    && grep -q 'Settings: no slideshow folder chosen yet, the preview shows the colour' "$out/f60-transparent.log" && ok=0
+result "settings: stepping Mode through Image and Slideshow with nothing chosen writes no error" $ok
+grep -E "Background 'Image' setting|Couldn't load background image|does not exist" "$out/f60-transparent.err" | sort | uniq -c | sed 's/^/      /'
+
+# A config whose own Mode names an image or folder it never gives is a config problem: at startup
+# that still says so as an error, on stderr
+run_quick f60-noimage
+ok=1
+grep -q "Background 'Image' setting not specified in config file" "$out/f60-noimage.err" \
+    && grep -q "Couldn't load background image, defaulting to color background" "$out/f60-noimage.err" \
+    && grep -q "Slideshow directory '(none)' does not exist" "$out/f30-nodir.err" && ran_clean f60-noimage && ok=0
+result "a config's Image or Slideshow mode with nothing chosen still errors at startup (exit $(cat "$out/f60-noimage.code"))" $ok
+
 # Image: Mode to Image, open the browser (it starts in Pictures), take the second image
 cfg=$(writable_config f60-colour)
 CFG=$cfg run_keys f60-image Menu Return Right Down Return Down Return BackSpace BackSpace
