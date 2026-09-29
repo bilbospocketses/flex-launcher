@@ -160,6 +160,7 @@ typedef struct menu {
     LayoutOverrides overrides;        // Per-menu Rows/Columns/IconSize; 0 = from [Layout]
     LayoutPosition  position;         // Selected entry and scroll position
     int             rendered_size;    // Button size the textures were rendered at; 0 = not yet
+    bool            fixed_titles;     // Its percentage title size's font failed to open: the fixed FontSize stands in
     struct menu     *next;
     struct menu     *back;
 } Menu;

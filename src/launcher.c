@@ -826,17 +826,18 @@ int compute_menu_layout(const Menu *menu, LayoutGeometry *geometry, char *why, s
     LayoutOverrides builtin = { DEFAULT_ROWS, DEFAULT_MAX_BUTTONS, 0 };
     LayoutOverrides effective = layout_resolve(menu->overrides, global, builtin);
     bool titles = config.titles_enabled;
+    bool scaled = titles && config.title_font_size_pct > 0 && !menu->fixed_titles;
     LayoutParams params = {
         .rows              = effective.rows,
         .columns           = effective.columns,
         .icon_cap          = effective.icon_cap,
         .spacing           = config.icon_spacing,
-        .title_block       = titles && config.title_font_size_pct == 0 ? geo.font_height : 0,
+        .title_block       = titles && !scaled ? geo.font_height : 0,
         .hpad              = config.highlight_hpadding,
         .vpad              = config.highlight_vpadding,
         .title_padding     = titles ? config.title_padding : 0,
         .title_padding_pct = titles ? config.title_padding_pct : 0,
-        .title_size_pct    = titles ? config.title_font_size_pct : 0,
+        .title_size_pct    = scaled ? config.title_font_size_pct : 0,
         .title_min_size    = geo.title_min_size,
         .title_line_pm     = geo.title_line_pm
     };
@@ -861,6 +862,18 @@ static int apply_layout(Menu *menu)
     if (compute_menu_layout(menu, &layout, why, sizeof(why))) {
         log_error("Menu '%s' cannot be shown: %s", menu->name, why);
         return 1;
+    }
+
+    // A title size whose font cannot be opened gives way to the fixed FontSize, and the menu is
+    // laid out again for that font's height, so its titles fit the room kept for them
+    if (layout.title_size > 0 && title_font(layout.title_size) == NULL) {
+        log_error("Menu '%s': its titles use the fixed %u pt font instead", menu->name, config.title_font_size);
+        menu->fixed_titles = true;
+        menu->rendered_size = 0;
+        if (compute_menu_layout(menu, &layout, why, sizeof(why))) {
+            log_error("Menu '%s' cannot be shown: %s", menu->name, why);
+            return 1;
+        }
     }
 
     // A reduced grid is reported when the menu is first laid out at this size, not on every load
@@ -983,8 +996,11 @@ static void load_back_menu(Menu *menu)
 // now, the others when they are next opened
 void reload_titles()
 {
-    for (Menu *menu = config.first_menu; menu != NULL; menu = menu->next)
+    // A new size may open where the last one failed
+    for (Menu *menu = config.first_menu; menu != NULL; menu = menu->next) {
         menu->rendered_size = 0;
+        menu->fixed_titles = false;
+    }
     apply_layout(current_menu);
 }
 

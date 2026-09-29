@@ -58,6 +58,15 @@ TTF_Font *title_font(int size)
             return title_fonts[i].font;
     }
     TTF_Font *font = TTF_OpenFont(config.title_font_path, size);
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: STREAMFLEX_TEST_FAIL_TITLE_SIZE names a size that fails
+    const char *fail = getenv("STREAMFLEX_TEST_FAIL_TITLE_SIZE");
+    if (fail != NULL && atoi(fail) == size && font != NULL) {
+        TTF_CloseFont(font);
+        font = NULL;
+        TTF_SetError("the test hook failed it");
+    }
+#endif
     if (font == NULL) {
         log_error("Could not open the title font at %i pt\n%s", size, TTF_GetError());
         return NULL;

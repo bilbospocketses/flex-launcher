@@ -87,3 +87,15 @@ ran_clean f40-shrinkfail && grep -q 'Test hook: the step down to [0-9]* pt fails
     && ok=0
 result "item 19: Shrink mode cuts a title to fit when a smaller font fails to open (exit $(cat "$out/f40-shrinkfail.code"))" $ok
 grep -E 'Test hook|px wide, over its' "$out/f40-shrinkfail.log" | sed 's/^/      /'
+
+# A menu's title size whose font cannot be opened (the harness build's STREAMFLEX_TEST_FAIL_TITLE_SIZE
+# fails 22 pt, the dense grid's size): its titles use the fixed FontSize, 36, and the menu is laid
+# out for that font's height, so the room kept for them is the room they take
+STREAMFLEX_TEST_FAIL_TITLE_SIZE=22 CFG=$FX/f40-dense.ini run_quick f40-failsize
+ok=1
+ran_clean f40-failsize && grep -q 'Could not open the title font at 22 pt' "$out/f40-failsize.log" \
+    && grep -q "Menu 'Main': its titles use the fixed 36 pt font instead" "$out/f40-failsize.log" \
+    && grep -qE "Menu 'Main': [0-9]+ x [0-9]+ grid, [0-9]+ px buttons, 36 pt titles" "$out/f40-failsize.log" \
+    && ! grep -q "Menu 'Main': .*, 22 pt titles" "$out/f40-failsize.log" && ok=0
+result "item 19: a title size that cannot be opened falls back to the fixed size, laid out for it (exit $(cat "$out/f40-failsize.code"))" $ok
+grep "Menu 'Main':" "$out/f40-failsize.log" | sed 's/^/      /'
