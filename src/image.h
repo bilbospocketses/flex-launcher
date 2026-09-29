@@ -39,3 +39,4 @@ SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *
 SDL_Texture *render_text_texture(const char *text, TextInfo *info, SDL_Rect *rect, int *text_height);
 TTF_Font *title_font(int size);
 void title_fonts_free(void);
+void title_fonts_keep(const int *sizes, int count);

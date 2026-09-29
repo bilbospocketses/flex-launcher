@@ -1004,6 +1004,23 @@ void reload_titles()
     apply_layout(current_menu);
 }
 
+// A function to close the title fonts no menu uses any more, once settings have changed the sizes
+void trim_title_fonts()
+{
+    int *sizes = calloc(config.num_menus > 0 ? config.num_menus : 1, sizeof(int));
+    if (sizes == NULL)
+        return;
+    int count = 0;
+    for (Menu *menu = config.first_menu; menu != NULL; menu = menu->next) {
+        LayoutGeometry geometry;
+        char why[256];
+        if (compute_menu_layout(menu, &geometry, why, sizeof(why)) == 0 && geometry.title_size > 0)
+            sizes[count++] = geometry.title_size;
+    }
+    title_fonts_keep(sizes, count);
+    free(sizes);
+}
+
 // A function to lay the menu on show out again after its grid changed
 void refresh_layout()
 {

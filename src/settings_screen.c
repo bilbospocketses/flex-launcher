@@ -788,6 +788,7 @@ static void close_settings(void)
     log_debug("Settings closed");
     if (go_home)
         show_home();
+    trim_title_fonts();
 }
 
 // A function to save every changed setting into config.ini; on failure, show why

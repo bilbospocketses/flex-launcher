@@ -193,3 +193,15 @@ in_range "$log" 'Settings opened' 'Settings closed' "Settings: the preview shows
     && [ "$(grep -c "Menu 'D': rendered its buttons" "$log")" = 1 ] && ran_clean f50-menus && ok=0
 result "settings: the Menus list's preview waits for the cursor to rest, and never renders a menu twice (exit $(cat "$out/f50-menus.code"))" $ok
 grep -E "Loading menu|rendered its buttons|the preview shows menu|kept the screen waiting" "$log" | sed 's/^/      /'
+
+# Closing settings closes the title font sizes no menu uses any more: Titles from Medium (14%, 36 pt
+# on Main's 256 px buttons) to Large (17%), then Back saves and closes. 36 pt is closed, and only it.
+cfg=$(writable_config f50-grid)
+CFG=$cfg run_keys f50-titlefonts Menu Down Down Return Right BackSpace BackSpace
+ok=1
+grep -q 'Settings: \[Titles\] FontSize 14% -> 17%' "$out/f50-titlefonts.log" \
+    && [ "$(sed -n '/Settings closed/,$p' "$out/f50-titlefonts.log" | grep -c 'Titles: closed the')" = 1 ] \
+    && sed -n '/Settings closed/,$p' "$out/f50-titlefonts.log" | grep -q 'Titles: closed the 36 pt title font, which no menu uses now' \
+    && ran_clean f50-titlefonts && ok=0
+result "settings: closing them closes the title sizes no menu uses any more (exit $(cat "$out/f50-titlefonts.code"))" $ok
+grep -E "Titles: closed|Menu 'Main': .* grid" "$out/f50-titlefonts.log" | sed 's/^/      /'

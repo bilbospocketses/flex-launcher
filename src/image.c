@@ -90,6 +90,25 @@ void title_fonts_free(void)
     title_font_count = 0;
 }
 
+// A function to close the cached title fonts at sizes not in a list: when settings close, the
+// sizes no menu uses any more
+void title_fonts_keep(const int *sizes, int count)
+{
+    int kept = 0;
+    for (int i = 0; i < title_font_count; i++) {
+        bool used = false;
+        for (int j = 0; j < count && !used; j++)
+            used = title_fonts[i].size == sizes[j];
+        if (used)
+            title_fonts[kept++] = title_fonts[i];
+        else {
+            log_debug("Titles: closed the %i pt title font, which no menu uses now", title_fonts[i].size);
+            TTF_CloseFont(title_fonts[i].font);
+        }
+    }
+    title_font_count = kept;
+}
+
 // A function to load the next slideshow image that loads. It also runs on the slideshow thread, so
 // it touches nothing but the slideshow: textures, the draw colour and what is shown belong to the
 // main thread. It returns NULL when no image in the folder loads, and sets slideshow->only_one when
