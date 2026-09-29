@@ -713,6 +713,56 @@ static void test_list_kinds(void)
     chmod(DIR "/kinds", 0755);
 }
 
+// A function to test that, where the listing gives no entry's kind, an entry that a network file
+// system is mounted on is a folder without being looked at (on a dead hard NFS mount a lookup never
+// returns), found from the mount table by the folder's real path; a file beside it is still looked
+// at, and so is each entry of a folder that is itself on a network mount
+static void test_list_a_network_mount_in_the_folder(void)
+{
+    // Each mount point here is really a file, so only a listing that does not look at it calls it
+    // a folder
+    CHECK(fileio_make_dirs(DIR "/holder"));
+    CHECK(fileio_write_all(DIR "/holder/nas", "x", 1));
+    CHECK(fileio_write_all(DIR "/holder/notes.txt", "x", 1));
+    CHECK(symlink("holder", DIR "/to-holder") == 0);
+    CHECK(fileio_make_dirs(DIR "/onnas/sub"));
+    CHECK(fileio_write_all(DIR "/onnas/photo.png", "x", 1));
+    char table[3 * PATH_MAX];
+    snprintf(table, sizeof(table),
+        "proc /proc proc rw 0 0\n"
+        "nas:/export %s/holder/nas nfs rw 0 0\n"
+        "//nas/other %s/onnas cifs rw 0 0\n", fixture, fixture);
+    CHECK(fileio_write_all(DIR "/nested-mounts", table, strlen(table)));
+    fileio_set_mount_table(DIR "/nested-mounts");
+    fileio_set_fault(FILEIO_FAULT_NO_KIND, 0, 0);
+
+    // The folder by a relative path, and by a link to it: the table has neither
+    const char *folders[] = { DIR "/holder", DIR "/to-holder" };
+    for (size_t i = 0; i < sizeof(folders) / sizeof(folders[0]); i++) {
+        FileioEntry *entries = NULL;
+        int count = fileio_list(folders[i], &entries);
+        CHECK_INT(count, 2);
+        const FileioEntry *nas = find_entry(entries, count, "nas");
+        const FileioEntry *notes = find_entry(entries, count, "notes.txt");
+        CHECK(nas != NULL && nas->is_dir);
+        CHECK(notes != NULL && !notes->is_dir);
+        fileio_free_list(entries, count);
+    }
+
+    // A folder on a network mount: its entries are on the mount the listing has just read
+    FileioEntry *entries = NULL;
+    int count = fileio_list(DIR "/onnas", &entries);
+    CHECK_INT(count, 2);
+    const FileioEntry *sub = find_entry(entries, count, "sub");
+    const FileioEntry *photo = find_entry(entries, count, "photo.png");
+    CHECK(sub != NULL && sub->is_dir);
+    CHECK(photo != NULL && !photo->is_dir);
+    fileio_free_list(entries, count);
+
+    fileio_set_fault(FILEIO_FAULT_NONE, 0, 0);
+    fileio_set_mount_table(NULL);
+}
+
 // A function to test Pictures and Home: Pictures from the desktop's user-dirs.dirs when the
 // variable is not set (a German desktop's "Bilder"), and a Pictures folder that is a link onto a
 // network mount, listed unlooked and marked
@@ -813,6 +863,7 @@ int main(void)
     test_places_under_the_user_folder();
     test_places_under_a_fuse_mount();
     test_list_kinds();
+    test_list_a_network_mount_in_the_folder();
     test_places_pictures();
     test_replace_warns_when_permissions_are_lost();
 #endif

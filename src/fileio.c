@@ -599,6 +599,15 @@ static bool is_in(const char *path, const char *folder)
     return folder[length - 1] == '/' || path[length] == '\0' || path[length] == '/';
 }
 
+// A function to tell a network file system by its type in the mount table
+static bool is_network_type(const char *type)
+{
+    bool network = strncmp(type, "fuse.", 5) == 0;
+    for (size_t i = 0; !network && i < sizeof(NETWORK_TYPES) / sizeof(NETWORK_TYPES[0]); i++)
+        network = strcmp(type, NETWORK_TYPES[i]) == 0;
+    return network;
+}
+
 // A function to tell a path on a network file system, from the mount table: the type of the mount
 // with the longest path that holds it. Reading /proc/self/mounts touches none of the mounts.
 static bool on_network_mount(const char *path)
@@ -615,9 +624,35 @@ static bool on_network_mount(const char *path)
         if (length < longest || !is_in(path, mount.mnt_dir))
             continue;
         longest = length;   // On a tie the later mount wins: it hides the earlier one
-        network = strncmp(mount.mnt_type, "fuse.", 5) == 0;
-        for (size_t i = 0; !network && i < sizeof(NETWORK_TYPES) / sizeof(NETWORK_TYPES[0]); i++)
-            network = strcmp(mount.mnt_type, NETWORK_TYPES[i]) == 0;
+        network = is_network_type(mount.mnt_type);
+    }
+    endmntent(table);
+    return network;
+}
+
+// A function to tell, from the mount table alone, whether a network file system is mounted on the
+// entry `name` of a folder, or with no name, on any entry of it. `folder` is a real path, as the
+// table's are. Of two mounts on one entry, the later hides the earlier.
+static bool network_mount_in(const char *folder, const char *name)
+{
+    FILE *table = setmntent(mount_table, "r");
+    if (table == NULL)
+        return false;
+    struct mntent mount;
+    char buffer[4096];
+    bool network = false;
+    while (getmntent_r(table, &mount, buffer, (int) sizeof(buffer)) != NULL) {
+        if (!is_in(mount.mnt_dir, folder))
+            continue;
+        const char *entry = mount.mnt_dir + strlen(folder);
+        while (*entry == '/')
+            entry++;
+        if (entry[0] == '\0' || strchr(entry, '/') != NULL)
+            continue;
+        if (name == NULL)
+            network = network || is_network_type(mount.mnt_type);
+        else if (strcmp(entry, name) == 0)
+            network = is_network_type(mount.mnt_type);
     }
     endmntent(table);
     return network;
@@ -786,6 +821,8 @@ int fileio_list(const char *folder, FileioEntry **entries)
         return -1;
     }
     size_t folder_length = strlen(folder);
+    char real[PATH_MAX];   // The folder's real path, for the mount table...
+    int nested = -1;       // ...and whether a network file system is mounted on an entry; -1 until asked
     while (ok) {
         // readdir() gives NULL at the end and on an error, which only errno tells apart; only the
         // end ends the listing
@@ -811,9 +848,11 @@ int fileio_list(const char *folder, FileioEntry **entries)
         // for good. A link is followed, since a link to a folder should open like one; but one whose
         // text leads onto a network mount is taken for a folder unlooked. An entry of unknown kind
         // (some CIFS, NFS and older XFS mounts give none) costs one lstat(), which looks at the entry
-        // itself on this folder's own file system and never follows it; one that turns out to be a
-        // link is then treated as a link. So a folder of 300 such entries is 300 lookups, on the
-        // file system being listed, and none beyond it.
+        // itself and never follows it; one that turns out to be a link is then treated as a link.
+        // But an lstat() of an entry that a file system is mounted on looks at that file system's
+        // root, so the mount table is read first (once, by the folder's real path), and an entry
+        // that a network file system is mounted on is taken for a folder unlooked. So a folder of
+        // 300 such entries is 300 lookups, on the file system being listed, and none beyond it.
         unsigned char kind = fault == FILEIO_FAULT_NO_KIND ? (unsigned char) DT_UNKNOWN : entry->d_type;
         bool is_dir = kind == DT_DIR;
         if (kind == DT_LNK || kind == DT_UNKNOWN) {
@@ -827,7 +866,14 @@ int fileio_list(const char *folder, FileioEntry **entries)
             snprintf(full, size, "%s/%s", folder, entry->d_name);
             struct stat info;
             bool link = kind == DT_LNK;
-            if (kind == DT_UNKNOWN && lstat(full, &info) == 0) {
+            if (kind == DT_UNKNOWN && nested < 0) {
+                if (realpath(folder, real) == NULL)
+                    snprintf(real, sizeof(real), "%s", folder);
+                nested = network_mount_in(real, NULL) ? 1 : 0;
+            }
+            if (kind == DT_UNKNOWN && nested == 1 && network_mount_in(real, entry->d_name))
+                is_dir = true;
+            else if (kind == DT_UNKNOWN && lstat(full, &info) == 0) {
                 link = S_ISLNK(info.st_mode);
                 is_dir = S_ISDIR(info.st_mode);
             }
