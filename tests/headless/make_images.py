@@ -3,8 +3,10 @@
 Usage: python3 make_images.py <folder>
            three solid-colour PNGs for the background checks
        python3 make_images.py --keyed <file.png> <r,g,b> <rgb|rgba>
-           a 64 px icon for the chroma key check: a frame of the colour given, 16 px wide, around a
-           square of the default chroma key, #010101, fully opaque; RGB, or RGBA with alpha 255
+           a 512 px icon for the chroma key check: a frame of the colour given, 128 px wide, around
+           a square of one-pixel columns, black and #020202 in turn, fully opaque; RGB, or RGBA
+           with alpha 255. Neither colour is the default chroma key, #010101, but drawn at half
+           size a linear filter averages each pair of columns to exactly #010101.
 """
 import os
 import struct
@@ -29,13 +31,13 @@ def png(path, width, height, rows, colour_type):
 
 
 def keyed(path, frame, alpha):
-    """Write the chroma key check's icon: the frame colour, with the key in a square in the middle."""
-    key = (1, 1, 1)
+    """Write the chroma key check's icon: the frame colour, with black and #020202 columns in the middle."""
     extra = b"\xff" if alpha else b""
-    rows = []
-    for y in range(64):
-        rows.append(b"".join(bytes(key if 16 <= x < 48 and 16 <= y < 48 else frame) + extra for x in range(64)))
-    png(path, 64, 64, rows, 6 if alpha else 2)
+    columns = [bytes((0, 0, 0) if x % 2 == 0 else (2, 2, 2)) + extra for x in range(512)]
+    edge = bytes(frame) + extra
+    middle = b"".join(columns[x] if 128 <= x < 384 else edge for x in range(512))
+    rows = [middle if 128 <= y < 384 else edge * 512 for y in range(512)]
+    png(path, 512, 512, rows, 6 if alpha else 2)
 
 
 if sys.argv[1] == "--keyed":

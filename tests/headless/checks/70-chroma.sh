@@ -1,10 +1,13 @@
 # Transparent mode on Windows makes every pixel of the window that is exactly the chroma key colour
-# see-through, so an icon's own pixels of that colour were holes in it (the Plex icon's diagonal).
-# Every icon is now kept off the key as it loads. Xvfb has no see-through windows, but it draws the
-# key colour as the background, so the proof is on screen: inside each icon (found by its frame's
-# colour) no pixel may be the key colour. Three icons: an RGBA PNG, an RGB PNG (converted to RGBA
-# first) and an SVG, each a square of #010101 in a frame whose red is 0, so no blend of the two
-# as the icon is scaled can be the key either.
+# see-through, so an icon's own pixels of that colour were holes in it (the Plex icon's diagonal),
+# and so were pixels the renderer's scaling blended onto it from dark neighbours next to it. Every
+# icon is now kept two steps off the key as it loads. Xvfb has no see-through windows, but it draws
+# the key colour as the background, so the proof is on screen: inside each icon (found by its
+# frame's colour) no pixel may be the key colour. Three icons: 512 px PNGs, RGBA and RGB (converted
+# to RGBA first), drawn at 256 px as Plex is by default, whose middle is black and #020202 columns
+# that the linear filter averages to exactly #010101 unless both are moved; and an SVG, rasterized
+# at its size, with a square of #010101. Each frame's red is 0, so no blend of frame and middle can
+# be the key either.
 rm -rf "$TESTER_HOME/keyed"
 mkdir -p "$TESTER_HOME/keyed"
 python3 "$HERE/make_images.py" --keyed "$TESTER_HOME/keyed/rgba.png" 0,200,200 rgba
@@ -41,6 +44,6 @@ grep -qE '^rgba box .*: 0 pixels of 1,1,1$' "$seen" && grep -qE '^rgb box .*: 0 
     && grep -q '/home/tester/keyed/rgba.png: moved [0-9]* pixel(s) off the chroma key #010101' "$out/f70-chroma.log" \
     && grep -q '/home/tester/keyed/rgb.png: moved [0-9]* pixel(s) off the chroma key #010101' "$out/f70-chroma.log" \
     && grep -q '/home/tester/keyed/svg.svg: moved [0-9]* pixel(s) off the chroma key #010101' "$out/f70-chroma.log" \
-    && ran_clean f70-chroma && ok=0
-result "Transparent: no icon's pixel is the chroma key colour, PNG or SVG (exit $(cat "$out/f70-chroma.code"))" $ok
+    && grep -q 'Layout: 3 x 1 grid, 256 px buttons' "$out/f70-chroma.log" && ran_clean f70-chroma && ok=0
+result "Transparent: no icon's pixel is the chroma key colour, scaled PNG or SVG (exit $(cat "$out/f70-chroma.code"))" $ok
 sed 's/^/      /' "$out/f70-chroma.seen"
