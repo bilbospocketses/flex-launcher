@@ -41,7 +41,8 @@ CFG=none exe=/tmp/harness/exits-at-once run_keys h-gone
 took=$SECONDS
 ok=1
 [ "$took" -lt 5 ] && ! ran_clean h-gone && grep -q "never logged 'Loading menu'" "$out/h-gone.code" && ok=0
-result "harness: a launcher that exits without logging ends the wait at once, and fails (took $took s, exit $(cat "$out/h-gone.code"))" $ok
+result "harness: a launcher that exits without logging ends the wait at once, and fails (exit $(cat "$out/h-gone.code"))" $ok
+echo "      the wait took $took s"
 
 # A log range counts only once its end line comes: a launcher that stopped logging inside
 # settings cannot pass a check on the lines inside them
