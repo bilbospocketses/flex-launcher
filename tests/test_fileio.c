@@ -763,13 +763,26 @@ static void test_list_a_network_mount_in_the_folder(void)
     fileio_set_mount_table(NULL);
 }
 
+// A function to add a line to the end of a text being built in a buffer; false, and the text as it
+// was, when the line does not fit
+static bool add_line(char *text, size_t size, size_t *used, const char *line)
+{
+    size_t length = strlen(line);
+    if (*used >= size || length >= size - *used)
+        return false;
+    memcpy(text + *used, line, length + 1);
+    *used += length;
+    return true;
+}
+
 // A function to test the network mounts on a folder's entries where one mount hides another (the
 // later decides), and where there are more than a listing keeps by name (8), so each entry is found
 // in the table instead. Every mount point here is really a file.
 static void test_list_many_network_mounts_in_the_folder(void)
 {
     static char table[16 * (PATH_MAX + 64)];
-    size_t used = (size_t) snprintf(table, sizeof(table), "proc /proc proc rw 0 0\n");
+    size_t used = 0;
+    CHECK(add_line(table, sizeof(table), &used, "proc /proc proc rw 0 0\n"));
     CHECK(fileio_make_dirs(DIR "/stacked"));
     const char *stacked[][2] = {
         { "local-over-nas", "nfs" }, { "nas", "nfs4" }, { "local-over-nas", "ext4" },
@@ -779,8 +792,10 @@ static void test_list_many_network_mounts_in_the_folder(void)
         char path[PATH_MAX + 64];
         snprintf(path, sizeof(path), DIR "/stacked/%s", stacked[i][0]);
         CHECK(fileio_write_all(path, "x", 1));
-        used += (size_t) snprintf(table + used, sizeof(table) - used, "server:/x %s/stacked/%s %s rw 0 0\n",
-                                  fixture, stacked[i][0], stacked[i][1]);
+        char line[2 * PATH_MAX];
+        CHECK(snprintf(line, sizeof(line), "server:/x %s/stacked/%s %s rw 0 0\n", fixture, stacked[i][0],
+                       stacked[i][1]) < (int) sizeof(line));
+        CHECK(add_line(table, sizeof(table), &used, line));
     }
     CHECK(fileio_make_dirs(DIR "/many"));
     CHECK(fileio_write_all(DIR "/many/plain", "x", 1));
@@ -788,10 +803,11 @@ static void test_list_many_network_mounts_in_the_folder(void)
         char path[PATH_MAX + 64];
         snprintf(path, sizeof(path), DIR "/many/m%i", i);
         CHECK(fileio_write_all(path, "x", 1));
-        used += (size_t) snprintf(table + used, sizeof(table) - used, "nas:/m%i %s/many/m%i nfs rw 0 0\n", i, fixture, i);
+        char line[2 * PATH_MAX];
+        CHECK(snprintf(line, sizeof(line), "nas:/m%i %s/many/m%i nfs rw 0 0\n", i, fixture, i) < (int) sizeof(line));
+        CHECK(add_line(table, sizeof(table), &used, line));
     }
-    CHECK(used < sizeof(table));
-    CHECK(fileio_write_all(DIR "/many-mounts", table, strlen(table)));
+    CHECK(fileio_write_all(DIR "/many-mounts", table, used));
     fileio_set_mount_table(DIR "/many-mounts");
     fileio_set_fault(FILEIO_FAULT_NO_KIND, 0, 0);
 
@@ -890,6 +906,42 @@ static void test_replace_warns_when_permissions_are_lost(void)
     CHECK(strstr(fileio_last_warning(), "permissions") != NULL);
     CHECK(lstat(DIR "/kept.ini", &info) == 0 && S_ISLNK(info.st_mode));
 }
+
+// A function to test which permissions a replace keeps: an old file's, even one its owner cannot
+// read; none when there is no old file, and no warning then; and, when keeping them fails, the new
+// file's own, with the warning
+static void test_replace_keeps_permissions(void)
+{
+    struct stat info;
+    CHECK(fileio_write_all(DIR "/unreadable.ini", "old", 3));
+    CHECK(chmod(DIR "/unreadable.ini", 0200) == 0);
+    CHECK(fileio_write_all(DIR "/unreadable.ini.tmp", "new", 3));
+    CHECK(chmod(DIR "/unreadable.ini.tmp", 0644) == 0);
+    CHECK(fileio_replace(DIR "/unreadable.ini.tmp", DIR "/unreadable.ini"));
+    CHECK_STR(fileio_last_warning(), "");
+    CHECK(stat(DIR "/unreadable.ini", &info) == 0 && (info.st_mode & 07777) == 0200);
+    CHECK(chmod(DIR "/unreadable.ini", 0644) == 0);
+
+    CHECK(fileio_write_all(DIR "/fresh.ini.tmp", "new", 3));
+    CHECK(chmod(DIR "/fresh.ini.tmp", 0640) == 0);
+    CHECK(fileio_replace(DIR "/fresh.ini.tmp", DIR "/fresh.ini"));
+    CHECK_STR(fileio_last_warning(), "");
+    CHECK(stat(DIR "/fresh.ini", &info) == 0 && (info.st_mode & 07777) == 0640);
+
+    CHECK(fileio_write_all(DIR "/faulted.ini", "old", 3));
+    CHECK(chmod(DIR "/faulted.ini", 0600) == 0);
+    CHECK(fileio_write_all(DIR "/faulted.ini.tmp", "new", 3));
+    CHECK(chmod(DIR "/faulted.ini.tmp", 0644) == 0);
+    fileio_set_fault(FILEIO_FAULT_KEEP, 0, 0);
+    bool replaced = fileio_replace(DIR "/faulted.ini.tmp", DIR "/faulted.ini");
+    fileio_set_fault(FILEIO_FAULT_NONE, 0, 0);
+    CHECK(replaced);
+    CHECK_STR(fileio_last_warning(), "the file's permissions could not be kept");
+    CHECK(stat(DIR "/faulted.ini", &info) == 0 && (info.st_mode & 07777) == 0644);
+    char *text = fileio_read_all(DIR "/faulted.ini", NULL);
+    CHECK(text != NULL && strcmp(text, "new") == 0);
+    free(text);
+}
 #endif
 
 int main(void)
@@ -926,6 +978,7 @@ int main(void)
     test_list_many_network_mounts_in_the_folder();
     test_places_pictures();
     test_replace_warns_when_permissions_are_lost();
+    test_replace_keeps_permissions();
 #endif
     return check_report();
 }

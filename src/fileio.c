@@ -1,3 +1,8 @@
+// On Linux, for O_PATH: fileio_replace() reads the old file's permissions through a descriptor
+// that needs no permission to read the file
+#if !defined(_WIN32) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -10,6 +15,7 @@
 #include <io.h>
 #else
 #include <dirent.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <mntent.h>
 #include <unistd.h>
@@ -433,9 +439,26 @@ bool fileio_replace(const char *from, const char *to)
     alloc_free(wide_to);
     return ok;
 #else
-    // The new file takes the old one's permission bits
-    struct stat info;
-    bool mode_kept = stat(to, &info) != 0 || (fault != FILEIO_FAULT_KEEP && chmod(from, info.st_mode & 07777) == 0);
+    // The new file takes the old one's permission bits. Each file is opened once and its bits are
+    // read and set through that descriptor, so no other file can be put at either path between a
+    // look and a change. O_PATH reads the bits of a file the user cannot read, as stat() did, and
+    // O_NONBLOCK keeps a pipe put at a path from blocking the open. No old file keeps nothing.
+#ifdef O_PATH
+    int old_file = open(to, O_PATH | O_CLOEXEC);
+#else
+    int old_file = open(to, O_RDONLY | O_NOCTTY | O_NONBLOCK | O_CLOEXEC);
+#endif
+    bool mode_kept = old_file < 0 && errno == ENOENT;
+    if (old_file >= 0) {
+        struct stat info;
+        int new_file = -1;
+        mode_kept = fault != FILEIO_FAULT_KEEP && fstat(old_file, &info) == 0 &&
+                    (new_file = open(from, O_RDONLY | O_NOCTTY | O_NONBLOCK | O_CLOEXEC)) >= 0 &&
+                    fchmod(new_file, info.st_mode & 07777) == 0;
+        if (new_file >= 0)
+            close(new_file);
+        close(old_file);
+    }
     if (rename(from, to) != 0) {
         set_errno_error(errno);
         return false;

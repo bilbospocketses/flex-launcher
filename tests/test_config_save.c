@@ -386,17 +386,21 @@ static void test_missing_file_fails(void)
 }
 
 #ifndef _WIN32
-// A function to test that a symbolic link is followed: the file it points to changes, the link stays
+// A function to test that a symbolic link is followed: the file it points to changes and keeps its
+// permissions, the link stays
 static void test_follows_a_symbolic_link(void)
 {
     reset(DIR "/real.ini", ORIGINAL);
+    CHECK(chmod(DIR "/real.ini", 0640) == 0);
     remove(DIR "/link.ini");
     CHECK(symlink("real.ini", DIR "/link.ini") == 0);
     ConfigEdit edit = { "Layout", "Rows", NULL, "2", INIDOC_AFTER_LAST_KEY };
     ConfigSaveResult result;
     CHECK(config_save(DIR "/link.ini", NULL, NULL, &edit, 1, &result));
+    CHECK_STR(result.warning, "");
     struct stat info;
     CHECK(lstat(DIR "/link.ini", &info) == 0 && S_ISLNK(info.st_mode));
+    CHECK(lstat(DIR "/real.ini", &info) == 0 && S_ISREG(info.st_mode) && (info.st_mode & 07777) == 0640);
     char *content = fileio_read_all(DIR "/real.ini", NULL);
     CHECK(content != NULL && strstr(content, "Rows=2\n") != NULL);
     free(content);
