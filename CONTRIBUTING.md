@@ -45,7 +45,7 @@ Each run prints one `PASS` or `FAIL` line per check, then `N failed`, and keeps 
 src/                 Launcher core (launcher.c, layout.c, library.c, image.c, clock.c, util.c, utf8.c, debug.c) and the settings screen (settings_screen.c, settings.c, browser.c, inidoc.c, config_save.c, fileio.c)
                      test_hooks.c: the harness's STREAMFLEX_TEST_FAIL hook, built into every build but compiled to no code unless STREAMFLEX_TEST_HOOKS is defined; the other hooks sit inline in image.c, launcher.c and settings_screen.c
 src/platform/        Windows and Linux platform layers
-src/external/        Vendored third-party sources
+src/external/        Vendored third-party sources (nanosvg): where each came from, and every local change, in its README
 config/              Default config template, packaging and platform templates (PKGBUILD, .desktop, manifest, icon)
 assets/              Icons and fonts
 branding/icon/       Source for the app icon; regenerate with build-icon.ps1 (see its README)
@@ -56,6 +56,8 @@ tests/               Unit tests (CTest); run them with ctest after building
 tests/headless/      Headless checks: the launcher under Xvfb, driven by key presses (see run.sh); CI runs them on Debian and Fedora
 docs/                Documentation site (GitHub Pages / Jekyll)
 ```
+
+Vendored code in `src/external/` is taken from the latest upstream and evaluated before it lands. A CodeQL alert in it is patched only where the patch changes nothing, and each patch carries a `// streamflex:` comment and is listed in [`src/external/README.md`](src/external/README.md), with the upstream commit, so the next update can diff our copy against it and re-apply them; that README also gives the update steps. Compiler warnings in vendored code are not patched: they are silenced where the code is included (`#pragma warning(push, 0)` for MSVC; for GCC the launcher includes the folder as a system header, and the harness does not count warnings from it).
 
 ## Branch Strategy
 
