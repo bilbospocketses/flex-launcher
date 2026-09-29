@@ -20,7 +20,12 @@ static const struct {
     { "C:\\", "Users/" },
     { "C:\\Users", "me/" },
     { "C:\\Users\\me", "Pictures/" },
-    { "C:\\Users\\me\\Pictures", "trip.png|x.jpg" }
+    { "C:\\Users\\me\\Pictures", "trip.png|x.jpg" },
+    { "C:/Users/me", "Pictures/" },
+    { "C:/Users/me/Pictures", "trip.png|x.jpg" },
+    { "C:", "Users/" },
+    { "/orphan/child", "a.png" },
+    { "/nas", "far.png" }
 };
 
 // A function to list a pretend folder, the way fileio_list() lists a real one
@@ -31,7 +36,10 @@ static int fake_list(const char *folder, FileioEntry **entries, void *context)
         if (strcmp(FAKE[i].folder, folder) != 0)
             continue;
         int count = 0;
-        *entries = calloc(16, sizeof(FileioEntry));
+        int names = FAKE[i].names[0] != '\0' ? 1 : 0;   // One more name than there are '|'
+        for (const char *p = FAKE[i].names; *p != '\0'; p++)
+            names += *p == '|';
+        *entries = calloc((size_t) (names > 0 ? names : 1), sizeof(FileioEntry));
         const char *p = FAKE[i].names;
         while (*p != '\0') {
             const char *end = strchr(p, '|');
@@ -41,8 +49,10 @@ static int fake_list(const char *folder, FileioEntry **entries, void *context)
             char *name = malloc(name_length + 1);
             memcpy(name, p, name_length);
             name[name_length] = '\0';
-            (*entries)[count] = (FileioEntry) { .name = name, .is_dir = is_dir, .hidden = name[0] == '.' };
-            count++;
+            if (count < names)
+                (*entries)[count++] = (FileioEntry) { .name = name, .is_dir = is_dir, .hidden = name[0] == '.' };
+            else
+                free(name);
             p += length;
             if (*p == '|')
                 p++;
@@ -253,6 +263,192 @@ static void test_is_image(void)
     CHECK(!browser_is_image("png"));
 }
 
+// A function to test a Windows path written with forward slashes ("C:/Users/me/Pictures/trip.png"):
+// its rows use forward slashes too, so the image it started at is highlighted, and choosing gives a
+// path in one style
+static void test_forward_slash_windows_paths(void)
+{
+    Browser *browser = browser_open(BROWSER_IMAGE, "C:/Users/me/Pictures/trip.png", PLACES, 3, fake_list, NULL, NULL);
+    CHECK_STR(browser_folder(browser), "C:/Users/me/Pictures");
+    CHECK_INT(browser_cursor(browser), 0);
+    CHECK_STR(browser_row(browser, 0)->path, "C:/Users/me/Pictures/trip.png");
+    CHECK_STR(browser_row(browser, 1)->path, "C:/Users/me/Pictures/x.jpg");
+    browser_command(browser, BROWSER_DOWN, 10);
+    CHECK_INT(browser_command(browser, BROWSER_OK, 10), BROWSER_CHOSEN);
+    CHECK_STR(browser_chosen(browser), "C:/Users/me/Pictures/x.jpg");
+    CHECK_INT(browser_command(browser, BROWSER_BACK, 10), BROWSER_MOVED);
+    CHECK_STR(browser_folder(browser), "C:/Users/me");
+    CHECK_STR(browser_row(browser, browser_cursor(browser))->path, "C:/Users/me/Pictures");
+    browser_free(browser);
+
+    // A bare drive has no separator of its own, so it gets Windows' own
+    static const BrowserPlace drive[] = { { "C:", "C:", false } };
+    browser = browser_open(BROWSER_IMAGE, "", drive, 1, fake_list, NULL, NULL);
+    CHECK_STR(browser_folder(browser), "C:");
+    CHECK_STR(browser_row(browser, 0)->path, "C:\\Users");
+    browser_free(browser);
+}
+
+// Names too long for a path of BROWSER_PATH_MAX bytes: a folder, and an image beside it
+static char long_folder[1100];
+static char long_image[1100];
+static char deep_path[1200];
+
+// A function to list a pretend file system of paths too long to choose
+static int deep_list(const char *folder, FileioEntry **entries, void *context)
+{
+    (void) context;
+    const char *names[3];
+    bool dirs[3] = { false, false, false };
+    int count;
+    if (strcmp(folder, "/deep") == 0) {
+        names[0] = long_folder;
+        dirs[0] = true;
+        names[1] = long_image;
+        names[2] = "ok.png";
+        count = 3;
+    }
+    else if (strcmp(folder, deep_path) == 0) {
+        names[0] = "a.png";
+        names[1] = "b.png";
+        count = 2;
+    }
+    else
+        return -1;
+    *entries = calloc((size_t) count, sizeof(FileioEntry));
+    for (int i = 0; i < count; i++) {
+        size_t size = strlen(names[i]) + 1;
+        char *name = malloc(size);
+        memcpy(name, names[i], size);
+        (*entries)[i] = (FileioEntry) { .name = name, .is_dir = dirs[i], .hidden = false };
+    }
+    return count;
+}
+
+// A function to test that a path too long to keep is still shown, and refused with the reason,
+// rather than left out; and that a folder that deep still opens, and Back comes out of it
+static void test_paths_too_long_to_choose(void)
+{
+    memset(long_folder, 'y', 1030);
+    long_folder[1030] = '\0';
+    memset(long_image, 'x', 1030);
+    snprintf(long_image + 1030, sizeof(long_image) - 1030, ".png");
+    snprintf(deep_path, sizeof(deep_path), "/deep/%s", long_folder);
+    static const BrowserPlace deep[] = { { "Deep", "/deep", false } };
+
+    Browser *browser = browser_open(BROWSER_IMAGE, "", deep, 1, deep_list, fake_check, NULL);
+    CHECK_INT(browser_row_count(browser), 3);
+    CHECK_STR(browser_row(browser, 0)->path, deep_path);
+    CHECK(browser_row(browser, 0)->enabled);
+    CHECK_STR(browser_row(browser, 1)->name, "ok.png");
+    CHECK(browser_row(browser, 1)->enabled);
+    CHECK_STR(browser_row(browser, 2)->name, long_image);
+    CHECK(!browser_row(browser, 2)->enabled);
+    CHECK(browser_row(browser, 2)->why != NULL && strstr(browser_row(browser, 2)->why, "too long") != NULL);
+    browser_command(browser, BROWSER_PAGE_DOWN, 10);
+    CHECK_INT(browser_command(browser, BROWSER_OK, 10), BROWSER_NONE);
+
+    // The deep folder opens at its whole path, and Back comes out onto it
+    browser_command(browser, BROWSER_PAGE_UP, 10);
+    CHECK_INT(browser_command(browser, BROWSER_OK, 10), BROWSER_MOVED);
+    CHECK_STR(browser_folder(browser), deep_path);
+    CHECK_INT(browser_row_count(browser), 2);
+    CHECK(!browser_row(browser, 0)->enabled);
+    CHECK(strstr(browser_row(browser, 0)->why, "too long") != NULL);
+    CHECK_INT(browser_command(browser, BROWSER_BACK, 10), BROWSER_MOVED);
+    CHECK_STR(browser_folder(browser), "/deep");
+    CHECK_INT(browser_cursor(browser), 0);
+    browser_free(browser);
+
+    // In folder mode, a folder too long to keep cannot be used
+    browser = browser_open(BROWSER_FOLDER, "", deep, 1, deep_list, NULL, NULL);
+    browser_command(browser, BROWSER_DOWN, 10);
+    CHECK_INT(browser_command(browser, BROWSER_OK, 10), BROWSER_MOVED);
+    CHECK_INT(browser_row(browser, 0)->kind, BROWSER_ROW_USE_FOLDER);
+    CHECK(!browser_row(browser, 0)->enabled);
+    CHECK(strstr(browser_row(browser, 0)->why, "too long") != NULL);
+    CHECK_INT(browser_command(browser, BROWSER_OK, 10), BROWSER_NONE);
+    browser_free(browser);
+}
+
+// A function to test an empty folder in image mode: no rows, and every key but Back does nothing
+static void test_empty_folder(void)
+{
+    Browser *browser = browser_open(BROWSER_IMAGE, "/media/usb", PLACES, 3, fake_list, NULL, NULL);
+    CHECK_STR(browser_folder(browser), "/media/usb");
+    CHECK_INT(browser_row_count(browser), 0);
+    CHECK(browser_row(browser, 0) == NULL);
+    CHECK_INT(browser_command(browser, BROWSER_UP, 10), BROWSER_NONE);
+    CHECK_INT(browser_command(browser, BROWSER_DOWN, 10), BROWSER_NONE);
+    CHECK_INT(browser_command(browser, BROWSER_PAGE_UP, 10), BROWSER_NONE);
+    CHECK_INT(browser_command(browser, BROWSER_PAGE_DOWN, 10), BROWSER_NONE);
+    CHECK_INT(browser_command(browser, BROWSER_OK, 10), BROWSER_NONE);
+    CHECK_INT(browser_cursor(browser), 0);
+    CHECK_INT(browser_command(browser, BROWSER_BACK, 10), BROWSER_MOVED);
+    CHECK_STR(browser_folder(browser), "/media");
+    CHECK_STR(browser_row(browser, browser_cursor(browser))->path, "/media/usb");
+    browser_free(browser);
+}
+
+// A function to test Back from a folder whose parent cannot be listed: out to the places
+static void test_back_to_an_unlisted_parent(void)
+{
+    Browser *browser = browser_open(BROWSER_IMAGE, "/orphan/child/a.png", PLACES, 3, fake_list, NULL, NULL);
+    CHECK_STR(browser_folder(browser), "/orphan/child");
+    CHECK_INT(browser_command(browser, BROWSER_BACK, 10), BROWSER_MOVED);
+    CHECK(browser_folder(browser) == NULL);
+    CHECK_INT(browser_row_count(browser), 3);
+    CHECK_INT(browser_cursor(browser), 0);
+    browser_free(browser);
+}
+
+// A function to test that a page of fewer than one row moves one row
+static void test_page_rows_below_one(void)
+{
+    Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures", PLACES, 3, fake_list, NULL, NULL);
+    CHECK_INT(browser_command(browser, BROWSER_PAGE_DOWN, 0), BROWSER_MOVED);
+    CHECK_INT(browser_cursor(browser), 1);
+    CHECK_INT(browser_command(browser, BROWSER_PAGE_DOWN, -5), BROWSER_MOVED);
+    CHECK_INT(browser_cursor(browser), 2);
+    CHECK_INT(browser_command(browser, BROWSER_PAGE_UP, 0), BROWSER_MOVED);
+    CHECK_INT(browser_cursor(browser), 1);
+    browser_free(browser);
+}
+
+// A function to test a start folder written with a trailing separator: it opens as the folder
+static void test_start_with_a_trailing_separator(void)
+{
+    Browser *browser = browser_open(BROWSER_FOLDER, "/home/me/Pictures/Autumn/", PLACES, 3, fake_list, NULL, NULL);
+    CHECK_STR(browser_folder(browser), "/home/me/Pictures/Autumn");
+    CHECK_STR(browser_row(browser, 0)->path, "/home/me/Pictures/Autumn");
+    browser_free(browser);
+    browser = browser_open(BROWSER_FOLDER, "C:\\Users\\me\\Pictures\\", PLACES, 3, fake_list, NULL, NULL);
+    CHECK_STR(browser_folder(browser), "C:\\Users\\me\\Pictures");
+    browser_free(browser);
+    browser = browser_open(BROWSER_FOLDER, "/", PLACES, 3, fake_list, NULL, NULL);
+    CHECK_STR(browser_folder(browser), "/");
+    browser_free(browser);
+}
+
+// A function to test that a place on a network share is never opened unasked: the browser starts
+// at the first local place it can list, or at the places
+static void test_network_places_are_not_opened_unasked(void)
+{
+    static const BrowserPlace mixed[] = {
+        { "NAS", "/nas", true },
+        { "Pictures", "/home/me/Pictures", false }
+    };
+    Browser *browser = browser_open(BROWSER_IMAGE, "", mixed, 2, fake_list, NULL, NULL);
+    CHECK_STR(browser_folder(browser), "/home/me/Pictures");
+    browser_free(browser);
+    browser = browser_open(BROWSER_IMAGE, "", mixed, 1, fake_list, NULL, NULL);
+    CHECK(browser_folder(browser) == NULL);
+    CHECK_INT(browser_row_count(browser), 1);
+    CHECK_INT(browser_command(browser, BROWSER_OK, 10), BROWSER_MOVED);   // Asked for, it opens
+    CHECK_STR(browser_folder(browser), "/nas");
+    browser_free(browser);
+}
+
 int main(void)
 {
     test_rows_and_start();
@@ -265,5 +461,12 @@ int main(void)
     test_first_image();
     test_windows_paths();
     test_is_image();
+    test_forward_slash_windows_paths();
+    test_paths_too_long_to_choose();
+    test_empty_folder();
+    test_back_to_an_unlisted_parent();
+    test_page_rows_below_one();
+    test_start_with_a_trailing_separator();
+    test_network_places_are_not_opened_unasked();
     return check_report();
 }

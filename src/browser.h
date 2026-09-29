@@ -1,7 +1,8 @@
 // The folder browser behind the settings screen's Image and Folder rows: a folder's rows, a cursor,
 // and moving between folders and the places it can start from. It lists folders through a function
 // it is given, so the tests hand it a pretend file system; paths in either style ("/home/me",
-// "C:\Users\me", "\\server\share") work on any platform. Pure: no SDL, no globals.
+// "C:\Users\me", "\\server\share") work on any platform. Pure: no SDL, no globals; memory comes
+// from alloc.h.
 #ifndef BROWSER_H
 #define BROWSER_H
 
@@ -28,16 +29,20 @@ typedef struct {
     char *name;          // What the row shows
     char *path;          // The full path it stands for (the folder on show for USE_FOLDER)
     bool enabled;        // False: shown, but OK does nothing
-    const char *why;     // Why a row is disabled, when it says; NULL otherwise
+    const char *why;     // Why a row is disabled, when it says; NULL otherwise. Not a copy: see BrowserCheck
     int image_count;     // USE_FOLDER: the images in the folder on show
 } BrowserRow;
 
 typedef struct {
     const char *label;
     const char *path;
+    bool network;        // On a network share: never opened unasked, since it may keep the browser waiting
 } BrowserPlace;
 
 typedef int (*BrowserList)(const char *folder, FileioEntry **entries, void *context);
+
+// Says why config.ini cannot hold a path, or NULL when it can. The reason is kept in the rows as it
+// is given, so it must outlive them: a string literal, or one the caller keeps while the browser is open.
 typedef const char *(*BrowserCheck)(const char *path, void *context);
 
 typedef enum {

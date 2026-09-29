@@ -2,9 +2,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include "browser.h"
+#include "alloc.h"
 
 static const char *const IMAGE_EXTENSIONS[] = { ".jpg", ".jpeg", ".png", ".webp" };
 static const char *const TOO_FEW = "a slideshow needs 2 or more images";
+static const char *const TOO_LONG = "the path is too long for the settings to hold (1023 bytes at most)";
+
+typedef enum {
+    LOAD_DONE,
+    LOAD_UNLISTED,       // The folder cannot be listed
+    LOAD_NO_MEMORY
+} LoadResult;
 
 struct Browser {
     BrowserMode mode;
@@ -113,41 +121,59 @@ bool browser_parent(const char *path, char *out, size_t size)
     return true;
 }
 
-// A function to join a folder and a name with the folder's own kind of separator
-static bool join_path(const char *folder, const char *name, char *out, size_t size)
+// A function to join a folder and a name into a new path, with the separator the folder already
+// uses: a backslash only when the folder has one, or has none of either kind after a drive ("C:").
+// So "C:/Users/me/Pictures" keeps forward slashes, and a path saved from it matches the one it
+// started from.
+static char *join_path(const char *folder, const char *name)
 {
     size_t length = strlen(folder);
-    bool windows = strchr(folder, '\\') != NULL || (length >= 2 && folder[1] == ':');
-    const char *between = length > 0 && is_separator(folder[length - 1]) ? "" : (windows ? "\\" : "/");
-    int written = snprintf(out, size, "%s%s%s", folder, between, name);
-    return written > 0 && (size_t) written < size;
+    bool backslash = strchr(folder, '\\') != NULL || (strchr(folder, '/') == NULL && length >= 2 && folder[1] == ':');
+    const char *between = length > 0 && is_separator(folder[length - 1]) ? "" : (backslash ? "\\" : "/");
+    size_t size = length + strlen(between) + strlen(name) + 1;
+    char *path = alloc_malloc(size);
+    if (path != NULL)
+        snprintf(path, size, "%s%s%s", folder, between, name);
+    return path;
+}
+
+// A function to free a list of rows
+static void free_row_list(BrowserRow *rows, int count)
+{
+    for (int i = 0; i < count; i++) {
+        alloc_free(rows[i].name);
+        alloc_free(rows[i].path);
+    }
+    alloc_free(rows);
 }
 
 // A function to free the rows on show
 static void free_rows(Browser *browser)
 {
-    for (int i = 0; i < browser->row_count; i++) {
-        free(browser->rows[i].name);
-        free(browser->rows[i].path);
-    }
-    free(browser->rows);
+    free_row_list(browser->rows, browser->row_count);
     browser->rows = NULL;
     browser->row_count = 0;
 }
 
-// A function to add a row
-static void add_row(Browser *browser, int capacity, BrowserRowKind kind, const char *name, const char *path,
+// A function to add a row to a list with room for it. The row takes over `path`; false when out of
+// memory, with nothing added.
+static bool add_row(BrowserRow *rows, int *count, BrowserRowKind kind, const char *name, char *path,
                     bool enabled, const char *why)
 {
-    if (browser->row_count >= capacity)
-        return;
-    BrowserRow *row = &browser->rows[browser->row_count++];
+    char *name_copy = alloc_strdup(name);
+    if (name_copy == NULL || path == NULL) {
+        alloc_free(name_copy);
+        alloc_free(path);
+        return false;
+    }
+    BrowserRow *row = &rows[(*count)++];
     row->kind = kind;
-    row->name = strdup(name);
-    row->path = strdup(path);
+    row->name = name_copy;
+    row->path = path;
     row->enabled = enabled;
     row->why = why;
     row->image_count = 0;
+    return true;
 }
 
 // A function to put the cursor on the row for a path, or on the first row
@@ -162,31 +188,56 @@ static void select_path(Browser *browser, const char *path)
     }
 }
 
-// A function to show the places, with the cursor on `selected` when it is one of them
-static void load_places(Browser *browser, const char *selected)
+// A function to show the places, with the cursor on `selected` when it is one of them. False when
+// out of memory, with what was on show left as it was.
+static bool load_places(Browser *browser, const char *selected)
 {
+    BrowserRow *rows = alloc_calloc((size_t) (browser->place_count > 0 ? browser->place_count : 1), sizeof(BrowserRow));
+    int count = 0;
+    bool ok = rows != NULL;
+    for (int i = 0; ok && i < browser->place_count; i++)
+        ok = add_row(rows, &count, BROWSER_ROW_PLACE, browser->places[i].label, alloc_strdup(browser->places[i].path), true, NULL);
+    if (!ok) {
+        free_row_list(rows, count);
+        fileio_set_error("out of memory");
+        return false;
+    }
     free_rows(browser);
-    free(browser->folder);
+    alloc_free(browser->folder);
     browser->folder = NULL;
-    browser->rows = calloc((size_t) (browser->place_count > 0 ? browser->place_count : 1), sizeof(BrowserRow));
-    for (int i = 0; browser->rows != NULL && i < browser->place_count; i++)
-        add_row(browser, browser->place_count, BROWSER_ROW_PLACE, browser->places[i].label, browser->places[i].path, true, NULL);
+    browser->rows = rows;
+    browser->row_count = count;
     select_path(browser, selected);
+    return true;
+}
+
+// A function to say why a path cannot be chosen: config.ini's limits (the check), else the
+// settings' own; NULL when it can
+static const char *why_not(const Browser *browser, const char *path)
+{
+    const char *why = browser->check != NULL ? browser->check(path, browser->context) : NULL;
+    if (why == NULL && strlen(path) >= BROWSER_PATH_MAX)
+        why = TOO_LONG;
+    return why;
 }
 
 // A function to show a folder: folders first, then images, each sorted by name, hidden files left
-// out; in folder mode "Use this folder" comes first. False when the folder cannot be listed.
-static bool load_folder(Browser *browser, const char *folder, const char *selected)
+// out; in folder mode "Use this folder" comes first. A path too long to choose is shown, and refused
+// with the reason. When the folder cannot be listed, or memory runs out, what was on show is left
+// as it was.
+static LoadResult load_folder(Browser *browser, const char *folder, const char *selected)
 {
     FileioEntry *entries = NULL;
     int count = browser->list(folder, &entries, browser->context);
     if (count < 0)
-        return false;
-    FileioEntry **folders = calloc((size_t) (count > 0 ? count : 1), sizeof(FileioEntry*));
-    FileioEntry **images = calloc((size_t) (count > 0 ? count : 1), sizeof(FileioEntry*));
+        return LOAD_UNLISTED;
+    FileioEntry **folders = alloc_calloc((size_t) (count > 0 ? count : 1), sizeof(FileioEntry*));
+    FileioEntry **images = alloc_calloc((size_t) (count > 0 ? count : 1), sizeof(FileioEntry*));
+    char *copy = alloc_strdup(folder);   // `folder` may be a row's path, which is about to be freed
     int folder_count = 0;
     int image_count = 0;
-    for (int i = 0; folders != NULL && images != NULL && i < count; i++) {
+    bool ok = folders != NULL && images != NULL && copy != NULL;
+    for (int i = 0; ok && i < count; i++) {
         if (entries[i].hidden)
             continue;
         if (entries[i].is_dir)
@@ -194,72 +245,99 @@ static bool load_folder(Browser *browser, const char *folder, const char *select
         else if (browser_is_image(entries[i].name))
             images[image_count++] = &entries[i];
     }
-    qsort(folders, (size_t) folder_count, sizeof(FileioEntry*), compare_entries);
-    qsort(images, (size_t) image_count, sizeof(FileioEntry*), compare_entries);
-
-    char *copy = strdup(folder);   // `folder` may be a row's path, which is about to be freed
-    free_rows(browser);
-    free(browser->folder);
-    browser->folder = copy;
-    int capacity = folder_count + image_count + 1;
-    browser->rows = calloc((size_t) capacity, sizeof(BrowserRow));
-    char path[BROWSER_PATH_MAX];
-    if (browser->rows != NULL && browser->mode == BROWSER_FOLDER) {
-        const char *why = image_count < 2 ? TOO_FEW : (browser->check != NULL ? browser->check(copy, browser->context) : NULL);
-        add_row(browser, capacity, BROWSER_ROW_USE_FOLDER, "Use this folder", copy, why == NULL, why);
-        browser->rows[browser->row_count - 1].image_count = image_count;
+    BrowserRow *rows = NULL;
+    int row_count = 0;
+    if (ok) {
+        qsort(folders, (size_t) folder_count, sizeof(FileioEntry*), compare_entries);
+        qsort(images, (size_t) image_count, sizeof(FileioEntry*), compare_entries);
+        rows = alloc_calloc((size_t) (folder_count + image_count + 1), sizeof(BrowserRow));
+        ok = rows != NULL;
     }
-    for (int i = 0; browser->rows != NULL && i < folder_count; i++) {
-        if (join_path(copy, folders[i]->name, path, sizeof(path)))
-            add_row(browser, capacity, BROWSER_ROW_FOLDER, folders[i]->name, path, true, NULL);
+    if (ok && browser->mode == BROWSER_FOLDER) {
+        const char *why = image_count < 2 ? TOO_FEW : why_not(browser, copy);
+        ok = add_row(rows, &row_count, BROWSER_ROW_USE_FOLDER, "Use this folder", alloc_strdup(copy), why == NULL, why);
+        if (ok)
+            rows[0].image_count = image_count;
     }
-    for (int i = 0; browser->rows != NULL && i < image_count; i++) {
-        if (!join_path(copy, images[i]->name, path, sizeof(path)))
-            continue;
-        const char *why = NULL;
-        if (browser->mode == BROWSER_IMAGE && browser->check != NULL)
-            why = browser->check(path, browser->context);
-        add_row(browser, capacity, BROWSER_ROW_IMAGE, images[i]->name, path, browser->mode == BROWSER_IMAGE && why == NULL, why);
+    for (int i = 0; ok && i < folder_count; i++)
+        ok = add_row(rows, &row_count, BROWSER_ROW_FOLDER, folders[i]->name, join_path(copy, folders[i]->name), true, NULL);
+    for (int i = 0; ok && i < image_count; i++) {
+        char *path = join_path(copy, images[i]->name);
+        const char *why = path != NULL && browser->mode == BROWSER_IMAGE ? why_not(browser, path) : NULL;
+        ok = add_row(rows, &row_count, BROWSER_ROW_IMAGE, images[i]->name, path, browser->mode == BROWSER_IMAGE && why == NULL, why);
     }
-    free(folders);
-    free(images);
+    alloc_free(folders);
+    alloc_free(images);
     fileio_free_list(entries, count);
+    if (!ok) {
+        free_row_list(rows, row_count);
+        alloc_free(copy);
+        fileio_set_error("out of memory");
+        return LOAD_NO_MEMORY;
+    }
+    free_rows(browser);
+    alloc_free(browser->folder);
+    browser->folder = copy;
+    browser->rows = rows;
+    browser->row_count = row_count;
     select_path(browser, selected);
-    return true;
+    return LOAD_DONE;
 }
 
 // A function to open the browser: at `start` (an image opens its folder with the image highlighted),
-// else at the first place that can be listed (Pictures, then Home, ...), else at the places
+// else at the first place that can be listed (Pictures, then Home, ...) and is not on a network
+// share, which could keep the browser waiting on the network, else at the places. NULL when out of
+// memory.
 Browser *browser_open(BrowserMode mode, const char *start, const BrowserPlace *places, int place_count,
                       BrowserList list, BrowserCheck check, void *context)
 {
-    Browser *browser = calloc(1, sizeof(Browser));
+    Browser *browser = alloc_calloc(1, sizeof(Browser));
     if (browser == NULL)
         return NULL;
     browser->mode = mode;
     browser->list = list;
     browser->check = check;
     browser->context = context;
-    browser->places = calloc((size_t) (place_count > 0 ? place_count : 1), sizeof(BrowserPlace));
-    for (int i = 0; browser->places != NULL && i < place_count; i++) {
-        browser->places[i].label = strdup(places[i].label);
-        browser->places[i].path = strdup(places[i].path);
+    browser->places = alloc_calloc((size_t) (place_count > 0 ? place_count : 1), sizeof(BrowserPlace));
+    bool ok = browser->places != NULL;
+    for (int i = 0; ok && i < place_count; i++) {
+        char *label = alloc_strdup(places[i].label);
+        char *path = alloc_strdup(places[i].path);
+        ok = label != NULL && path != NULL;
+        if (!ok) {
+            alloc_free(label);
+            alloc_free(path);
+            break;
+        }
+        browser->places[i] = (BrowserPlace) { .label = label, .path = path, .network = places[i].network };
         browser->place_count++;
     }
+
+    // A start folder's trailing separators are dropped ("/home/me/Pictures/"), except a root's
+    char *folder = ok && start != NULL && start[0] != '\0' ? alloc_strdup(start) : NULL;
     bool opened = false;
-    if (start != NULL && start[0] != '\0') {
-        char parent[BROWSER_PATH_MAX];
-        if (mode == BROWSER_IMAGE && browser_is_image(start)) {
-            if (browser_parent(start, parent, sizeof(parent)))
-                opened = load_folder(browser, parent, start);
+    if (folder != NULL) {
+        size_t length = strlen(folder);
+        while (length > 1 && is_separator(folder[length - 1]) && !is_root(folder, length))
+            folder[--length] = '\0';
+        char *parent = alloc_malloc(length + 1);
+        if (mode == BROWSER_IMAGE && browser_is_image(folder)) {
+            if (parent != NULL && browser_parent(folder, parent, length + 1))
+                opened = load_folder(browser, parent, folder) == LOAD_DONE;
         }
         else
-            opened = load_folder(browser, start, NULL);
+            opened = load_folder(browser, folder, NULL) == LOAD_DONE;
+        alloc_free(parent);
+        alloc_free(folder);
     }
-    for (int i = 0; !opened && i < browser->place_count; i++)
-        opened = load_folder(browser, browser->places[i].path, NULL);
-    if (!opened)
-        load_places(browser, NULL);
+    for (int i = 0; ok && !opened && i < browser->place_count; i++) {
+        if (!browser->places[i].network)
+            opened = load_folder(browser, browser->places[i].path, NULL) == LOAD_DONE;
+    }
+    if (!ok || (!opened && !load_places(browser, NULL))) {
+        browser_free(browser);
+        return NULL;
+    }
     return browser;
 }
 
@@ -269,13 +347,13 @@ void browser_free(Browser *browser)
     if (browser == NULL)
         return;
     free_rows(browser);
-    free(browser->folder);
+    alloc_free(browser->folder);
     for (int i = 0; i < browser->place_count; i++) {
-        free((char*) browser->places[i].label);
-        free((char*) browser->places[i].path);
+        alloc_free((char*) browser->places[i].label);
+        alloc_free((char*) browser->places[i].path);
     }
-    free(browser->places);
-    free(browser);
+    alloc_free(browser->places);
+    alloc_free(browser);
 }
 
 // A function to act on one key: move, page, open a folder or place, choose, or go back up
@@ -305,9 +383,12 @@ BrowserResult browser_command(Browser *browser, BrowserCommand command, int page
                 return BROWSER_NONE;
             const BrowserRow *row = &browser->rows[browser->cursor];
             if (row->kind == BROWSER_ROW_PLACE || row->kind == BROWSER_ROW_FOLDER) {
-                char path[BROWSER_PATH_MAX];
-                snprintf(path, sizeof(path), "%s", row->path);
-                return load_folder(browser, path, NULL) ? BROWSER_MOVED : BROWSER_NONE;
+                char *path = alloc_strdup(row->path);   // The row goes when the folder opens
+                bool opened = path != NULL && load_folder(browser, path, NULL) == LOAD_DONE;
+                if (path == NULL)
+                    fileio_set_error("out of memory");
+                alloc_free(path);
+                return opened ? BROWSER_MOVED : BROWSER_NONE;
             }
             if (!row->enabled)
                 return BROWSER_NONE;
@@ -317,12 +398,21 @@ BrowserResult browser_command(Browser *browser, BrowserCommand command, int page
         case BROWSER_BACK: {
             if (browser->folder == NULL)
                 return BROWSER_CLOSED;
-            char from[BROWSER_PATH_MAX];
-            char parent[BROWSER_PATH_MAX];
-            snprintf(from, sizeof(from), "%s", browser->folder);
-            if (!browser_parent(from, parent, sizeof(parent)) || !load_folder(browser, parent, from))
-                load_places(browser, from);
-            return BROWSER_MOVED;
+            size_t size = strlen(browser->folder) + 1;
+            char *from = alloc_strdup(browser->folder);
+            char *parent = alloc_malloc(size);
+            // Out of a folder whose parent cannot be listed (or that has none), to the places; out
+            // of memory, nowhere
+            bool moved = from != NULL && parent != NULL;
+            if (!moved)
+                fileio_set_error("out of memory");
+            else {
+                LoadResult loaded = browser_parent(from, parent, size) ? load_folder(browser, parent, from) : LOAD_UNLISTED;
+                moved = loaded == LOAD_UNLISTED ? load_places(browser, from) : loaded == LOAD_DONE;
+            }
+            alloc_free(from);
+            alloc_free(parent);
+            return moved ? BROWSER_MOVED : BROWSER_NONE;
         }
     }
     return browser->cursor != before ? BROWSER_MOVED : BROWSER_NONE;
@@ -358,7 +448,8 @@ const char *browser_chosen(const Browser *browser)
     return browser->chosen;
 }
 
-// A function to find a folder's first image by name, for previewing a folder
+// A function to find a folder's first image by name, for previewing a folder; false when it has
+// none, or its path does not fit in `out`
 bool browser_first_image(const Browser *browser, const char *folder, char *out, size_t size)
 {
     FileioEntry *entries = NULL;
@@ -370,7 +461,11 @@ bool browser_first_image(const Browser *browser, const char *folder, char *out, 
         if (first == NULL || compare_names(entries[i].name, first->name) < 0)
             first = &entries[i];
     }
-    bool found = first != NULL && join_path(folder, first->name, out, size);
+    char *path = first != NULL ? join_path(folder, first->name) : NULL;
+    bool found = path != NULL && strlen(path) < size;
+    if (found)
+        snprintf(out, size, "%s", path);
+    alloc_free(path);
     fileio_free_list(entries, count > 0 ? count : 0);
     return found;
 }
