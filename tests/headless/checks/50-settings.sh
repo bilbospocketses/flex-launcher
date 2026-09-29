@@ -237,7 +237,7 @@ grep -E 'Loading menu|Settings (opened|closed)|Key Home' "$out/f50-home.log" | s
 wait_launch() { sleep 3; }
 CFG=$FX/f50-launch.ini run_keys f50-launch Return Menu +wait_launch Menu
 ok=1
-precedes "$out/f50-launch.log" 'Settings: not opened while an application is launching' 'Settings opened' \
+precedes "$out/f50-launch.log" 'Settings: not opened while an application is launching or running' 'Settings opened' \
     && [ "$(grep -c 'Settings opened' "$out/f50-launch.log")" = 1 ] && ! grep -q 'Settings closed' "$out/f50-launch.log" \
     && ran_clean f50-launch && ok=0
 result "settings: they do not open while an application is launching (exit $(cat "$out/f50-launch.code"))" $ok

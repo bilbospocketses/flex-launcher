@@ -1210,7 +1210,7 @@ static void execute_command(const char *command)
             // Settings never open over an application being launched, which is about to take the
             // screen: no application runs behind them
             if (state.application_launching || state.application_running)
-                log_debug("Settings: not opened while an application is launching");
+                log_debug("Settings: not opened while an application is launching or running");
             else
                 settings_open();
         }
