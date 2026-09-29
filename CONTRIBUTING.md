@@ -8,6 +8,8 @@ This repository is an independent project. It started from complexlogic's Flex L
 
 Build instructions for Windows (Visual Studio + vcpkg) and Linux (CMake + distro packages) are in [`docs/compilation.md`](docs/compilation.md). The CI workflow in [`.github/workflows/build.yml`](.github/workflows/build.yml) is the authoritative, always-exercised recipe for all four targets: Windows, Debian, Raspberry Pi, and Arch Linux. After building, run the unit tests with `ctest --test-dir build -C Release --output-on-failure`. The icon library's tooling has Python tests of its own, and its README says how to run them and `check-library.py`; see [`branding/library/README.md`](branding/library/README.md).
 
+The unit tests reach failures no real run gives through two seams, both for tests only. The pure modules (fileio, inidoc, config_save, settings, browser) allocate through `alloc.h`, and `alloc_set_hooks()` puts a test's allocator in its place, which `test_alloc` uses to make every allocation fail in turn. `fileio_set_fault()` makes one fileio step fail: `FILEIO_FAULT_LIST_READ` fails a listing's read after a given number of entries with a given error, `FILEIO_FAULT_KEEP` makes a replace unable to keep the old file's permissions or attributes, and `FILEIO_FAULT_NO_KIND` (Linux) makes a listing give no entry's kind, as some file systems give none. On Linux, `fileio_set_mount_table()` points fileio at a pretend `/proc/self/mounts`.
+
 The headless checks run in Docker, as the `Headless (Debian)` and `Headless (Fedora)` jobs in `build.yml` do: build an image from `tests/headless`, then run `run.sh` in it with the repository mounted read-only at `/src` and a folder for the results at `/out`, with the seccomp profile off (the harness turns address randomization off with `setarch -R`, which ASan needs and Docker's default profile refuses):
 
     docker build -t streamflex-test tests/headless
@@ -23,7 +25,17 @@ A second argument to `run.sh` picks the mode:
 - `run.sh <label> scrollfail` runs item 11 only, with the scroll arrow's texture forced to fail, a path no config or input can reach.
 - `run.sh <label> leaks` runs every check again with LeakSanitizer on. Mesa's software driver is preloaded into the launcher so the blocks it holds at exit stay reachable, and there is no suppressions file: a run that leaks fails its check, and each leak is also listed at the end as a `LEAK` line that counts in `N failed`.
 
-The harness builds with `-DSTREAMFLEX_TEST_HOOKS`, which nothing else defines. It adds one test-only hook: `STREAMFLEX_TEST_DECODE_DELAY_MS` makes the settings preview wait that long before decoding an image, so a check can press a key during the decode. Normal builds do not contain it. The helpers checks share (`run_keys`, `ran_clean`, `in_range`, `precedes`, `look`, `stop_run` and others) live in `run.sh`.
+The harness builds with `-DSTREAMFLEX_TEST_HOOKS`, which nothing else defines. It adds test-only hooks, environment variables a check sets to force what no config or input can reach; normal builds contain none of them:
+
+- `STREAMFLEX_TEST_DECODE_DELAY_MS=<ms>`: the settings preview waits that long before decoding an image, so a check can press a key during the decode.
+- `STREAMFLEX_TEST_PAD=<file>`: attaches a virtual gamepad, since Xvfb has none, and holds its Start button while `<file>` exists. It does nothing when the gamepad is turned off.
+- `STREAMFLEX_TEST_NO_RENDER_TARGETS`: settings draw as they would on a renderer without render targets.
+- `STREAMFLEX_TEST_FAIL_TITLE_SIZE=<pt>`: the title font fails to open at that size.
+- `STREAMFLEX_TEST_FAIL_SHRINK_STEP`: every step down in Shrink mode fails to open its font.
+- `STREAMFLEX_TEST_NO_MESSAGE_BOX`: a fatal error quits without its message box, which some SDLs show and wait on.
+- `STREAMFLEX_TEST_FAIL=places|browser|command|keep`: that step of the settings screen (finding the browser's places, opening the browser, a browser command) runs as if memory had run out, or for `keep`, as if the saved file's permissions could not be kept.
+
+The hook build also logs how many paragraphs the settings screen measured while it was open, so a check can catch a note measured again in every frame. The helpers checks share (`run_keys`, `ran_clean`, `in_range`, `precedes`, `look`, `stop_run` and others) live in `run.sh`.
 
 Each run prints one `PASS` or `FAIL` line per check, then `N failed`, and keeps each check's output and log, and the launcher's exit code, under `headless-out/<label>/` (which the harness leaves out of the source it builds). Locally the default pass takes about 4.8 minutes, the leak pass about 5.5 and scrollfail about 10 seconds. On GitHub each Headless job, which runs all three, takes about 10 minutes.
 

@@ -11,10 +11,21 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 ### Added
 - **A settings screen.** Press the Menu key on the remote, Start on a gamepad, or run the new `:settings` command, and change the background, each menu's grid and the title size from the remote, with a live preview beside the settings. A folder browser chooses a background image or slideshow folder, previewing each image as you move over it. Leaving saves only what changed into your config file, keeping its comments and layout, and keeps the previous version as `config.ini.bak`; nothing is written when nothing changed, and a save that fails says why and leaves the file as it was. On Linux, a read-only packaged config is saved as your own `~/.config/streamflex/config.ini`.
 - The default config's System menu has a Settings tile, and its gamepad section maps Start to `:settings`. A config that maps nothing to `:settings` gets Start for it anyway, unless it uses Start for something else.
+- The Menu key opens settings as either key SDL reports for it: a keyboard's context-menu key (`Application`, `#40000065`) or a remote's Menu button (`Menu`, `#40000076`). Holding it, or Start, or a hotkey bound to `:settings`, opens or closes settings once instead of flicking them at the repeat rate. Settings don't open while an application is launching.
+- In the settings screen:
+  - The Menus list's preview follows the cursor once it has rested for 300 ms, so moving down a long list no longer pauses at every row to lay out each menu passed.
+  - The Menus page lists up to 62 menus; with more, a note counts the rest, whose grids are set in `config.ini`. A page longer than the screen keeps room for its note, and scrolls to its end to show it.
+  - A *Couldn't save* message too long for the column, such as one naming a long path, is cut in the middle to fit, so what failed, why, and the *Try again* and *Leave without saving* rows all stay on screen.
+  - The folder browser keeps a `C:/...` path's forward slashes, so the current image is highlighted and the save writes one style. A path too long for the config file is shown and refused with the reason, as is one that would not fit beside its line's comment, rather than failing the save. A Pictures folder on a network share is not opened unasked. On Linux, Pictures is the folder your desktop names in `user-dirs.dirs`, in any language (`~/Bilder`), and the drives in `/media/<user>` are listed.
+  - The log says why an image cannot be opened (`Unsupported image format`, say), and when a save could not keep the file's permissions.
+  - On Linux, a `~/.config/streamflex/config.ini` that exists but cannot be read fails the save with the reason, instead of being replaced without a backup.
+  - An install without its bundled font opens settings in the title font (or else the clock's) and logs which. Before, the Menu key did nothing. Every way settings cannot open is logged as `Settings cannot open: ...`.
+- The debug log (`-d`) names SDL's video driver and renderer at startup: `Video: SDL's x11 driver, the opengl renderer`.
 - Headless tests: CI runs the launcher under a virtual display, drives it with key presses, and checks what it logs, saves and draws on screen. They run on two images, as the `Headless (Debian)` and `Headless (Fedora)` legs of one job; Fedora 44's SDL2 is sdl2-compat over SDL3, so the launcher is also tested where SDL3 stands in for SDL2. Both legs are part of the required `build-and-test` gate, and each runs all its passes even when one fails.
 - The headless tests run every check a second time under LeakSanitizer, with no suppressions, and a leak in any run fails the job. A compiler warning outside `src/external/` fails it too.
 
 ### Changed
+- **The gamepad is on by default.** A config with no `Enabled` line in `[Gamepad]` now has it on, and the default config says `Enabled=true`. Set `Enabled=false` to turn it off.
 - **Titles scale with each menu's buttons.** `FontSize` and `Padding` take a percentage of the button size, and a config that doesn't set them now gets `14%` and `8%`: the same as before on 256 px buttons, smaller in a dense grid, larger on large buttons, and never below 2% of the screen height. A plain number still means a fixed size.
 - The default config's `OversizeMode` is `Truncate`, so every title in a menu is the same size.
 - CI runs on `ubuntu-24.04` instead of `ubuntu-latest`, which GitHub moves to Ubuntu 26 from October 19, 2026. Every job now names its runner image (Windows was already `windows-2022` and Raspberry Pi `ubuntu-24.04-arm`), so a new image arrives in its own deliberate change rather than under a build that had not changed.
@@ -43,6 +54,16 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 - **A `QuitCmd` is no longer freed twice when StreamFlex quits**, which could crash it on the way out.
 - Invalid `Mode`, `Color`, `SlideshowImageDuration` and `SlideshowTransitionTime` values in `[Background]`, and invalid `FontSize` and `Padding` values, are logged; they were ignored without a word. The background `Color` refuses a value with a stray character (`#12345G`) instead of half-reading it.
 - The configuration guide said comments could not follow a value. They can, after a space and a semicolon (`Columns=4 ; four across`), and the guide now says so.
+- **A Linux slideshow takes upper-case extensions** (`DSC_0001.JPG`). Slideshows on both platforms leave out hidden files: on Linux a name starting with a dot, such as the `._` files macOS leaves on a share, and on Windows a file with the hidden or system attribute. The slideshow and the settings screen now use one rule, so the Folder row's count matches what the slideshow shows.
+- **A slideshow could stop changing images for good** when its loader finished before StreamFlex marked it as loading. The loader's flags are now set before it starts.
+- On a file system that does not say what kind each entry is (some CIFS, NFS and older XFS mounts), a link in a slideshow folder onto a network mount that is down no longer holds up startup.
+- **Quitting while the slideshow was reading its next image leaked that image**, and with the clock on, its font leaked at quit. Both are freed.
+- **A title cut to fit never runs wider than its button.** Truncate, and Shrink at its smallest size, cut by the average letter's width, so a title of wide letters could reach 43 px past its button; the cut is now measured. When a smaller font fails to open in Shrink mode, the title is measured in the font it is drawn in, and a title size whose font cannot be opened lays the menu out for the fixed size it falls back to, rather than overlapping the row below.
+- **A title with `Shadows=true` keeps room for its shadow**, below it and beside it. In a grid limited by the screen's height its buttons are 2-3 px smaller, and a cut title that much narrower.
+- **A menu entry that is refused says why in the log:** one without a title, an icon and a command, or one whose command is `:select`. Both were dropped without a word.
+- A config file that cannot be opened stops StreamFlex with a log line naming the file and the reason, not only "Could not open config file".
+- **A log line longer than 500 bytes, such as one naming a long path, no longer reads past the log's buffer.** It is cut to fit.
+- **On Linux, the clock no longer cuts `LANG` short for every application StreamFlex launches** (`en_US.UTF-8` became `en`), and with `LANG` unset it no longer reads freed memory at startup.
 
 ## [0.2.0] - 2026-09-27
 

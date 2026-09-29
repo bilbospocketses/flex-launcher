@@ -44,8 +44,10 @@ A line that starts with `#` or `;` is a comment, and is ignored. A comment can a
 The settings screen changes the background, each menu's grid and the title size from the remote, and shows each change in a preview as you make it. It saves your changes into your config file when you leave.
 
 ### Opening it
-- Press the **Menu** key on the remote (the context-menu key on a keyboard), or **Start** on a gamepad when [gamepad controls](#gamepad-controls) are enabled. Either works unless your config gives that key or button something else to do.
+- Press the **Menu** key on the remote (the context-menu key on a keyboard), or **Start** on a gamepad when [gamepad controls](#gamepad-controls) are enabled, as they are by default. Either works unless your config gives that key or button something else to do. SDL reports the Menu key in one of two forms, `Menu` (`#40000076`, a remote's Menu button) or `Application` (`#40000065`, a keyboard's context-menu key), and both open settings; a hotkey on either code takes that code over.
 - Or run the `:settings` [special command](#special-commands) from a menu entry, a hotkey or a gamepad control. The default config's System menu has a Settings tile.
+
+Holding the key or button opens settings once. Settings don't open while an application is launching.
 
 ### Using it
 The settings are in a column on the left; the rest of the screen is a live preview of your launcher.
@@ -59,18 +61,18 @@ While settings are open, a hotkey or gamepad control works only when its command
 
 ### What it changes
 - **Background:** a colour (one of ten presets; a colour of your own from the config file stays among the choices, shown as *Custom*), an image, a slideshow of a folder of images, or transparent. A slideshow also has *Change every*, from 5 seconds to 60 minutes, and *Fade*, from 0 to 3 seconds.
-- **Menus:** the grid of every menu (*All menus*, which is the `[Layout]` section) and of each menu on its own: rows (1 to 10), columns (1 to 12) and the largest a button may grow (64 to 1024 px; on *All menus*, *Fill* lets buttons grow as large as the grid allows). On a menu's own page, the lowest step, *All menus*, makes that menu follow the shared grid again. A menu with no entries cannot be shown in the preview, but its grid can still be changed.
+- **Menus:** the grid of every menu (*All menus*, which is the `[Layout]` section) and of each menu on its own: rows (1 to 10), columns (1 to 12) and the largest a button may grow (64 to 1024 px; on *All menus*, *Fill* lets buttons grow as large as the grid allows). On a menu's own page, the lowest step, *All menus*, makes that menu follow the shared grid again. A menu with no entries cannot be shown in the preview, but its grid can still be changed. The Menus page lists up to 62 menus; with more, a note at its end counts the rest, whose grids you set in the config file.
 - **Titles:** Small, Medium or Large. Titles scale with each menu's buttons; see [FontSize](#fontsize). A fixed size from your config file stays among the choices, shown as *Fixed*.
 
 If you choose Image or Slideshow but leave the Background page without choosing an image or folder, the mode goes back to what it was when you opened the page.
 
 #### The folder browser
-Choosing an image or a slideshow folder opens a folder browser. It starts in the folder of the image or slideshow you have now, or else in your Pictures folder, and its list of places reaches your home folder and your drives (on Linux, `/` and the drives and shares mounted in `/media` and `/mnt`).
+Choosing an image or a slideshow folder opens a folder browser. It starts in the folder of the image or slideshow you have now, or else in your Pictures folder (on Linux, the one your desktop names in its `user-dirs.dirs` file, whatever its language, such as `~/Bilder`), and its list of places reaches your home folder and your drives (on Linux, `/` and the drives and shares mounted in `/media` and `/mnt`).
 - **Up and Down** move; **Left and Right** move a page at a time.
 - **OK** opens a folder, or chooses the highlighted image, or *Use this folder* for a slideshow.
 - **Back** goes up a folder. Past the top it shows the places, and from the places it closes the browser without choosing.
 
-The preview shows each image as you move over it, and the first image of a highlighted folder. The browser lists JPEG, PNG and WebP images. A slideshow folder needs at least two images; the Background page shows the chosen folder's name and how many images it holds. An image that cannot be opened, or a path too long for one line of the config file, is shown but cannot be chosen, and the browser says why. Network drives and shares, and on Linux what is mounted in `/media` and `/mnt`, are listed without being opened, so a server that is off does not hold up the list of places; opening one that cannot be reached waits for the network to give up, then says so. The exception is an NFS share mounted `hard`: there the wait may never end, because the system keeps retrying until the server answers. The same wait applies when your current image or slideshow folder is on such a share, since the browser starts there.
+The preview shows each image as you move over it, and the first image of a highlighted folder. The browser lists JPEG, PNG and WebP images by the same rule a slideshow uses (see [SlideshowDirectory](#slideshowdirectory)). A slideshow folder needs at least two images; the Background page shows the chosen folder's name and how many images it holds. An image that cannot be opened, or a path too long for one line of the config file, is shown but cannot be chosen, and the browser says why. Network drives and shares, and on Linux what is mounted in `/media` and `/mnt`, are listed without being opened, so a server that is off does not hold up the list of places; opening one that cannot be reached waits for the network to give up, then says so. The exception is an NFS share mounted `hard`: there the wait may never end, because the system keeps retrying until the server answers. The same wait applies when your current image or slideshow folder is on such a share, since the browser starts there.
 
 ### Saving
 - Only the settings you changed are written. Everything else in your config file stays as it was: comments, blank lines and order included. Setting a menu back to *All menus* removes its line.
@@ -79,7 +81,7 @@ The preview shows each image as you move over it, and the first image of a highl
 - The previous version is kept beside it as `config.ini.bak`. The new file is written beside the old one and then swapped in whole, so a failed save never leaves half a file. On Windows, a config file you have hidden stays hidden.
 - A file that sets the columns with the older name, `MaxButtons`, keeps that name when they are saved. A file that has both `Columns` and `MaxButtons` in `[Layout]` is left with `Columns` alone.
 - **Discard changes**, on the first page, puts everything back as it was when you opened settings.
-- **On Linux**, the config installed with the package (in `/usr/share/streamflex`) cannot be changed. Your first save writes your own copy to `~/.config/streamflex/config.ini`, which StreamFlex reads from then on, and later saves change that copy.
+- **On Linux**, the config installed with the package (in `/usr/share/streamflex`) cannot be changed. Your first save writes your own copy to `~/.config/streamflex/config.ini`, which StreamFlex reads from then on, and later saves change that copy. If that copy exists but cannot be read, the save fails and says why rather than replace it.
 - If the file cannot be written, settings say why, and offer to try again or to leave without saving; Back returns to the settings instead. The config file stays as it was.
 - Quitting StreamFlex while settings are open saves nothing.
 
@@ -187,7 +189,7 @@ Default: #000000 (Black)
 When `Mode` is set to "Image", this setting defines the image to be displayed in the background. The value should be a path to an image file. If the image is not the same resolution as your desktop, it will be stretched accordingly.
 
 ##### SlideshowDirectory
-When `Mode` is set to "Slideshow", this setting defines the directory (folder) which contains the images to display in the background. The value should be a path to a directory on your filesystem. The number of images that may be scanned from the directory is limited to 250.
+When `Mode` is set to "Slideshow", this setting defines the directory (folder) which contains the images to display in the background. The value should be a path to a directory on your filesystem. The slideshow shows the files whose names end in `.jpg`, `.jpeg`, `.png` or `.webp`, in any case (`DSC_0001.JPG` counts), and leaves out hidden files: on Linux a name starting with a dot, and on Windows a file with the hidden or system attribute. Folders inside it are not searched.
 
 ##### SlideshowImageDuration
 When `Mode` is set to "Slideshow", this setting defines the amount of time in seconds to display each image. Must be an integer value.
@@ -417,6 +419,8 @@ Each entry value contains 3 parts of information in order: the title, the icon, 
 ```ini
 Entry=title;icon;command
 ```
+An entry missing any of the three is ignored, and the log says why.
+
 The icon is either the name of an icon from StreamFlex's built-in [Icon Library](icons), such as `netflix` or `movies`, or the path to an image file of your own (PNG, JPEG, WebP or SVG). A name is lowercase letters, digits and hyphens only; anything else is read as a path. To use a file of your own whose name looks like an icon name, write it as a path, for example `./kodi`.
 
 The command is typically one of the following:
@@ -503,7 +507,7 @@ Move the highlight cursor up one row. Only a menu with two or more [Rows](#rows)
 Move the highlight cursor down one row.
 
 #### :select
-Press enter on the current selection. This special command is only available as a gamepad or hotkey command, it is forbidden for menu entries.
+Press enter on the current selection. This special command is only available as a gamepad or hotkey command, it is forbidden for menu entries: a menu entry that uses it is ignored, and the log says why.
 
 #### :shutdown
 Shut down the computer.<sup>1</sup>
@@ -655,9 +659,9 @@ StreamFlex has built-in support for gamepad controls through SDL. All settings f
 The following settings are available in the `Gamepad` section to define the behavior of gamepads
 
 #### Enabled
-Defines whether or not gamepad controls are enabled. This setting is a boolean "true" or "false".
+Defines whether or not gamepad controls are enabled. This setting is a boolean "true" or "false". Set it to false to turn gamepad controls off.
 
-Default: false
+Default: true
 
 #### DeviceIndex
 Defines the device index of the gamepad in SDL. If this value is negative, any gamepad may be used to control the launcher.
@@ -706,7 +710,7 @@ The following axis and buttons are available for control in StreamFlex:
 - ButtonDPadRight
 
 ## Transparent Backgrounds
-*Note for Linux users only: this feature requires compositor implementation. See the [Linux Setup Guide](https://bilbospocketses.github.io/streamflex/setup_linux#transparent-backgrounds) for details.*
+*Note for Linux users only: this feature requires compositor implementation. See the [Linux Setup Guide](https://bilbospocketses.github.io/streamflex/setup_linux#transparent-backgrounds) for details. To see whether SDL chose X11 or Wayland, and which renderer, run StreamFlex with debug logging (`-d`): the log's `Video:` line at startup names both.*
 
 StreamFlex supports transparent backgrounds using the chroma key technique. This method works by setting a strategically chosen color to the background, which is removed later. In film production, this technique is often refered to as "blue screening" or "green screening".
 
