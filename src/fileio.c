@@ -810,9 +810,13 @@ int fileio_list(const char *folder, FileioEntry **entries)
         // off is listed without touching the mount: stat() on it would block, on a hard NFS mount
         // for good. A link is followed, since a link to a folder should open like one; but one whose
         // text leads onto a network mount is taken for a folder unlooked. An entry of unknown kind
-        // (some file systems give none) has no text to go by, so it is looked up.
-        bool is_dir = entry->d_type == DT_DIR;
-        if (entry->d_type == DT_LNK || entry->d_type == DT_UNKNOWN) {
+        // (some CIFS, NFS and older XFS mounts give none) costs one lstat(), which looks at the entry
+        // itself on this folder's own file system and never follows it; one that turns out to be a
+        // link is then treated as a link. So a folder of 300 such entries is 300 lookups, on the
+        // file system being listed, and none beyond it.
+        unsigned char kind = fault == FILEIO_FAULT_NO_KIND ? (unsigned char) DT_UNKNOWN : entry->d_type;
+        bool is_dir = kind == DT_DIR;
+        if (kind == DT_LNK || kind == DT_UNKNOWN) {
             size_t size = folder_length + strlen(entry->d_name) + 2;
             char *full = alloc_malloc(size);
             if (full == NULL) {
@@ -822,10 +826,13 @@ int fileio_list(const char *folder, FileioEntry **entries)
             }
             snprintf(full, size, "%s/%s", folder, entry->d_name);
             struct stat info;
-            if (entry->d_type == DT_LNK && link_leads_to_network(full))
-                is_dir = true;
-            else
-                is_dir = stat(full, &info) == 0 && S_ISDIR(info.st_mode);
+            bool link = kind == DT_LNK;
+            if (kind == DT_UNKNOWN && lstat(full, &info) == 0) {
+                link = S_ISLNK(info.st_mode);
+                is_dir = S_ISDIR(info.st_mode);
+            }
+            if (link)
+                is_dir = link_leads_to_network(full) || (stat(full, &info) == 0 && S_ISDIR(info.st_mode));
             alloc_free(full);
         }
         char *name = alloc_strdup(entry->d_name);

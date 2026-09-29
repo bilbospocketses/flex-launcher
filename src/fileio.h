@@ -60,7 +60,8 @@ void fileio_set_mount_table(const char *path);   // Unit tests only: a pretend /
 typedef enum {
     FILEIO_FAULT_NONE,
     FILEIO_FAULT_LIST_READ,   // fileio_list's read fails after `after` entries, with error `code`
-    FILEIO_FAULT_KEEP         // fileio_replace cannot keep the old file's permissions or attributes
+    FILEIO_FAULT_KEEP,        // fileio_replace cannot keep the old file's permissions or attributes
+    FILEIO_FAULT_NO_KIND      // Linux: fileio_list's reads give no entry's kind, as some file systems give none
 } FileioFault;
 void fileio_set_fault(FileioFault fault, int after, int code);
 

@@ -652,7 +652,8 @@ static void test_places_under_a_fuse_mount(void)
 
 // A function to test what a listing says each entry is: a folder and a file as the folder's own
 // listing says, a link as what it names, a link to nothing as no folder, without failing, and a
-// link onto a network mount as a folder, without looking at it
+// link onto a network mount as a folder, without looking at it; and the same where the listing
+// gives no entry's kind
 static void test_list_kinds(void)
 {
     use_pretend_mounts();
@@ -672,6 +673,25 @@ static void test_list_kinds(void)
     const FileioEntry *nas = find_entry(entries, count, "to-nas");
     CHECK(folder != NULL && folder->is_dir && !folder->hidden);
     CHECK(file != NULL && !file->is_dir && !file->hidden);
+    CHECK(dead != NULL && !dead->is_dir);
+    CHECK(link != NULL && link->is_dir);
+    CHECK(nas != NULL && nas->is_dir);
+    fileio_free_list(entries, count);
+
+    // The same folder on a file system whose listing gives no entry's kind: each entry is looked at
+    // itself, and a link onto a network mount is still a folder unlooked (to-nas leads nowhere
+    // real, so a lookup through it would call it no folder)
+    fileio_set_fault(FILEIO_FAULT_NO_KIND, 0, 0);
+    count = fileio_list(DIR "/kinds", &entries);
+    fileio_set_fault(FILEIO_FAULT_NONE, 0, 0);
+    CHECK_INT(count, 5);
+    folder = find_entry(entries, count, "folder");
+    file = find_entry(entries, count, "file.png");
+    dead = find_entry(entries, count, "dead");
+    link = find_entry(entries, count, "to-folder");
+    nas = find_entry(entries, count, "to-nas");
+    CHECK(folder != NULL && folder->is_dir);
+    CHECK(file != NULL && !file->is_dir);
     CHECK(dead != NULL && !dead->is_dir);
     CHECK(link != NULL && link->is_dir);
     CHECK(nas != NULL && nas->is_dir);
