@@ -423,12 +423,10 @@ SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *
                     }
 #endif
                 }
-
-                // A smaller font that failed to open leaves the title at the menu's size: measure it
-                // there, not in the font just closed
-                if (reduced_font == NULL)
-                    TTF_SizeUTF8(info->font, text_buffer, &w, &h);
             }
+
+            // A smaller font that failed to open leaves the title at the menu's size, and w from
+            // the font just closed; truncate_to_fit() measures it again in the font it is drawn in
             if (w > info->max_width)
                 truncate_to_fit(reduced_font != NULL ? reduced_font : info->font, text_buffer, info->max_width, &w, &h);
         }
