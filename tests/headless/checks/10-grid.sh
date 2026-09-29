@@ -1,4 +1,11 @@
-# Items 12-17: the grid review's follow-ups (#32)
+# Items 11-17: the grid review's follow-ups (#32)
+
+# Item 11's fixture without its fault (the scrollfail mode forces one): the arrows render, so the
+# fault is what makes that mode log the failure. The leak pass checks this path through here.
+run_quick f11-scroll
+ok=1
+ran_clean f11-scroll && ! grep -q 'Could not render scroll indicator' "$out/f11-scroll.log" && ok=0
+result "item 11: without the fault, the scroll arrows render and it exits cleanly (exit $(cat "$out/f11-scroll.code"))" $ok
 
 # Item 12: no HPadding/VPadding in the config means the documented 30, and the outline keeps its size
 run_quick f12-padding
