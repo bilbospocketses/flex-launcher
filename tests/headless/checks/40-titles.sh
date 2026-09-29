@@ -80,14 +80,14 @@ result "the title and clock fonts are closed at quit (exit $(cat "$out/f40-clock
 # Shrink mode when a smaller font fails to open part-way down (the harness build's
 # STREAMFLEX_TEST_FAIL_SHRINK_STEP fails every step down): the title is cut at the menu's size,
 # measured in that font rather than in the one just closed. The debug log names each title wider
-# than its button, and the list must be the one the same menu gives when every font opens (the
-# run above): the title cut at the 22 pt minimum is already over its button there.
+# than its button: none may be, least of all Emulation Station Retro, the title whose step down
+# fails (822 px in its 556 px button when it was measured in the font just closed).
 STREAMFLEX_TEST_FAIL_SHRINK_STEP=1 CFG=$FX/f40-shrink-large.ini run_quick f40-shrinkfail
 ok=1
 ran_clean f40-shrinkfail && grep -q 'Test hook: the step down to [0-9]* pt fails' "$out/f40-shrinkfail.log" \
     && grep -q "Menu 'Main': 3 x 1 grid, 556 px buttons, 78 pt titles" "$out/f40-shrinkfail.log" \
-    && diff <(grep 'px wide, over its' "$out/f40-shrink-large.log") <(grep 'px wide, over its' "$out/f40-shrinkfail.log") > /dev/null \
-    && ok=0
+    && ! grep -q "the title 'Emulation Station Retro' is [0-9]* px wide, over its" "$out/f40-shrinkfail.log" \
+    && ! grep -q 'px wide, over its' "$out/f40-shrinkfail.log" && ok=0
 result "item 19: Shrink mode cuts a title to fit when a smaller font fails to open (exit $(cat "$out/f40-shrinkfail.code"))" $ok
 grep -E 'Test hook|px wide, over its' "$out/f40-shrinkfail.log" | sed 's/^/      /'
 
