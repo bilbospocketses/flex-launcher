@@ -15,6 +15,7 @@
 #include "config_save.h"
 #include "browser.h"
 #include "fileio.h"
+#include "alloc.h"
 #include "inidoc.h"
 #include "image.h"
 #include "util.h"
@@ -553,6 +554,43 @@ static void stop_decoding(void)
     background_override = NULL;
 }
 
+#ifdef STREAMFLEX_TEST_HOOKS
+// Only the headless harness builds these. STREAMFLEX_TEST_FAIL names one of the screen's steps
+// (places, browser, command or keep), which then runs as if memory had run out, or for keep, as if
+// the saved file's permissions could not be kept: failures no real run can be made to give.
+
+// A function standing in for realloc that always fails
+static void *failing_reallocate(void *memory, size_t size)
+{
+    UNUSED(memory);
+    UNUSED(size);
+    return NULL;
+}
+
+// A function standing in for free
+static void releasing(void *memory)
+{
+    free(memory);
+}
+
+// A function to start (true) or end (false) the failure the harness asked for, when it names `step`
+static void test_fail(const char *step, bool on)
+{
+    static const AllocHooks failing = { failing_reallocate, releasing };
+    const char *asked = getenv("STREAMFLEX_TEST_FAIL");
+    if (asked == NULL || strcmp(asked, step) != 0)
+        return;
+    if (strcmp(step, "keep") == 0)
+        fileio_set_fault(on ? FILEIO_FAULT_KEEP : FILEIO_FAULT_NONE, 0, 0);
+    else
+        alloc_set_hooks(on ? &failing : NULL);
+    if (on)
+        log_debug("Test hook: %s fails", step);
+}
+#else
+#define test_fail(step, on)
+#endif
+
 // A function to list a folder for the browser
 static int list_folder(const char *folder, FileioEntry **entries, void *context)
 {
@@ -560,11 +598,17 @@ static int list_folder(const char *folder, FileioEntry **entries, void *context)
     return fileio_list(folder, entries);
 }
 
-// A function to tell the browser whether config.ini can hold a path for its setting
+// config.ini as it was when the browser opened, for check_path; NULL when it could not be read
+static IniDoc *browser_doc = NULL;
+
+// A function to tell the browser whether config.ini can hold a path for its setting, as the save
+// will find: the key's own line may keep a comment that leaves less room
 static const char *check_path(const char *path, void *context)
 {
     const SettingSlot *slot = context;
-    return inidoc_check(slot->def->key, path);
+    if (browser_doc == NULL)
+        return inidoc_check(slot->def->key, path);
+    return inidoc_check_in(browser_doc, section_of(slot), slot->def->key, path);
 }
 
 // A function to preview what the browser's cursor is on: an image, or a folder's first image
@@ -583,18 +627,36 @@ static void preview_highlighted(void)
 static void open_browser(SettingSlot *slot)
 {
     FileioPlace *places = NULL;
+    test_fail("places", true);
     int count = fileio_places(&places);
+    test_fail("places", false);
+    if (count < 0)
+        log_error("Settings: the folder browser has no places: %s", fileio_last_error());
     BrowserPlace *list = calloc((size_t) (count > 0 ? count : 1), sizeof(BrowserPlace));
     for (int i = 0; list != NULL && i < count; i++) {
         list[i].label = places[i].label;
         list[i].path = places[i].path;
+        list[i].network = places[i].network;
     }
+
+    // Paths are checked against config.ini as the save will find it; unread, by the key alone
+    size_t length = 0;
+    char *text = fileio_read_all(config.config_path, &length);
+    browser_doc = text != NULL ? inidoc_parse(text, length) : NULL;
+    free(text);
     BrowserMode mode = slot->def->id == SET_ID_BACKGROUND_IMAGE ? BROWSER_IMAGE : BROWSER_FOLDER;
-    browser = list != NULL ? browser_open(mode, slot->value.text, list, count, list_folder, check_path, slot) : NULL;
+    const char *why = "out of memory";
+    test_fail("browser", true);
+    browser = list != NULL ? browser_open(mode, slot->value.text, list, count, list_folder, check_path, slot, &why) : NULL;
+    test_fail("browser", false);
     free(list);
     fileio_free_places(places, count);
-    if (browser == NULL)
+    if (browser == NULL) {
+        log_error("Settings: the folder browser cannot open: %s", why);
+        inidoc_free(browser_doc);
+        browser_doc = NULL;
         return;
+    }
     browser_slot = slot;
     browser_first = 0;
     browser_note[0] = '\0';
@@ -608,6 +670,8 @@ static void close_browser(void)
     browser_free(browser);
     browser = NULL;
     browser_slot = NULL;
+    inidoc_free(browser_doc);
+    browser_doc = NULL;
     want_preview_image("");
 }
 
@@ -711,6 +775,7 @@ static bool save_changes(void)
     }
     ConfigSaveResult result;
     bool ok;
+    test_fail("keep", true);
 #ifdef __unix__
     // The packaged config cannot be written; the user's own goes where the launcher looks first
     char user_config[MAX_PATH_CHARS + 1];
@@ -721,11 +786,14 @@ static bool save_changes(void)
 #else
     ok = config_save(config.config_path, NULL, NULL, edits, n, &result);
 #endif
+    test_fail("keep", false);
     free(edits);
     free(values);
     if (ok) {
         log_debug("Settings saved %i change(s) to %s (backup: %s)", n, result.path,
             result.backup[0] != '\0' ? result.backup : "none");
+        if (result.warning[0] != '\0')
+            log_error("Settings saved to %s, but %s", result.path, result.warning);
         if (strcmp(result.path, config.config_path) != 0) {
             free(config.config_path);
             config.config_path = strdup(result.path);
@@ -837,7 +905,9 @@ static void handle_browser_command(const char *command)
         return;
     }
 
+    test_fail("command", true);
     BrowserResult result = browser_command(browser, key, browser_page);
+    test_fail("command", false);
     if (result == BROWSER_CLOSED) {
         close_browser();
         return;
@@ -873,7 +943,8 @@ static void handle_browser_command(const char *command)
         if (row != NULL && row->why != NULL)
             snprintf(browser_note, sizeof(browser_note), "%s", row->why);
         else if (row != NULL && (row->kind == BROWSER_ROW_FOLDER || row->kind == BROWSER_ROW_PLACE))
-            snprintf(browser_note, sizeof(browser_note), "Can't open %s: %s", row->name, fileio_last_error());
+            snprintf(browser_note, sizeof(browser_note), "Can't open %s: %s", row->name,
+                browser_why(browser) != NULL ? browser_why(browser) : fileio_last_error());
         if (browser_note[0] != '\0')
             log_debug("Settings: %s", browser_note);
     }

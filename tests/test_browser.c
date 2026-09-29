@@ -82,7 +82,7 @@ static const BrowserPlace PLACES[] = {
 // to case, with hidden files and other files left out, and the cursor on the image it opened at
 static void test_rows_and_start(void)
 {
-    Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures/zebra.png", PLACES, 3, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures/zebra.png", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK_STR(browser_folder(browser), "/home/me/Pictures");
     CHECK_INT(browser_row_count(browser), 5);
     CHECK_STR(browser_row(browser, 0)->name, "Autumn");
@@ -101,7 +101,7 @@ static void test_rows_and_start(void)
 // A function to test going into folders and back up to the places, and out
 static void test_into_and_out_of_folders(void)
 {
-    Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures/zebra.png", PLACES, 3, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures/zebra.png", PLACES, 3, fake_list, NULL, NULL, NULL);
     for (int i = 0; i < 4; i++)
         browser_command(browser, BROWSER_UP, 10);
     CHECK_INT(browser_cursor(browser), 0);
@@ -136,7 +136,7 @@ static void test_into_and_out_of_folders(void)
 // A function to test the folder mode: Use this folder needs two images, and images cannot be chosen
 static void test_folder_mode(void)
 {
-    Browser *browser = browser_open(BROWSER_FOLDER, "/home/me/Pictures/Autumn", PLACES, 3, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_FOLDER, "/home/me/Pictures/Autumn", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK_INT(browser_row(browser, 0)->kind, BROWSER_ROW_USE_FOLDER);
     CHECK_INT(browser_row(browser, 0)->image_count, 2);
     CHECK(browser_row(browser, 0)->enabled);
@@ -146,7 +146,7 @@ static void test_folder_mode(void)
     CHECK_STR(browser_chosen(browser), "/home/me/Pictures/Autumn");
     browser_free(browser);
 
-    browser = browser_open(BROWSER_FOLDER, "/home/me/Pictures/Birthdays", PLACES, 3, fake_list, NULL, NULL);
+    browser = browser_open(BROWSER_FOLDER, "/home/me/Pictures/Birthdays", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK(!browser_row(browser, 0)->enabled);
     CHECK(browser_row(browser, 0)->why != NULL && strstr(browser_row(browser, 0)->why, "2 or more") != NULL);
     CHECK_INT(browser_command(browser, BROWSER_OK, 10), BROWSER_NONE);
@@ -158,14 +158,14 @@ static void test_folder_mode(void)
 // A function to test where the browser opens when there is no start, or it is gone
 static void test_start_places(void)
 {
-    Browser *browser = browser_open(BROWSER_IMAGE, "", PLACES, 3, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_IMAGE, "", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK_STR(browser_folder(browser), "/home/me/Pictures");
     browser_free(browser);
-    browser = browser_open(BROWSER_IMAGE, "/gone/away.png", PLACES, 3, fake_list, NULL, NULL);
+    browser = browser_open(BROWSER_IMAGE, "/gone/away.png", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK_STR(browser_folder(browser), "/home/me/Pictures");
     browser_free(browser);
     static const BrowserPlace gone[] = { { "Gone", "/gone", false } };
-    browser = browser_open(BROWSER_IMAGE, "", gone, 1, fake_list, NULL, NULL);
+    browser = browser_open(BROWSER_IMAGE, "", gone, 1, fake_list, NULL, NULL, NULL);
     CHECK(browser_folder(browser) == NULL);
     CHECK_INT(browser_row_count(browser), 1);
     CHECK_INT(browser_command(browser, BROWSER_OK, 10), BROWSER_NONE);   // It cannot be listed
@@ -175,7 +175,7 @@ static void test_start_places(void)
 // A function to test moving a page at a time
 static void test_paging(void)
 {
-    Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures", PLACES, 3, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK_INT(browser_cursor(browser), 0);
     CHECK_INT(browser_command(browser, BROWSER_PAGE_DOWN, 2), BROWSER_MOVED);
     CHECK_INT(browser_cursor(browser), 2);
@@ -190,14 +190,14 @@ static void test_paging(void)
 // A function to test that a path config.ini cannot hold is shown, but refused with the reason
 static void test_refused_paths(void)
 {
-    Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures/zebra.png", PLACES, 3, fake_list, fake_check, NULL);
+    Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures/zebra.png", PLACES, 3, fake_list, fake_check, NULL, NULL);
     const BrowserRow *row = browser_row(browser, browser_cursor(browser));
     CHECK_STR(row->name, "zebra.png");
     CHECK(!row->enabled);
     CHECK(row->why != NULL && strstr(row->why, "too long") != NULL);
     CHECK_INT(browser_command(browser, BROWSER_OK, 10), BROWSER_NONE);
     browser_free(browser);
-    browser = browser_open(BROWSER_FOLDER, "/home/me/Pictures/Autumn", PLACES, 3, fake_list, fake_check, NULL);
+    browser = browser_open(BROWSER_FOLDER, "/home/me/Pictures/Autumn", PLACES, 3, fake_list, fake_check, NULL, NULL);
     CHECK(!browser_row(browser, 0)->enabled);
     CHECK(strstr(browser_row(browser, 0)->why, "too long") != NULL);
     browser_free(browser);
@@ -227,7 +227,7 @@ static void test_parent(void)
 // A function to test finding a folder's first image, for previewing a folder
 static void test_first_image(void)
 {
-    Browser *browser = browser_open(BROWSER_FOLDER, "/home/me/Pictures", PLACES, 3, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_FOLDER, "/home/me/Pictures", PLACES, 3, fake_list, NULL, NULL, NULL);
     char out[BROWSER_PATH_MAX];
     CHECK(browser_first_image(browser, "/home/me/Pictures", out, sizeof(out)));
     CHECK_STR(out, "/home/me/Pictures/apple.webp");
@@ -240,7 +240,7 @@ static void test_first_image(void)
 // A function to test Windows paths: joined with backslashes, and up to the drive's root
 static void test_windows_paths(void)
 {
-    Browser *browser = browser_open(BROWSER_IMAGE, "C:\\Users\\me\\Pictures\\trip.png", PLACES, 3, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_IMAGE, "C:\\Users\\me\\Pictures\\trip.png", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK_STR(browser_row(browser, browser_cursor(browser))->path, "C:\\Users\\me\\Pictures\\trip.png");
     browser_command(browser, BROWSER_BACK, 10);
     CHECK_STR(browser_folder(browser), "C:\\Users\\me");
@@ -286,7 +286,7 @@ static void test_is_image_file(void)
 // path in one style
 static void test_forward_slash_windows_paths(void)
 {
-    Browser *browser = browser_open(BROWSER_IMAGE, "C:/Users/me/Pictures/trip.png", PLACES, 3, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_IMAGE, "C:/Users/me/Pictures/trip.png", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK_STR(browser_folder(browser), "C:/Users/me/Pictures");
     CHECK_INT(browser_cursor(browser), 0);
     CHECK_STR(browser_row(browser, 0)->path, "C:/Users/me/Pictures/trip.png");
@@ -301,7 +301,7 @@ static void test_forward_slash_windows_paths(void)
 
     // A bare drive has no separator of its own, so it gets Windows' own
     static const BrowserPlace drive[] = { { "C:", "C:", false } };
-    browser = browser_open(BROWSER_IMAGE, "", drive, 1, fake_list, NULL, NULL);
+    browser = browser_open(BROWSER_IMAGE, "", drive, 1, fake_list, NULL, NULL, NULL);
     CHECK_STR(browser_folder(browser), "C:");
     CHECK_STR(browser_row(browser, 0)->path, "C:\\Users");
     browser_free(browser);
@@ -354,7 +354,7 @@ static void test_paths_too_long_to_choose(void)
     snprintf(deep_path, sizeof(deep_path), "/deep/%s", long_folder);
     static const BrowserPlace deep[] = { { "Deep", "/deep", false } };
 
-    Browser *browser = browser_open(BROWSER_IMAGE, "", deep, 1, deep_list, fake_check, NULL);
+    Browser *browser = browser_open(BROWSER_IMAGE, "", deep, 1, deep_list, fake_check, NULL, NULL);
     CHECK_INT(browser_row_count(browser), 3);
     CHECK_STR(browser_row(browser, 0)->path, deep_path);
     CHECK(browser_row(browser, 0)->enabled);
@@ -379,7 +379,7 @@ static void test_paths_too_long_to_choose(void)
     browser_free(browser);
 
     // In folder mode, a folder too long to keep cannot be used
-    browser = browser_open(BROWSER_FOLDER, "", deep, 1, deep_list, NULL, NULL);
+    browser = browser_open(BROWSER_FOLDER, "", deep, 1, deep_list, NULL, NULL, NULL);
     browser_command(browser, BROWSER_DOWN, 10);
     CHECK_INT(browser_command(browser, BROWSER_OK, 10), BROWSER_MOVED);
     CHECK_INT(browser_row(browser, 0)->kind, BROWSER_ROW_USE_FOLDER);
@@ -392,7 +392,7 @@ static void test_paths_too_long_to_choose(void)
 // A function to test an empty folder in image mode: no rows, and every key but Back does nothing
 static void test_empty_folder(void)
 {
-    Browser *browser = browser_open(BROWSER_IMAGE, "/media/usb", PLACES, 3, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_IMAGE, "/media/usb", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK_STR(browser_folder(browser), "/media/usb");
     CHECK_INT(browser_row_count(browser), 0);
     CHECK(browser_row(browser, 0) == NULL);
@@ -411,7 +411,7 @@ static void test_empty_folder(void)
 // A function to test Back from a folder whose parent cannot be listed: out to the places
 static void test_back_to_an_unlisted_parent(void)
 {
-    Browser *browser = browser_open(BROWSER_IMAGE, "/orphan/child/a.png", PLACES, 3, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_IMAGE, "/orphan/child/a.png", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK_STR(browser_folder(browser), "/orphan/child");
     CHECK_INT(browser_command(browser, BROWSER_BACK, 10), BROWSER_MOVED);
     CHECK(browser_folder(browser) == NULL);
@@ -423,7 +423,7 @@ static void test_back_to_an_unlisted_parent(void)
 // A function to test that a page of fewer than one row moves one row
 static void test_page_rows_below_one(void)
 {
-    Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures", PLACES, 3, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK_INT(browser_command(browser, BROWSER_PAGE_DOWN, 0), BROWSER_MOVED);
     CHECK_INT(browser_cursor(browser), 1);
     CHECK_INT(browser_command(browser, BROWSER_PAGE_DOWN, -5), BROWSER_MOVED);
@@ -436,14 +436,14 @@ static void test_page_rows_below_one(void)
 // A function to test a start folder written with a trailing separator: it opens as the folder
 static void test_start_with_a_trailing_separator(void)
 {
-    Browser *browser = browser_open(BROWSER_FOLDER, "/home/me/Pictures/Autumn/", PLACES, 3, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_FOLDER, "/home/me/Pictures/Autumn/", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK_STR(browser_folder(browser), "/home/me/Pictures/Autumn");
     CHECK_STR(browser_row(browser, 0)->path, "/home/me/Pictures/Autumn");
     browser_free(browser);
-    browser = browser_open(BROWSER_FOLDER, "C:\\Users\\me\\Pictures\\", PLACES, 3, fake_list, NULL, NULL);
+    browser = browser_open(BROWSER_FOLDER, "C:\\Users\\me\\Pictures\\", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK_STR(browser_folder(browser), "C:\\Users\\me\\Pictures");
     browser_free(browser);
-    browser = browser_open(BROWSER_FOLDER, "/", PLACES, 3, fake_list, NULL, NULL);
+    browser = browser_open(BROWSER_FOLDER, "/", PLACES, 3, fake_list, NULL, NULL, NULL);
     CHECK_STR(browser_folder(browser), "/");
     browser_free(browser);
 }
@@ -456,10 +456,10 @@ static void test_network_places_are_not_opened_unasked(void)
         { "NAS", "/nas", true },
         { "Pictures", "/home/me/Pictures", false }
     };
-    Browser *browser = browser_open(BROWSER_IMAGE, "", mixed, 2, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_IMAGE, "", mixed, 2, fake_list, NULL, NULL, NULL);
     CHECK_STR(browser_folder(browser), "/home/me/Pictures");
     browser_free(browser);
-    browser = browser_open(BROWSER_IMAGE, "", mixed, 1, fake_list, NULL, NULL);
+    browser = browser_open(BROWSER_IMAGE, "", mixed, 1, fake_list, NULL, NULL, NULL);
     CHECK(browser_folder(browser) == NULL);
     CHECK_INT(browser_row_count(browser), 1);
     CHECK_INT(browser_command(browser, BROWSER_OK, 10), BROWSER_MOVED);   // Asked for, it opens

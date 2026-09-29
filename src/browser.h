@@ -64,8 +64,9 @@ typedef enum {
 
 typedef struct Browser Browser;
 
+// NULL when the browser cannot be opened, with the reason in *why when `why` is not NULL
 Browser *browser_open(BrowserMode mode, const char *start, const BrowserPlace *places, int place_count,
-                      BrowserList list, BrowserCheck check, void *context);
+                      BrowserList list, BrowserCheck check, void *context, const char **why);
 void browser_free(Browser *browser);
 BrowserResult browser_command(Browser *browser, BrowserCommand command, int page_rows);
 int browser_row_count(const Browser *browser);

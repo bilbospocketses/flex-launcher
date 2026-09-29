@@ -297,14 +297,19 @@ static LoadResult load_folder(Browser *browser, const char *folder, const char *
 // A function to open the browser: at `start` (an image opens its folder with the image highlighted),
 // else at the first place that can be listed (Pictures, then Home, ...) and is not on a network
 // share, which could keep the browser waiting on the network, else at the places. NULL when out of
-// memory, rather than a browser opened somewhere other than asked. A folder whose list function
-// fails (out of memory there included) cannot be listed, and the next place is tried.
+// memory (the reason goes in *why), rather than a browser opened somewhere other than asked. A folder
+// whose list function fails (out of memory there included) cannot be listed, and the next place is tried.
 Browser *browser_open(BrowserMode mode, const char *start, const BrowserPlace *places, int place_count,
-                      BrowserList list, BrowserCheck check, void *context)
+                      BrowserList list, BrowserCheck check, void *context, const char **why)
 {
+    if (why != NULL)
+        *why = NULL;
     Browser *browser = alloc_calloc(1, sizeof(Browser));
-    if (browser == NULL)
+    if (browser == NULL) {
+        if (why != NULL)
+            *why = OUT_OF_MEMORY;
         return NULL;
+    }
     browser->mode = mode;
     browser->list = list;
     browser->check = check;
@@ -354,6 +359,8 @@ Browser *browser_open(BrowserMode mode, const char *start, const BrowserPlace *p
     bool opened = loaded == LOAD_DONE;
     if (!ok || (!opened && !load_places(browser, NULL))) {
         browser_free(browser);
+        if (why != NULL)
+            *why = OUT_OF_MEMORY;   // The only way to fail: every other failure opens elsewhere
         return NULL;
     }
     return browser;

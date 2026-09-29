@@ -476,20 +476,21 @@ static const BrowserPlace PLACES[] = {
     { "Home", "/home/me", false }
 };
 
-// A function to prove that the browser fails cleanly: opening gives NULL when its own memory runs
-// out (a folder whose list failed is one that cannot be listed, so the next place opens), and a
+// A function to prove that the browser fails cleanly: opening gives NULL, and "out of memory" as
+// its reason, when its own memory runs out (a folder whose list failed is one that cannot be listed, so the next place opens), and a
 // command that fails leaves what is on show as it was and says why
 static void prove_browser(void)
 {
     for (int n = 1;; n++) {
         list_failed = false;
+        const char *why = "not set";
         arm(n);
-        Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures/zebra.jpg", PLACES, 2, fake_list, NULL, NULL);
+        Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures/zebra.jpg", PLACES, 2, fake_list, NULL, NULL, &why);
         disarm();
         if (!failed)
             CHECK_RUN(browser != NULL && browser_row_count(browser) == 3 && browser_cursor(browser) == 2, n);
         else if (!list_failed)
-            CHECK_RUN(browser == NULL, n);
+            CHECK_RUN(browser == NULL && why != NULL && strcmp(why, "out of memory") == 0, n);
         else
             CHECK_RUN(browser != NULL && strcmp(browser_folder(browser), "/home/me/Pictures") == 0, n);
         browser_free(browser);
@@ -504,7 +505,7 @@ static void prove_browser(void)
     static const char *const after[] = { "/home/me/Pictures/Autumn", "/home/me" };
     for (int c = 0; c < 2; c++) {
         for (int n = 1;; n++) {
-            Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures", PLACES, 2, fake_list, NULL, NULL);
+            Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures", PLACES, 2, fake_list, NULL, NULL, NULL);
             char before[2048];
             char now[2048];
             describe_browser(browser, before, sizeof(before));
@@ -533,7 +534,7 @@ static void prove_browser(void)
     }
 
     // A folder's first image, for its preview: the right one, or none
-    Browser *browser = browser_open(BROWSER_FOLDER, "/home/me", PLACES, 2, fake_list, NULL, NULL);
+    Browser *browser = browser_open(BROWSER_FOLDER, "/home/me", PLACES, 2, fake_list, NULL, NULL, NULL);
     for (int n = 1;; n++) {
         char out[BROWSER_PATH_MAX] = "";
         arm(n);
