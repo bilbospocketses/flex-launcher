@@ -20,7 +20,6 @@
 extern Config config;
 extern State state;
 extern SDL_Renderer *renderer;
-extern SDL_Texture *background_texture;
 NSVGrasterizer *rasterizer = NULL;
 
 // A function to initalize SVG rasterization

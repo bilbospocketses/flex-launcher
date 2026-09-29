@@ -528,25 +528,23 @@ int config_handler(void *user, const char *section, const char *name, const char
             log_error("Menu '%s': '%s' is empty, ignoring it", section, name);
             return 0;
         }
-        if (token != NULL) {
 
-            // Create first entry in the menu if none exists
-            if (menu->first_entry == NULL) {
-                menu->first_entry = calloc(1, sizeof(Entry));
-                entry = menu->first_entry;
-                entry->next = NULL;
-            }
-
-            // Add entry to the end of the linked list
-            else {
-                previous_entry = entry;
-                entry = entry->next;
-                entry = calloc(1, sizeof(Entry));
-                previous_entry->next = entry;
-                entry->next = NULL;
-            }
-            entry->title_offset = 0;
+        // Create first entry in the menu if none exists
+        if (menu->first_entry == NULL) {
+            menu->first_entry = calloc(1, sizeof(Entry));
+            entry = menu->first_entry;
+            entry->next = NULL;
         }
+
+        // Add entry to the end of the linked list
+        else {
+            previous_entry = entry;
+            entry = entry->next;
+            entry = calloc(1, sizeof(Entry));
+            previous_entry->next = entry;
+            entry->next = NULL;
+        }
+        entry->title_offset = 0;
 
         // Store data in entry struct
         int i;

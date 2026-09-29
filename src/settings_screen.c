@@ -26,7 +26,6 @@ extern Geometry geo;
 extern SDL_Renderer *renderer;
 extern Menu *current_menu;
 extern LayoutGeometry layout;
-extern SDL_Texture *background_override;
 
 #define MARGIN_RATIO 0.03F         // Of the screen height
 #define HEADER_FONT_RATIO 0.045F
@@ -474,8 +473,7 @@ static int decode_image(void *data)
 // is on show, or it already failed
 static void start_decode(void)
 {
-    if (decode_thread != NULL || wanted_path[0] == '\0' || strcmp(wanted_path, shown_path) == 0
-    || strcmp(wanted_path, broken_path) == 0)
+    if (decode_thread != NULL || wanted_path[0] == '\0' || strcmp(wanted_path, shown_path) == 0 || strcmp(wanted_path, broken_path) == 0)
         return;
     copy_string(decode_path, wanted_path, sizeof(decode_path));
     SDL_AtomicSet(&decode_done, 0);
