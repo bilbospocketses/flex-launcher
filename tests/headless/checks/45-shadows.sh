@@ -12,3 +12,13 @@ shadowed=$(grid_px f45-shadow)
 ok=1
 ran_clean f45-noshadow && ran_clean f45-shadow && [ -n "$plain" ] && [ "$shadowed" = "$((plain - 2))" ] && ok=0
 result "shadowed titles keep room for their shadows: 4 rows of ${plain:-?} px buttons become ${shadowed:-?} px (exit $(cat "$out/f45-shadow.code"))" $ok
+
+# Titles too long for their buttons, shadowed: each is cut to its button less the shadow's reach,
+# so title and shadow together fit the button. The debug log names any title (measured with its
+# shadow) wider than its button.
+run_quick f45-shadowlong
+ok=1
+ran_clean f45-shadowlong && grep -qE "Menu 'Main': 4 x 1 grid, [0-9]+ px buttons, 36 pt titles" "$out/f45-shadowlong.log" \
+    && ! grep -q 'px wide, over its' "$out/f45-shadowlong.log" && ok=0
+result "a shadowed title cut to fit keeps its shadow inside its button (exit $(cat "$out/f45-shadowlong.code"))" $ok
+grep 'px wide, over its' "$out/f45-shadowlong.log" | sed 's/^/      /'
