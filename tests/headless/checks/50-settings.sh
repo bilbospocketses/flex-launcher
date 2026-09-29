@@ -243,8 +243,15 @@ precedes "$out/f50-launch.log" 'Settings: not opened while an application is lau
 result "settings: they do not open while an application is launching (exit $(cat "$out/f50-launch.code"))" $ok
 grep -E 'Settings( opened|: not opened| closed)' "$out/f50-launch.log" | sed 's/^/      /'
 
-# The sample config turns the gamepad on, so a gamepad's Start opens settings out of the box. (The
-# built-in default for a config with no such line is unchanged, and no fixture relies on either.)
+# The gamepad is on by default: a config with no [Gamepad] section at all (f50-keys) takes the
+# virtual gamepad, whose Start opens settings. The sample config says Enabled=true from the same
+# default, so a gamepad's Start opens settings out of the box either way.
+rm -f /tmp/pad-start
+STREAMFLEX_TEST_PAD=/tmp/pad-start CFG=$FX/f50-keys.ini WAIT_FOR='Gamepad connected' run_keys f50-paddefault +hold_start
+ok=1
+! grep -q '^\[Gamepad\]' "$FX/f50-keys.ini" && [ "$(grep -c 'Gamepad ButtonStart detected' "$out/f50-paddefault.log")" = 1 ] \
+    && [ "$(grep -c 'Settings opened' "$out/f50-paddefault.log")" = 1 ] && ran_clean f50-paddefault && ok=0
+result "settings: the gamepad is on by default, and its Start opens them (exit $(cat "$out/f50-paddefault.code"))" $ok
 ok=1
 sed -n '/^\[Gamepad\]/,/^\[/p' /work/build/config.ini | grep -qx 'Enabled=true' && ok=0
 result "the sample config turns the gamepad on" $ok
