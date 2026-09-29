@@ -59,9 +59,8 @@ result "the build has no compiler warnings outside src/external" $ok
 # unprivileged test user connect to it.
 Xvfb :99 -screen 0 1920x1080x24 -ac > /dev/null 2>&1 &
 export DISPLAY=:99
-for i in $(seq 100); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.2; done
-[ -S /tmp/.X11-unix/X99 ] || { echo "Xvfb DID NOT START"; exit 2; }
-sleep 1
+for i in $(seq 100); do xdotool getdisplaygeometry > /dev/null 2>&1 && break; sleep 0.2; done
+xdotool getdisplaygeometry > /dev/null 2>&1 || { echo "Xvfb DID NOT START"; exit 2; }
 
 # The launcher runs as `tester`: root ignores file permissions, and the settings checks need a
 # config it cannot write. setpriv, env and setarch each exec the next, so the launcher keeps the
@@ -86,7 +85,8 @@ printf 'not a picture\n' > "$TESTER_HOME/mixed/broken.png"
 chown -R tester:tester "$TESTER_HOME"
 # The leak pass unwinds every allocation's whole stack (fast_unwind_on_malloc=0): Mesa's driver
 # is unloaded before LeakSanitizer reports, and the quick unwinder stops in it, leaving nothing
-# for lsan.supp to name. It is slower, so only this pass does it.
+# for lsan.supp to name. It is slower, so only this pass does it. It keeps setarch -R: the ASan
+# build crashes at random without it whether or not leaks are looked for.
 asan_options=detect_leaks=0
 if [ "$fault" = leaks ]; then
     asan_options=detect_leaks=1:fast_unwind_on_malloc=0
