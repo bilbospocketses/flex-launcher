@@ -488,7 +488,7 @@ static void prove_browser(void)
         Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures/zebra.jpg", PLACES, 2, fake_list, NULL, NULL, &why);
         disarm();
         if (!failed)
-            CHECK_RUN(browser != NULL && browser_row_count(browser) == 3 && browser_cursor(browser) == 2, n);
+            CHECK_RUN(browser != NULL && browser_row_count(browser) == 3 && browser_cursor(browser) == 2 && why == NULL, n);
         else if (!list_failed)
             CHECK_RUN(browser == NULL && why != NULL && strcmp(why, "out of memory") == 0, n);
         else
