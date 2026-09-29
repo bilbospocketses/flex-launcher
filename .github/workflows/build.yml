@@ -312,12 +312,60 @@ jobs:
           name: Headless logs
           path: ${{ runner.temp }}/headless
 
+  # The same checks on Fedora, whose SDL2 is sdl2-compat (SDL2's API over SDL3) rather than SDL2
+  # itself. One run.sh serves both images; what differs between them is detected, not named.
+  headless_fedora:
+    name: Headless (Fedora)
+    runs-on: ubuntu-24.04
+    # A backstop for a hang the harness helpers' own timeouts miss (GitHub's default is 6 hours)
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Git repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the test image
+        id: build_image
+        run: docker build -t streamflex-test-fedora -f tests/headless/Dockerfile.fedora tests/headless
+
+      # Both passes run even when the first fails, so one run shows every failure; the step then
+      # fails if either did
+      - name: Run the headless checks
+        run: |
+          mkdir -p "$RUNNER_TEMP/headless"
+          status=0
+          docker run --rm --security-opt seccomp=unconfined \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/headless:/out" \
+            streamflex-test-fedora bash /src/tests/headless/run.sh ci || status=1
+          docker run --rm --security-opt seccomp=unconfined \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/headless:/out" \
+            streamflex-test-fedora bash /src/tests/headless/run.sh ci-scrollfail scrollfail || status=1
+          exit $status
+
+      # Every check again, with LeakSanitizer on. It runs even when the step before it failed, so
+      # a leak is reported beside any other failure, but not without an image to run in
+      - name: Look for memory leaks
+        if: (success() || failure()) && steps.build_image.outcome == 'success'
+        run: |
+          mkdir -p "$RUNNER_TEMP/headless"
+          docker run --rm --security-opt seccomp=unconfined \
+            -v "$GITHUB_WORKSPACE:/src:ro" -v "$RUNNER_TEMP/headless:/out" \
+            streamflex-test-fedora bash /src/tests/headless/run.sh ci-leaks leaks
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        name: Upload the logs of a failed run
+        if: failure()
+        with:
+          name: Headless (Fedora) logs
+          path: ${{ runner.temp }}/headless
+
   # Single required status check for the master branch ruleset. It passes only when every
-  # platform build, the icon library check and the headless checks succeeded; `if: always()`
+  # platform build, the icon library check and both headless jobs succeeded; `if: always()`
   # makes it report a failure (rather than being skipped) when a job fails or is cancelled.
   build-and-test:
     runs-on: ubuntu-24.04
-    needs: [build_windows, build_linux, build_rpi, build_arch, library_check, headless]
+    needs: [build_windows, build_linux, build_rpi, build_arch, library_check, headless, headless_fedora]
     if: always()
     steps:
       - name: Check platform builds
