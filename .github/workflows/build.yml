@@ -67,8 +67,10 @@ jobs:
         with:
           committish: ${{env.VCPKG_COMMITTISH}}
 
+      # EXTRA_WARNINGS is /W4 /WX, so a new MSVC warning fails the build. It reaches only our own
+      # targets: vcpkg builds its ports in a process of its own, with the triplet's flags
       - name: Configure
-        run: cmake -B build -G "${{env.CMAKE_GENERATOR}}" -D "CMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{env.VCPKG_TRIPLET}}
+        run: cmake -B build -G "${{env.CMAKE_GENERATOR}}" -D "CMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{env.VCPKG_TRIPLET}} -DEXTRA_WARNINGS=ON
 
       - name: Build
         run: cmake --build build --target package --config ${{ env.CMAKE_BUILD_TYPE }}
