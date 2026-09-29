@@ -115,8 +115,8 @@ typedef struct {
     bool application_running;
     bool has_focus;
     bool slideshow_transition;
-    bool slideshow_background_rendering;
-    bool slideshow_background_ready;
+    SDL_atomic_t slideshow_background_rendering; // Both also written by the slideshow's loader thread
+    SDL_atomic_t slideshow_background_ready;
     bool slideshow_paused;
     bool screensaver_active;
     bool screensaver_transition;

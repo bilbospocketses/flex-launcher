@@ -724,8 +724,8 @@ void reload_background()
 {
     stop_slideshow();
     state.slideshow_transition = false;
-    state.slideshow_background_rendering = false;
-    state.slideshow_background_ready = false;
+    SDL_AtomicSet(&state.slideshow_background_rendering, 0);
+    SDL_AtomicSet(&state.slideshow_background_ready, 0);
     if (background_texture != NULL) {
         SDL_DestroyTexture(background_texture);
         background_texture = NULL;
@@ -1396,20 +1396,22 @@ static void update_slideshow()
     if (!state.slideshow_transition && (ticks.main - ticks.slideshow_load > config.slideshow_image_duration) &&
     !state.slideshow_paused) {
         
-        // Render the new background image in a separate thread so we don't block the main thread
-        if (!state.slideshow_background_rendering && !state.slideshow_background_ready) {
+        // Render the new background image in a separate thread so we don't block the main thread.
+        // It is marked as rendering before it starts: a thread that finished first would find
+        // the mark still unset, and leave it set for good once the main thread set it.
+        if (!SDL_AtomicGet(&state.slideshow_background_rendering) && !SDL_AtomicGet(&state.slideshow_background_ready)) {
+            SDL_AtomicSet(&state.slideshow_background_rendering, 1);
             Slideshowhread = SDL_CreateThread(load_next_slideshow_background_async, "Slideshow Thread", (void*) slideshow);
-            state.slideshow_background_rendering = true;
         }
 
         // Convert background to texture after the rendering thread has completed
-        else if (state.slideshow_background_ready) {
+        else if (SDL_AtomicGet(&state.slideshow_background_ready)) {
             SDL_WaitThread(Slideshowhread, NULL);
             Slideshowhread = NULL;
 
             // The loader found no image that loads, or only the one on show: stop the slideshow
             if (slideshow->transition_surface == NULL || slideshow->only_one) {
-                state.slideshow_background_ready = false;
+                SDL_AtomicSet(&state.slideshow_background_ready, 0);
                 fall_back_from_slideshow(slideshow->transition_surface);
                 return;
             }
@@ -1425,7 +1427,7 @@ static void update_slideshow()
                 ticks.slideshow_load = ticks.main;
             }
         slideshow->transition_surface = NULL;
-        state.slideshow_background_ready = false;
+        SDL_AtomicSet(&state.slideshow_background_ready, 0);
         }
     }
     else if (state.slideshow_transition) {

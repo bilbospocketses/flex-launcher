@@ -150,8 +150,8 @@ int load_next_slideshow_background_async(void *data)
 {
     Slideshow *slideshow = (Slideshow*) data;
     slideshow->transition_surface = load_next_slideshow_background(slideshow, true);
-    state.slideshow_background_rendering = false;
-    state.slideshow_background_ready = true;
+    SDL_AtomicSet(&state.slideshow_background_rendering, 0);
+    SDL_AtomicSet(&state.slideshow_background_ready, 1);
     return 0;
 }
 
