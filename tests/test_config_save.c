@@ -7,6 +7,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -46,6 +47,16 @@ static bool can_test_read_only(void)
     return true;
 }
 
+// A function to remove an empty folder, if there is one
+static void remove_folder(const char *path)
+{
+#ifdef _WIN32
+    RemoveDirectoryA(path);
+#else
+    rmdir(path);
+#endif
+}
+
 // A function to start a check from a known file, with no backup or temporary file lying about
 static void reset(const char *path, const char *text)
 {
@@ -58,6 +69,7 @@ static void reset(const char *path, const char *text)
     fileio_remove(other);
     snprintf(other, sizeof(other), "%s.bak.tmp", path);
     fileio_remove(other);
+    remove_folder(other);   // test_older_backup_survives_a_failed_backup() puts a folder there
     CHECK(fileio_make_dirs(DIR));
     if (text != NULL)
         CHECK(fileio_write_all(path, text, strlen(text)));
@@ -99,6 +111,7 @@ static void test_saves_only_the_edits(void)
     CHECK(holds(CONFIG ".bak", ORIGINAL));
     CHECK(!fileio_exists(CONFIG ".tmp"));
     CHECK(!fileio_exists(CONFIG ".bak.tmp"));
+    CHECK_STR(result.warning, "");
 }
 
 // A function to test a key beside its older alias: the save leaves the key alone, whether it is
@@ -161,6 +174,42 @@ static void test_refused_value_changes_nothing(void)
     CHECK(holds(CONFIG, ORIGINAL));
     CHECK(!fileio_exists(CONFIG ".bak"));
     CHECK(!fileio_exists(CONFIG ".tmp"));
+    CHECK(!fileio_exists(CONFIG ".bak.tmp"));
+}
+
+// A function to test that a value that fits alone but not beside the comment on its line fails
+// with that reason, and leaves the file alone
+static void test_refused_beside_its_comment(void)
+{
+    const char *commented = "[Background]\nImage=x ; a long comment that takes up the room on this line\n";
+    reset(CONFIG, commented);
+    char value[256];
+    memset(value, 'a', 150);
+    value[150] = '\0';
+    ConfigEdit edit = { "Background", "Image", NULL, value, INIDOC_AFTER_LAST_KEY };
+    ConfigSaveResult result;
+    CHECK(!config_save(CONFIG, NULL, NULL, &edit, 1, &result));
+    CHECK(strstr(result.why, "with its comment") != NULL);
+    CHECK(holds(CONFIG, commented));
+    CHECK(!fileio_exists(CONFIG ".bak"));
+}
+
+// A function to test that a backup that cannot be written fails the save before anything else
+// changes: the older backup and the config are both left as they were
+static void test_older_backup_survives_a_failed_backup(void)
+{
+    reset(CONFIG, ORIGINAL);
+    const char *older = "; an older backup\n";
+    CHECK(fileio_write_all(CONFIG ".bak", older, strlen(older)));
+    CHECK(fileio_make_dirs(CONFIG ".bak.tmp"));   // A folder in the way: the backup cannot be written
+    ConfigEdit edit = { "Layout", "Rows", NULL, "2", INIDOC_AFTER_LAST_KEY };
+    ConfigSaveResult result;
+    CHECK(!config_save(CONFIG, NULL, NULL, &edit, 1, &result));
+    CHECK(strstr(result.why, "could not write the backup") != NULL);
+    CHECK(holds(CONFIG ".bak", older));
+    CHECK(holds(CONFIG, ORIGINAL));
+    CHECK(!fileio_exists(CONFIG ".tmp"));
+    remove_folder(CONFIG ".bak.tmp");
 }
 
 // A function to test that a read-only file fails with the reason and is left alone
@@ -252,6 +301,61 @@ static void test_fallback_changes_an_existing_user_config(void)
     set_read_only(system_config, false);
 }
 
+// A function to test that a user config whose path does not fit fails, saying which path
+static void test_user_config_too_long(void)
+{
+    if (!can_test_read_only())
+        return;
+    const char *system_config = DIR "/system/config.ini";
+    CHECK(fileio_make_dirs(DIR "/system"));
+    reset(system_config, ORIGINAL);
+    set_read_only(system_config, true);
+    char prefix[CONFIG_SAVE_PATH_MAX];
+    CHECK(fileio_real_path(DIR "/system", prefix, sizeof(prefix) - 1));
+    size_t used = strlen(prefix);
+    snprintf(prefix + used, sizeof(prefix) - used, "/");
+    char user_config[CONFIG_SAVE_PATH_MAX + 64];
+    memset(user_config, 'u', sizeof(user_config) - 1);
+    user_config[sizeof(user_config) - 1] = '\0';
+    ConfigEdit edit = { "Layout", "Rows", NULL, "2", INIDOC_AFTER_LAST_KEY };
+    ConfigSaveResult result;
+    CHECK(!config_save(system_config, prefix, user_config, &edit, 1, &result));
+    CHECK_STR(result.why, "the user config's path is too long");
+    CHECK(holds(system_config, ORIGINAL));
+    set_read_only(system_config, false);
+}
+
+#ifndef _WIN32
+// A function to test that a user config that exists but cannot be read fails the save, saying
+// why, rather than being replaced without a backup
+static void test_unreadable_user_config_fails(void)
+{
+    if (!can_test_read_only())
+        return;
+    const char *system_config = DIR "/system/config.ini";
+    const char *user_config = DIR "/home/.config/streamflex/config.ini";
+    const char *user_text = "; mine\n[Layout]\nRows=1\n";
+    CHECK(fileio_make_dirs(DIR "/system"));
+    CHECK(fileio_make_dirs(DIR "/home/.config/streamflex"));
+    reset(system_config, ORIGINAL);
+    reset(user_config, user_text);
+    set_read_only(system_config, true);
+    CHECK(chmod(user_config, 0200) == 0);   // Writable, but not readable
+    char prefix[CONFIG_SAVE_PATH_MAX];
+    CHECK(fileio_real_path(DIR "/system", prefix, sizeof(prefix) - 1));
+    size_t used = strlen(prefix);
+    snprintf(prefix + used, sizeof(prefix) - used, "/");
+    ConfigEdit edit = { "Layout", "Rows", NULL, "2", INIDOC_AFTER_LAST_KEY };
+    ConfigSaveResult result;
+    CHECK(!config_save(system_config, prefix, user_config, &edit, 1, &result));
+    CHECK(strstr(result.why, "permission denied") != NULL);
+    CHECK(chmod(user_config, 0644) == 0);
+    CHECK(holds(user_config, user_text));
+    CHECK(!fileio_exists(DIR "/home/.config/streamflex/config.ini.bak"));
+    set_read_only(system_config, false);
+}
+#endif
+
 // A function to test that a config that has vanished fails with a reason
 static void test_missing_file_fails(void)
 {
@@ -291,6 +395,10 @@ static void test_too_long_for_a_backup_fails(void)
     CHECK(fileio_make_dirs(DIR));
     CHECK(fileio_real_path(DIR, folder, sizeof(folder)));
     size_t length = strlen(folder);
+    if (length + strlen(name) + 2 > target) {
+        printf("skipped the long path check: the fixture's own path is %zu bytes already\n", length);
+        return;
+    }
     size_t missing = target - length - strlen(name);
     while (missing > 0) {
         // Each folder is a '/' and up to 100 letters, never leaving a single byte for the last one
@@ -339,13 +447,13 @@ static void test_hidden_files(void)
     reset(CONFIG, ORIGINAL);
     const char *older = "; an older backup\n";
     CHECK(fileio_write_all(CONFIG ".bak", older, strlen(older)));
-    SetFileAttributesA(CONFIG ".bak", FILE_ATTRIBUTE_HIDDEN);
+    CHECK(SetFileAttributesA(CONFIG ".bak", FILE_ATTRIBUTE_HIDDEN));
     CHECK(config_save(CONFIG, NULL, NULL, &edit, 1, &result));
     CHECK(holds(CONFIG ".bak", ORIGINAL));
     CHECK(!fileio_exists(CONFIG ".bak.tmp"));
 
     reset(CONFIG, ORIGINAL);
-    SetFileAttributesA(CONFIG, FILE_ATTRIBUTE_HIDDEN);
+    CHECK(SetFileAttributesA(CONFIG, FILE_ATTRIBUTE_HIDDEN));
     CHECK(config_save(CONFIG, NULL, NULL, &edit, 1, &result));
     DWORD attributes = GetFileAttributesA(CONFIG);
     CHECK(attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_HIDDEN) != 0);
@@ -362,11 +470,15 @@ int main(void)
     test_alias_beside_the_key_is_removed();
     test_keeps_a_hand_edit_made_meanwhile();
     test_refused_value_changes_nothing();
+    test_refused_beside_its_comment();
+    test_older_backup_survives_a_failed_backup();
     test_read_only_fails();
     test_system_copy_falls_back_to_the_user_config();
     test_fallback_changes_an_existing_user_config();
+    test_user_config_too_long();
     test_missing_file_fails();
 #ifndef _WIN32
+    test_unreadable_user_config_fails();
     test_follows_a_symbolic_link();
     test_too_long_for_a_backup_fails();
 #else

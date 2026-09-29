@@ -3,6 +3,7 @@
 #include <string.h>
 #include "config_save.h"
 #include "fileio.h"
+#include "alloc.h"
 
 // A function to tell whether a path lies under a folder
 static bool starts_with(const char *path, const char *prefix)
@@ -38,9 +39,8 @@ static bool apply_edits(IniDoc *doc, const ConfigEdit *edits, int count, ConfigS
         if (edit->value == NULL)
             inidoc_remove(doc, edit->section, key);
         else if (!inidoc_set(doc, edit->section, key, edit->value, edit->placement)) {
-            const char *reason = inidoc_check(key, edit->value);
             snprintf(result->why, sizeof(result->why), "the %s value in [%s] cannot be written: %s",
-                key, edit->section, reason != NULL ? reason : "it would change how other lines read");
+                key, edit->section, inidoc_why(doc));
             return false;
         }
     }
@@ -49,17 +49,23 @@ static bool apply_edits(IniDoc *doc, const ConfigEdit *edits, int count, ConfigS
 
 // A function to turn the save to the user's own config, which the launcher searches before the
 // system copy. One that exists already (an earlier save made it, say) is the file the launcher
-// reads next, so it is read and changed like any other; otherwise its folder is made and the
+// reads next, so it is read and changed like any other, and fails the save when it cannot be read
+// or written, rather than being replaced without a backup; otherwise its folder is made and the
 // system copy in `source` is its starting point. `source` and `result->path` end up naming the
 // file to read and the file to write.
 static bool use_user_config(const char *user_config, char *source, size_t size, ConfigSaveResult *result)
 {
     if (strlen(user_config) >= sizeof(result->path)) {
-        snprintf(result->why, sizeof(result->why), "the path is too long");
+        snprintf(result->why, sizeof(result->why), "the user config's path is too long");
         return false;
     }
     snprintf(result->path, sizeof(result->path), "%s", user_config);
-    if (fileio_exists(user_config)) {
+    bool present = fileio_present(user_config);
+    if (!present && strcmp(fileio_last_error(), "not found") != 0) {
+        snprintf(result->why, sizeof(result->why), "%s", fileio_last_error());
+        return false;
+    }
+    if (present) {
         if (!fileio_real_path(user_config, source, size) || !fileio_is_writable(source)) {
             snprintf(result->why, sizeof(result->why), "%s", fileio_last_error());
             return false;
@@ -133,7 +139,7 @@ bool config_save(const char *loaded, const char *system_prefix, const char *user
         return false;
     }
     IniDoc *doc = inidoc_parse(text, length);
-    free(text);
+    alloc_free(text);
     if (doc == NULL) {
         snprintf(result->why, sizeof(result->why), "out of memory");
         return false;
@@ -149,8 +155,16 @@ bool config_save(const char *loaded, const char *system_prefix, const char *user
         return false;
     }
 
-    // Keep the file as it was, then write the new one beside it and swap it in whole
-    bool ok = !fileio_exists(result->path) || keep_backup(result);
+    // Keep the file as it was, then write the new one beside it and swap it in whole. A file that
+    // cannot be looked up (out of memory, say) is never taken for one that is not there, which
+    // would replace it without a backup.
+    bool present = fileio_present(result->path);
+    bool ok = true;
+    if (!present && strcmp(fileio_last_error(), "not found") != 0) {
+        snprintf(result->why, sizeof(result->why), "could not look for %.300s: %s", result->path, fileio_last_error());
+        ok = false;
+    }
+    ok = ok && (!present || keep_backup(result));
     char temporary[CONFIG_SAVE_PATH_MAX + 4];
     snprintf(temporary, sizeof(temporary), "%s.tmp", result->path);
     if (ok && !fileio_write_all(temporary, output, length)) {
@@ -163,6 +177,8 @@ bool config_save(const char *loaded, const char *system_prefix, const char *user
     }
     if (!ok)
         fileio_remove(temporary);
-    free(output);
+    else
+        snprintf(result->warning, sizeof(result->warning), "%s", fileio_last_warning());
+    alloc_free(output);
     return ok;
 }
