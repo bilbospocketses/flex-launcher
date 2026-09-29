@@ -1,7 +1,6 @@
 # The Background page: a preset colour, an image and a slideshow folder chosen in the folder
 # browser, the incomplete-mode rule, and switching modes while a slideshow is running. Pixel
 # checks read the preview off the screen (look, in run.sh) once the log says what it should show.
-# writable_config, changed_lines and precedes come from 50-settings.sh, which runs first.
 
 # The preview's background is read near its scene's top-left corner, clear of the menu. The
 # checkerboard's squares are 60 px of the scene (1080 / 18): (30,30) and (90,90) are dark, the
@@ -110,6 +109,51 @@ ran_clean f60-running && grep -q 'Settings: nothing changed' "$out/f60-running.l
     && ok=0
 result "settings: switching modes while a slideshow runs frees its fade cleanly (exit $(cat "$out/f60-running.code"))" $ok
 grep -m3 -E 'AddressSanitizer|runtime error' "$out/f60-running.err" | sed 's/^/      /'
+
+# A function to stand in for a slow disk under the named pipe PIPE. Opening a pipe to read it
+# waits until something opens it to write, so a read of it waits until this function answers
+# (and then fails at once: SDL_image cannot use a file it cannot seek in). It answers the
+# slideshow's first image, read on the main thread as the launcher starts, at once. Then it
+# answers nothing until the file RELEASE exists, which holds the slideshow's loader thread in its
+# read of PIPE (and writes HELD once that thread is running), and after that everything at once.
+hold_pipe() {
+    local pipe=$1 held=$2 release=$3
+    until grep -q 'Background set up' "$LOG" 2> /dev/null; do
+        python3 -c 'import os, sys; os.close(os.open(sys.argv[1], os.O_WRONLY | os.O_NONBLOCK))' "$pipe" 2> /dev/null
+        sleep 0.1
+    done
+    until [ -e "$release" ]; do
+        grep -q '^Slideshow' /proc/[0-9]*/task/*/comm 2> /dev/null && : > "$held"
+        sleep 0.2
+    done
+    while :; do exec 3> "$pipe"; exec 3>&-; done
+}
+# Functions for +keys: wait up to 30 s for hold_pipe to hold the loader thread, and release it
+loader_held() { local i; for i in $(seq 150); do [ -e /tmp/loader-held ] && return; sleep 0.2; done; }
+release_loader() { : > /tmp/loader-release; }
+
+# Stepping the mode while the slideshow's loader thread is still reading the next image. In
+# ~/loading, a.png is a picture and b.png a pipe that hold_pipe answers. Whichever the shuffle
+# puts first, only a.png loads as the launcher starts, so the loader's first read is b.png, and
+# it is held until after the step. The step must wait for the thread and drop the image it read
+# (a.png again, once b.png fails), before any fade began.
+rm -rf "$TESTER_HOME/loading" /tmp/loader-held /tmp/loader-release "$LOG"
+mkdir -p "$TESTER_HOME/loading"
+cp "$TESTER_HOME/Pictures/red.png" "$TESTER_HOME/loading/a.png"
+mkfifo "$TESTER_HOME/loading/b.png"
+chown -R tester:tester "$TESTER_HOME/loading"
+hold_pipe "$TESTER_HOME/loading/b.png" /tmp/loader-held /tmp/loader-release &
+holder=$!
+UNTIL='Settings: nothing changed' run_keys f60-loading +loader_held Menu Return Right +release_loader Left BackSpace BackSpace
+kill "$holder"; wait "$holder" 2> /dev/null
+ok=1
+[ -e /tmp/loader-held ] && ran_clean f60-loading \
+    && ! precedes "$out/f60-loading.log" 'Slideshow: fading in the next image' 'Settings: [Background] Mode Slideshow -> Transparent' \
+    && in_range "$out/f60-loading.log" 'Settings: [Background] Mode Slideshow -> Transparent' \
+        'Background set up' 'Slideshow: dropped the fade in progress' \
+    && ok=0
+result "settings: switching modes while the slideshow loads its next image drops that image (exit $(cat "$out/f60-loading.code"))" $ok
+[ -e /tmp/loader-held ] || echo "      the loader thread was never held on b.png"
 
 # The Folder row shows the folder's name and its image count: counted when the page opens (the
 # running slideshow's Pictures) and again when a folder is chosen in the browser

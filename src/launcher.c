@@ -687,12 +687,13 @@ void reload_background()
         Slideshowhread = NULL;
     }
     if (slideshow != NULL) {
+        // The next image may be read but not yet on its way in (only its surface), or fading in
+        if (slideshow->transition_surface != NULL || slideshow->transition_texture != NULL)
+            log_debug("Slideshow: dropped the fade in progress");
         if (slideshow->transition_surface != NULL)
             SDL_FreeSurface(slideshow->transition_surface);
-        if (slideshow->transition_texture != NULL) {
-            log_debug("Slideshow: dropped the fade in progress");
+        if (slideshow->transition_texture != NULL)
             SDL_DestroyTexture(slideshow->transition_texture);
-        }
         quit_slideshow();
     }
     state.slideshow_transition = false;
