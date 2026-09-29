@@ -1,4 +1,3 @@
-#include <io.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -154,7 +153,7 @@ bool start_process(char *cmd, bool application)
         // Set up info struct
         SHELLEXECUTEINFOW info = {
             .cbSize = sizeof(SHELLEXECUTEINFOW),
-            .fMask = SEE_MASK_NOCLOSEPROCESS,
+            .fMask = 0,
             .hwnd = NULL,
             .lpVerb = L"open",
             .lpFile = wide_file,
@@ -165,10 +164,6 @@ bool start_process(char *cmd, bool application)
             .lpClass = NULL,
         };
         successful = ShellExecuteExW(&info);
-
-        // Nothing waits on the process, so the handle SEE_MASK_NOCLOSEPROCESS asked for is closed
-        if (successful && info.hProcess != NULL)
-            CloseHandle(info.hProcess);
     }
     free(wide_file);
     free(wide_params);
