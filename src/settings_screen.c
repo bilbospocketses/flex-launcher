@@ -684,7 +684,7 @@ static void open_browser(SettingSlot *slot)
     size_t length = 0;
     char *text = fileio_read_all(config.config_path, &length);
     browser_doc = text != NULL ? inidoc_parse(text, length) : NULL;
-    free(text);
+    alloc_free(text);
     BrowserMode mode = slot->def->id == SET_ID_BACKGROUND_IMAGE ? BROWSER_IMAGE : BROWSER_FOLDER;
     const char *why = "out of memory";
     test_fail("browser", true);

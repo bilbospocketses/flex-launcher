@@ -12,6 +12,7 @@
 #include "../util.h"
 #include "../debug.h"
 #include "../fileio.h"
+#include "../alloc.h"
 #include "../browser.h"
 
 static void parse_command(char *cmd, char *file, size_t file_size, char **params);
@@ -165,8 +166,8 @@ bool start_process(char *cmd, bool application)
         };
         successful = ShellExecuteExW(&info);
     }
-    free(wide_file);
-    free(wide_params);
+    alloc_free(wide_file);
+    alloc_free(wide_params);
 
     if (!application)
         ret = true;
