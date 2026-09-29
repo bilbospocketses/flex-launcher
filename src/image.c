@@ -12,10 +12,19 @@
 #include "util.h"
 #include "debug.h"
 #include <ini.h>
+// Vendored code is not held to our warning level (see src/external/README.md)
+#ifdef _MSC_VER
+#pragma warning(push, 0)
+// Level 0 does not reach the back end's C4702, which needs its own disable
+#pragma warning(disable: 4702)
+#endif
 #define NANOSVG_IMPLEMENTATION
 #include <nanosvg.h>
 #define NANOSVGRAST_IMPLEMENTATION
 #include <nanosvgrast.h>
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 extern Config config;
 extern State state;

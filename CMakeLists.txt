@@ -19,6 +19,12 @@ if (EXTRA_WARNINGS)
   endif ()
 endif ()
 
+# MSVC calls the POSIX names (strdup) deprecated in favour of its own (_strdup); the code uses the
+# POSIX names on every platform. This reaches the launcher, platform and test targets, not vcpkg's builds
+if (MSVC)
+  add_compile_definitions(_CRT_NONSTDC_NO_DEPRECATE)
+endif ()
+
 # Set Visual Studio solution startup project
 if (WIN32)
   set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${EXECUTABLE_TITLE})

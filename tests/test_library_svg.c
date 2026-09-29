@@ -3,8 +3,17 @@
 #include <string.h>
 #include <stdbool.h>
 #include <math.h>
+// Vendored code is not held to our warning level (see src/external/README.md)
+#ifdef _MSC_VER
+#pragma warning(push, 0)
+// Level 0 does not reach the back end's C4702, which needs its own disable
+#pragma warning(disable: 4702)
+#endif
 #define NANOSVG_IMPLEMENTATION
 #include "nanosvg.h"
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 #include <ini.h>
 #include "check.h"
 
