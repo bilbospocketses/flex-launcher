@@ -230,6 +230,11 @@ static SDL_Surface *keep_surface_off_chroma_key(SDL_Surface *surface, const char
         keep_off_chroma_key(surface->pixels, surface->w, surface->h, surface->pitch, what);
         SDL_UnlockSurface(surface);
     }
+    else {
+        // The pixels cannot be read, but the texture can still be made from the surface: the icon
+        // is drawn as it is, and only a Transparent window may show through its near-key pixels
+        log_debug("%s: could not be kept off the chroma key, so it is drawn as it is: %s", what, SDL_GetError());
+    }
     return surface;
 }
 
