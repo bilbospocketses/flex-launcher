@@ -87,11 +87,6 @@ if (UNIX)
   set(CMAKE_SHARED_LINKER_FLAGS "--as-needed")
 endif ()
 
-# Build configuration - Windows
-if (WIN32)
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /FORCE:MULTIPLE") # Workaround for Nanosvg and SDL_image header conflicts
- endif ()
- 
  # Configure default applications - Linux
  if (UNIX)
   set(DESKTOP_PATH "/usr/share/applications")
@@ -211,15 +206,18 @@ if (WIN32)
   configure_file(${PROJECT_SOURCE_DIR}/LICENSE ${PROJECT_BINARY_DIR}/LICENSE.txt COPYONLY)
   install(FILES ${PROJECT_BINARY_DIR}/LICENSE.txt DESTINATION "${INSTALL_DIR_BIN}")
   
-  # Copy the VC Runtime DLL in case user doesn't have it installed
-  set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
-  include(InstallRequiredSystemLibraries)
-  foreach(lib ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS})
-    string(FIND ${lib} "vcruntime140.dll" vcruntime)
-    if (NOT vcruntime EQUAL -1)
-      install(FILES ${lib} DESTINATION "./")
-    endif ()
-  endforeach()
+  # Copy the VC Runtime DLL in case user doesn't have it installed. An exe built with the static
+  # C runtime (/MT, a -static triplet) imports no VC Runtime DLL, so only a /MD build ships one
+  if (NOT CMAKE_MSVC_RUNTIME_LIBRARY OR CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "DLL")
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+    include(InstallRequiredSystemLibraries)
+    foreach(lib ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS})
+      string(FIND ${lib} "vcruntime140.dll" vcruntime)
+      if (NOT vcruntime EQUAL -1)
+        install(FILES ${lib} DESTINATION "./")
+      endif ()
+    endforeach()
+  endif ()
   
   # Set package
   if (NOT PACKAGE)
