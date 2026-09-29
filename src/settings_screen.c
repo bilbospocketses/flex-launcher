@@ -36,6 +36,7 @@ extern LayoutGeometry layout;
 #define MIN_COLUMN_RATIO 0.20F     // Of the screen width
 #define MAX_COLUMN_RATIO 0.32F
 #define TEXT_CACHE_SIZE 96
+#define NOTE_TEXT_MAX 1600         // Longest note a row shows: a failed save's path and reason
 #define ALPHA_VALUE 180            // A row's value
 #define ALPHA_DIM 110              // Greyed rows, the page path and the key hint
 #define ALPHA_FILL 40              // The highlighted row
@@ -76,6 +77,13 @@ static int first_row = 0;             // The first row shown when a list is long
 static SDL_Rect preview_rect;
 static char counted_folder[SETTING_TEXT_MAX]; // The folder the Folder row last counted; "" counts again
 static int counted_images = -1;               // Its images; -1 when it could not be listed
+static char fitted_source[NOTE_TEXT_MAX];     // The note fit_note() fitted last...
+static int fitted_width = -1;                 // ...to this width...
+static int fitted_height = -1;                // ...and this height...
+static char fitted_note[NOTE_TEXT_MAX];       // ...and what it came to
+static int shown_first = -1;                  // The rows last on show, for the log
+static int shown_last = -1;
+static int shown_count = -1;
 
 static Browser *browser = NULL;          // The folder browser, while it is open
 static SettingSlot *browser_slot = NULL; // The Image or Folder setting it chooses for
@@ -983,8 +991,61 @@ void settings_handle_command(const char *command)
         counted_folder[0] = '\0';   // The Background page opened: count the Folder's images again
 }
 
-// A function to draw one row; returns the height it took
-static int draw_row(const SettingsRow *row, bool highlighted, int x, int y, int width)
+// A function to tell how tall a paragraph wraps to a width
+static int wrapped_height(TTF_Font *font, const char *text, int width)
+{
+    SDL_Surface *surface = TTF_RenderUTF8_Blended_Wrapped(font, text, WHITE, (Uint32) width);
+    if (surface == NULL)
+        return 0;
+    int h = surface->h;
+    SDL_FreeSurface(surface);
+    return h;
+}
+
+// A function to keep `keep` bytes of a note, half from its start and half from its end, with "..."
+// between them, never splitting a UTF-8 character
+static void cut_middle(const char *note, size_t keep, char *out, size_t size)
+{
+    size_t length = strlen(note);
+    size_t head = keep / 2;
+    size_t tail = length - (keep - head);
+    while (head > 0 && ((unsigned char) note[head] & 0xC0) == 0x80)
+        head--;
+    while (tail < length && ((unsigned char) note[tail] & 0xC0) == 0x80)
+        tail++;
+    snprintf(out, size, "%.*s...%s", (int) head, note, note + tail);
+}
+
+// A function to fit a note into a height, cutting it in the middle, where a long path sits, so its
+// start (what failed) and its end (why) stay. The last note fitted is remembered, so a note is
+// measured once, not every frame.
+static const char *fit_note(const char *note, int width, int max_height)
+{
+    if (strcmp(note, fitted_source) == 0 && width == fitted_width && max_height == fitted_height)
+        return fitted_note;
+    copy_string(fitted_source, note, sizeof(fitted_source));
+    fitted_width = width;
+    fitted_height = max_height;
+    copy_string(fitted_note, note, sizeof(fitted_note));
+    if (wrapped_height(font_small, note, width) <= max_height)
+        return fitted_note;
+    size_t fits = 0;                  // Bytes kept that are known to fit...
+    size_t too_many = strlen(note);   // ...and known not to
+    while (too_many - fits > 1) {
+        size_t keep = (fits + too_many) / 2;
+        cut_middle(note, keep, fitted_note, sizeof(fitted_note));
+        if (wrapped_height(font_small, fitted_note, width) <= max_height)
+            fits = keep;
+        else
+            too_many = keep;
+    }
+    cut_middle(note, fits, fitted_note, sizeof(fitted_note));
+    log_debug("Settings: the note was cut in the middle to fit the column");
+    return fitted_note;
+}
+
+// A function to draw one row; returns the height it took. A note row takes at most note_room.
+static int draw_row(const SettingsRow *row, bool highlighted, int x, int y, int width, int note_room)
 {
     int pad = margin / 2;
     int text_y = y + (row_height - TTF_FontHeight(font_row)) / 2;
@@ -994,7 +1055,8 @@ static int draw_row(const SettingsRow *row, bool highlighted, int x, int y, int 
         return row_height;
     }
     if (row->kind == SETTINGS_ROW_NOTE) {
-        int h = draw_wrapped(font_small, row->note, x + pad, y, width - 2 * pad, ALPHA_VALUE);
+        const char *note = fit_note(row->note, width - 2 * pad, note_room);
+        int h = draw_wrapped(font_small, note, x + pad, y, width - 2 * pad, ALPHA_VALUE);
         return max_int(row_height, h + row_height / 2);
     }
     if (highlighted) {
@@ -1029,11 +1091,26 @@ static void draw_model_rows(int x, int top, int bottom)
     if (cursor >= first_row + visible)
         first_row = cursor - visible + 1;
     first_row = max_int(0, min_int(first_row, count - visible));
+
+    // A note gets the room the other rows leave it, so the rows under it (Try again and Leave
+    // without saving, under a failed save's reason) are always on show
+    int notes = 0;
+    for (int i = 0; i < count; i++)
+        notes += rows[i].kind == SETTINGS_ROW_NOTE ? 1 : 0;
+    int note_room = notes > 0 ? ((bottom - top) - (count - notes) * row_height) / notes - row_height / 2 : 0;
     int y = top;
+    int last = first_row - 1;
     for (int i = first_row; i < count && y + row_height <= bottom; i++) {
         if (rows[i].slot != NULL && rows[i].slot->def->id == SET_ID_SLIDESHOW_DIRECTORY)
             describe_folder_row(&rows[i]);
-        y += draw_row(&rows[i], i == cursor, x, y, column_width);
+        y += draw_row(&rows[i], i == cursor, x, y, column_width, note_room);
+        last = i;
+    }
+    if (first_row != shown_first || last != shown_last || count != shown_count) {
+        shown_first = first_row;
+        shown_last = last;
+        shown_count = count;
+        log_debug("Settings: rows %i to %i of %i on show", first_row, last, count);
     }
 }
 
@@ -1059,7 +1136,7 @@ static void draw_browser_rows(int x, int top, int bottom)
         copy_string(shown.label, row->name, sizeof(shown.label));
         if (row->kind == BROWSER_ROW_USE_FOLDER)
             snprintf(shown.value, sizeof(shown.value), row->image_count == 1 ? "%i image" : "%i images", row->image_count);
-        y += draw_row(&shown, i == cursor, x, y, column_width);
+        y += draw_row(&shown, i == cursor, x, y, column_width, 0);
     }
 }
 
@@ -1173,6 +1250,10 @@ void settings_open(void)
     go_home = false;
     first_row = 0;
     counted_folder[0] = '\0';
+    fitted_width = -1;
+    shown_first = -1;
+    shown_last = -1;
+    shown_count = -1;
     measure_layout();
     if (SDL_RenderTargetSupported(renderer)) {
         preview = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, geo.screen_width, geo.screen_height);

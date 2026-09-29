@@ -67,7 +67,15 @@ void output_log(LogLevel log_level, const char *format, ...)
     static char buffer[MAX_LOG_LINE_BYTES];
     va_list args;
     va_start(args, format);
-    size_t length = (size_t) vsnprintf(buffer, MAX_LOG_LINE_BYTES - 1, format, args);
+    int wanted = vsnprintf(buffer, sizeof(buffer), format, args);
+    size_t length = wanted > 0 ? (size_t) wanted : 0;
+
+    // vsnprintf returns the length the whole line needs: a longer line is cut to the buffer, and
+    // still ends its line
+    if (length >= sizeof(buffer)) {
+        length = sizeof(buffer) - 1;
+        memcpy(buffer + length - strlen(endline), endline, strlen(endline));
+    }
     fwrite(buffer, 1, length, log_file);
     if (config.debug)
         fflush(log_file);

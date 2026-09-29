@@ -55,6 +55,23 @@ cmp -s "$FX/f50-grid.ini" "$cfg" && [ ! -e "$cfg.bak" ] && [ ! -e "$cfg.tmp" ] &
     && grep -q 'Settings: leaving without saving' "$out/f50-readonly.log" && ran_clean f50-readonly && ok=0
 result "settings: a read-only config shows why, and Leave without saving closes (exit $(cat "$out/f50-readonly.code"))" $ok
 
+# A read-only config so deep that its failure message wraps past the column (W is the widest
+# letter): the message is cut in the middle to fit, so all three rows stay on show, and Leave
+# without saving still closes. Its log lines, longer than the log's line buffer, are cut there.
+long=$TESTER_HOME/cfg/long
+for i in 1 2 3 4; do long=$long/$(printf 'W%.0s' $(seq 230)); done
+mkdir -p "$long"
+cp "$FX/f50-grid.ini" "$long/f50-grid.ini"
+chown -R tester:tester "$TESTER_HOME/cfg"
+chmod 444 "$long/f50-grid.ini"
+CFG=$long/f50-grid.ini run_keys f50-longpath $ALL_MENUS_COLUMNS_UP Down Return
+ok=1
+cmp -s "$FX/f50-grid.ini" "$long/f50-grid.ini" && grep -q "Couldn't save to $TESTER_HOME/cfg/long/WWW" "$out/f50-longpath.log" \
+    && in_range "$out/f50-longpath.log" "Couldn't save to" 'Settings: leaving without saving' 'Settings: rows 0 to 2 of 3 on show' \
+    && grep -q 'Settings: leaving without saving' "$out/f50-longpath.log" && ran_clean f50-longpath && ok=0
+result "settings: a failed save's long message is cut to fit, and its rows stay on show (exit $(cat "$out/f50-longpath.code"))" $ok
+grep -E 'Settings: (rows|the note)' "$out/f50-longpath.log" | sed 's/^/      /'
+
 # The packaged system config is read-only: the first save becomes the user's own copy
 rm -rf /opt/sf "$TESTER_HOME/.config/streamflex" /usr/local/share/streamflex
 mkdir -p /opt/sf /usr/local/share/streamflex
