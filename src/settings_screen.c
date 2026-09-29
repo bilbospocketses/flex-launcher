@@ -376,24 +376,33 @@ static void log_change(const SettingSlot *slot, const SettingValue *before)
         old_text[0] != '\0' ? old_text : "(none)", new_text[0] != '\0' ? new_text : "(none)");
 }
 
-// A function to open the screen's own fonts: the bundled default, sized from the screen height
+// A function to open the screen's own fonts: the bundled default, sized from the screen height.
+// An install without it still opens settings, in a font the launcher has already opened: the
+// title font, else the clock's.
 static bool open_fonts(void)
 {
     char *path = find_default_font(FILENAME_DEFAULT_FONT);
     if (path == NULL) {
-        log_error("Settings: could not find the font %s", FILENAME_DEFAULT_FONT);
-        return false;
+        const char *other = config.title_font_path != NULL ? config.title_font_path : config.clock_font_path;
+        if (other == NULL) {
+            log_error("Settings cannot open: the font %s is missing, and there is no other font", FILENAME_DEFAULT_FONT);
+            return false;
+        }
+        log_error("Settings: the font %s is missing, so they use %s", FILENAME_DEFAULT_FONT, other);
+        path = strdup(other);
+        if (path == NULL) {
+            log_error("Settings cannot open: out of memory");
+            return false;
+        }
     }
     float height = (float) geo.screen_height;
     font_header = TTF_OpenFont(path, max_int(8, (int) (HEADER_FONT_RATIO * height)));
     font_row = TTF_OpenFont(path, max_int(8, (int) (ROW_FONT_RATIO * height)));
     font_small = TTF_OpenFont(path, max_int(8, (int) (SMALL_FONT_RATIO * height)));
+    if (font_header == NULL || font_row == NULL || font_small == NULL)
+        log_error("Settings cannot open: could not open the font %s\n%s", path, TTF_GetError());
     free(path);
-    if (font_header == NULL || font_row == NULL || font_small == NULL) {
-        log_error("Settings: could not open the font %s\n%s", FILENAME_DEFAULT_FONT, TTF_GetError());
-        return false;
-    }
-    return true;
+    return font_header != NULL && font_row != NULL && font_small != NULL;
 }
 
 // A function to size the column and the preview for this screen. The column is as wide as its

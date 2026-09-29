@@ -149,3 +149,16 @@ grep -A12 'Gamepad ===' "$out/f50-pad.log" | grep -qE 'ButtonStart\s+:settings$'
     && ! grep -A12 'Gamepad ===' "$out/f50-pad-taken.log" | grep -q ':settings' \
     && ran_clean f50-pad && ran_clean f50-pad-taken && ok=0
 result "settings: Start opens them by default, unless the config maps Start itself (exit $(cat "$out/f50-pad.code") and $(cat "$out/f50-pad-taken.code"))" $ok
+
+# An install whose bundled font is missing still opens settings, in the title font its config
+# names (the launcher itself starts on that font), and the log says so
+rm -rf /opt/sf-nofont
+mkdir -p /opt/sf-nofont
+cp /work/build/streamflex /opt/sf-nofont/ && cp -r /work/build/assets /opt/sf-nofont/
+rm -f /opt/sf-nofont/assets/fonts/OpenSans-Regular.ttf
+exe=/opt/sf-nofont/streamflex CFG=$FX/f50-nofont.ini run_keys f50-nofont Menu
+ok=1
+grep -q 'Settings: the font OpenSans-Regular.ttf is missing, so they use /opt/sf-nofont/assets/fonts/DejaVuSans.ttf' "$out/f50-nofont.log" \
+    && grep -q "Settings opened over menu 'Main'" "$out/f50-nofont.log" && ran_clean f50-nofont && ok=0
+result "settings: an install without the bundled font opens them in the title font (exit $(cat "$out/f50-nofont.code"))" $ok
+grep 'Settings' "$out/f50-nofont.log" | sed 's/^/      /'
