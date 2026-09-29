@@ -315,6 +315,21 @@ look() {
     echo "$tag $seen" >> "$out/$name.seen"
 }
 
+# A function to list each run in the output folder whose LeakSanitizer found a leak. Each one
+# counts as a failure, so the list cannot disagree with the verdict, even for a run whose check
+# never looked at its sanitizers. nullglob is on only while the .err files are collected.
+list_leaks() {
+    local err errs restore
+    restore=$(shopt -p nullglob); shopt -s nullglob
+    errs=("$out"/*.err)
+    eval "$restore"
+    for err in "${errs[@]}"; do
+        grep -q 'ERROR: LeakSanitizer' "$err" || continue
+        echo "LEAK  $(basename "$err" .err): $(grep -m1 '^SUMMARY' "$err")"
+        failures=$((failures + 1))
+    done
+}
+
 if [ "$fault" = scrollfail ]; then
     run_quick f11-scroll
     ok=1
@@ -323,9 +338,11 @@ if [ "$fault" = scrollfail ]; then
     grep -m3 -E 'AddressSanitizer|double-free|runtime error' "$out/f11-scroll.err" | sed 's/^/      /'
 else
     # A check file that does not parse would stop part-way through when sourced, and the checks
-    # after the error would be missing without a word, so each is parsed first
-    shopt -s nullglob
+    # after the error would be missing without a word, so each is parsed first. nullglob is on
+    # only while they are collected: the checks run with bash's own glob rules.
+    restore=$(shopt -p nullglob); shopt -s nullglob
     checks=("$HERE"/checks/*.sh)
+    eval "$restore"
     [ "${#checks[@]}" -gt 0 ] || { echo "NO CHECKS FOUND in $HERE/checks"; exit 2; }
     for check in "${checks[@]}"; do
         if bash -n "$check" 2> "$out/parse.err"; then
@@ -335,12 +352,7 @@ else
             sed 's/^/      /' "$out/parse.err"
         fi
     done
-    if [ "$fault" = leaks ]; then
-        for err in "$out"/*.err; do
-            grep -q 'ERROR: LeakSanitizer' "$err" \
-                && echo "LEAK  $(basename "$err" .err): $(grep -m1 '^SUMMARY' "$err")"
-        done
-    fi
+    [ "$fault" != leaks ] || list_leaks
 fi
 echo "$failures failed"
 [ "$failures" = 0 ]

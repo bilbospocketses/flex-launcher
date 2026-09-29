@@ -2,7 +2,8 @@
 # starts slowly still gets its keys, one that ignores TERM is killed and fails its check, one
 # that exits without logging does not hold the run up, a zombie is not running whatever its
 # name, a quick run that has to be stopped fails, a log range must be closed to count, the log
-# helpers take their strings as written, and a pixel probe must have points to read
+# helpers take their strings as written, a pixel probe must have points to read, the checks run
+# with nullglob off, and a listed leak is a failure
 
 # Stand-in launchers, run as the test user as the real one is
 mkdir -p /tmp/harness
@@ -113,3 +114,30 @@ ok=1
 grep -qx 'nothing no' "$out/h-look.seen" && grep -qx 'unplaced no' "$out/h-look.seen" && ok=0
 result "harness: a pixel probe with no points, or no preview to place them in, says no" $ok
 sed 's/^/      /' "$out/h-look.seen"
+
+# The check files run with bash's own glob rules. run.sh turns nullglob on only to find them
+# and the .err files; left on, a pattern matching nothing would vanish, and `grep x "$d"/*.log`
+# over an empty folder would read its input instead of failing.
+ok=1
+shopt -q nullglob || ok=0
+result "harness: the checks run with nullglob off" $ok
+
+# Each leak the leak pass lists counts as a failure, so the listing and the verdict cannot
+# disagree, even for a run whose check never looked at its sanitizers. A folder with no .err
+# files lists nothing, and says nothing about a missing *.err.
+mkdir -p /tmp/harness/leaky /tmp/harness/no-errs
+printf '==1==ERROR: LeakSanitizer: detected memory leaks\nSUMMARY: AddressSanitizer: 8 byte(s) leaked in 1 allocation(s).\n' \
+    > /tmp/harness/leaky/h-leak.err
+printf 'nothing leaked\n' > /tmp/harness/leaky/h-clean.err
+real_out=$out saved=$failures
+failures=0
+out=/tmp/harness/leaky list_leaks > "$real_out/h-leaks.txt" 2>&1
+out=/tmp/harness/no-errs list_leaks > "$real_out/h-no-errs.txt" 2>&1
+counted=$failures
+failures=$saved
+ok=1
+[ "$counted" = 1 ] && [ ! -s "$out/h-no-errs.txt" ] \
+    && [ "$(cat "$out/h-leaks.txt")" = "LEAK  h-leak: SUMMARY: AddressSanitizer: 8 byte(s) leaked in 1 allocation(s)." ] \
+    && ok=0
+result "harness: a listed leak counts as a failure (counted $counted), and no .err files list nothing" $ok
+sed 's/^/      /' "$out/h-leaks.txt" "$out/h-no-errs.txt"
