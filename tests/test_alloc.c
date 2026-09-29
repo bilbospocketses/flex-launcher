@@ -234,6 +234,13 @@ static void prove_config_save(void)
     report("saving");
 }
 
+// A function to leave a reason behind that no proof expects, so each proof's "out of memory" must
+// come from the call under test
+static void set_other_reason(void)
+{
+    CHECK(fileio_read_all(DIR "/no-such-file", NULL) == NULL);
+}
+
 // A function to prove that listing a folder fails cleanly: -1 with "out of memory" and no list,
 // never a shorter list. The folder holds more names than the list's first 32 places, so the list
 // grows during it.
@@ -247,7 +254,7 @@ static void prove_list(void)
     }
     for (int n = 1;; n++) {
         FileioEntry *entries = NULL;
-        fileio_set_error("");
+        set_other_reason();
         arm(n);
         int count = fileio_list(DIR "/many", &entries);
         disarm();
@@ -264,6 +271,148 @@ static void prove_list(void)
     }
     report("listing a folder");
 }
+
+// A function to prove that reading a file that has to grow its buffer (over 4096 bytes) fails
+// cleanly: NULL with "out of memory", or the whole file
+static void prove_read_all(void)
+{
+    static char big[10000];
+    memset(big, 'x', sizeof(big) - 1);
+    CHECK(fileio_write_all(DIR "/big.txt", big, sizeof(big) - 1));
+    for (int n = 1;; n++) {
+        size_t length = 0;
+        set_other_reason();
+        arm(n);
+        char *text = fileio_read_all(DIR "/big.txt", &length);
+        disarm();
+        if (failed)
+            CHECK_RUN(text == NULL && strcmp(fileio_last_error(), "out of memory") == 0, n);
+        else
+            CHECK_RUN(text != NULL && length == sizeof(big) - 1 && memcmp(text, big, length) == 0, n);
+        alloc_free(text);
+        runs = n;
+        if (!no_leak(__LINE__, n) || !failed)
+            break;
+    }
+    report("reading a file that outgrows its first buffer");
+}
+
+// A function to prove that making folders fails cleanly: false with "out of memory", or made
+static void prove_make_dirs(void)
+{
+    char path[64];
+    for (int n = 1;; n++) {
+        snprintf(path, sizeof(path), DIR "/made/%d/a/b", n);   // A new path each run, so there is always one to make
+        set_other_reason();
+        arm(n);
+        bool made = fileio_make_dirs(path);
+        disarm();
+        if (failed)
+            CHECK_RUN(!made && strcmp(fileio_last_error(), "out of memory") == 0, n);
+        else
+            CHECK_RUN(made && fileio_is_dir(path), n);
+        runs = n;
+        if (!no_leak(__LINE__, n) || !failed)
+            break;
+    }
+    report("making folders");
+}
+
+// A function to tell whether two lists of places are the same, place by place
+static bool same_places(const FileioPlace *a, int a_count, const FileioPlace *b, int b_count)
+{
+    if (a_count != b_count)
+        return false;
+    for (int i = 0; i < a_count; i++) {
+        if (strcmp(a[i].label, b[i].label) != 0 || strcmp(a[i].path, b[i].path) != 0 || a[i].network != b[i].network)
+            return false;
+    }
+    return true;
+}
+
+// A function to prove that listing the places fails cleanly: -1 with "out of memory" and no list,
+// never a list with a place missing. `under`, when set, lists that folder the way /media is listed.
+static void prove_places(const char *what, const char *under)
+{
+    FileioPlace *expected = NULL;
+#ifndef _WIN32
+    int expected_count = under != NULL ? fileio_places_under(under, &expected) : fileio_places(&expected);
+#else
+    (void) under;
+    int expected_count = fileio_places(&expected);
+#endif
+    CHECK(expected_count >= 1);
+    for (int n = 1;; n++) {
+        FileioPlace *places = NULL;
+        set_other_reason();
+        arm(n);
+#ifndef _WIN32
+        int count = under != NULL ? fileio_places_under(under, &places) : fileio_places(&places);
+#else
+        int count = fileio_places(&places);
+#endif
+        disarm();
+        if (failed) {
+            CHECK_RUN(count == -1 && places == NULL, n);
+            CHECK_RUN(strcmp(fileio_last_error(), "out of memory") == 0, n);
+        }
+        else
+            CHECK_RUN(same_places(places, count, expected, expected_count), n);
+        fileio_free_places(places, count > 0 ? count : 0);
+        runs = n;
+        if (!failed)
+            break;
+    }
+    fileio_free_places(expected, expected_count);
+    no_leak(__LINE__, runs);
+    report(what);
+}
+
+#ifndef _WIN32
+// A function to set an environment variable, or clear it when `value` is NULL
+static void set_variable(const char *name, const char *value)
+{
+    if (value != NULL)
+        setenv(name, value, 1);
+    else
+        unsetenv(name);
+}
+
+// A function to prove the Linux places with a Home that has a user-dirs.dirs (so Pictures is read
+// from it) and a /media-like folder holding the user's own folder of drives
+static void prove_linux_places(void)
+{
+    const char *variables[] = { "HOME", "XDG_PICTURES_DIR", "XDG_CONFIG_HOME", "USER" };
+    char *saved[4];
+    for (int i = 0; i < 4; i++) {
+        const char *value = getenv(variables[i]);
+        saved[i] = value != NULL ? strdup(value) : NULL;
+    }
+    CHECK(fileio_make_dirs(DIR "/home/.config"));
+    CHECK(fileio_make_dirs(DIR "/home/Bilder"));
+    const char *dirs = "XDG_PICTURES_DIR=\"$HOME/Bilder\"\n";
+    CHECK(fileio_write_all(DIR "/home/.config/user-dirs.dirs", dirs, strlen(dirs)));
+    CHECK(fileio_make_dirs(DIR "/media/streamflex-tester/USB STICK"));
+    CHECK(fileio_make_dirs(DIR "/media/someone-else"));
+    char home[1024];
+    char media[1024];
+    CHECK(fileio_real_path(DIR "/home", home, sizeof(home)));
+    CHECK(fileio_real_path(DIR "/media", media, sizeof(media)));
+    set_variable("HOME", home);
+    set_variable("XDG_PICTURES_DIR", NULL);
+    set_variable("XDG_CONFIG_HOME", NULL);
+    set_variable("USER", "streamflex-tester");
+    prove_places("listing the places, Pictures from user-dirs.dirs", NULL);
+    prove_places("listing a /media folder with the user's drives in it", media);
+    for (int i = 0; i < 4; i++) {
+        set_variable(variables[i], saved[i]);
+        free(saved[i]);
+    }
+}
+#endif
+
+// Whether the pretend list function was the allocation that failed, in the run under way
+static bool list_failed = false;
 
 // A pretend file system for the browser, allocating as fileio_list() does
 static int fake_list(const char *folder, FileioEntry **entries, void *context)
@@ -291,7 +440,7 @@ static int fake_list(const char *folder, FileioEntry **entries, void *context)
         return -1;
     *entries = alloc_calloc((size_t) count, sizeof(FileioEntry));
     if (*entries == NULL) {
-        fileio_set_error("out of memory");
+        list_failed = true;
         return -1;
     }
     for (int i = 0; i < count; i++) {
@@ -301,7 +450,7 @@ static int fake_list(const char *folder, FileioEntry **entries, void *context)
         if (name == NULL) {
             fileio_free_list(*entries, i);
             *entries = NULL;
-            fileio_set_error("out of memory");
+            list_failed = true;
             return -1;
         }
         if (is_dir)
@@ -327,16 +476,22 @@ static const BrowserPlace PLACES[] = {
     { "Home", "/home/me", false }
 };
 
-// A function to prove that the browser fails cleanly: opening gives a browser or NULL, and a
-// command that fails leaves what is on show as it was
+// A function to prove that the browser fails cleanly: opening gives NULL when its own memory runs
+// out (a folder whose list failed is one that cannot be listed, so the next place opens), and a
+// command that fails leaves what is on show as it was and says why
 static void prove_browser(void)
 {
     for (int n = 1;; n++) {
+        list_failed = false;
         arm(n);
         Browser *browser = browser_open(BROWSER_IMAGE, "/home/me/Pictures/zebra.jpg", PLACES, 2, fake_list, NULL, NULL);
         disarm();
         if (!failed)
             CHECK_RUN(browser != NULL && browser_row_count(browser) == 3 && browser_cursor(browser) == 2, n);
+        else if (!list_failed)
+            CHECK_RUN(browser == NULL, n);
+        else
+            CHECK_RUN(browser != NULL && strcmp(browser_folder(browser), "/home/me/Pictures") == 0, n);
         browser_free(browser);
         runs = n;
         if (!no_leak(__LINE__, n) || !failed)
@@ -353,20 +508,21 @@ static void prove_browser(void)
             char before[2048];
             char now[2048];
             describe_browser(browser, before, sizeof(before));
-            fileio_set_error("");
+            list_failed = false;
             arm(n);
             BrowserResult result = browser_command(browser, commands[c], 10);
             disarm();
             describe_browser(browser, now, sizeof(now));
             // Back from a folder whose parent cannot be listed (here, because the list ran out of
             // memory) goes to the places, as it does for any parent that cannot be listed
-            bool places = commands[c] == BROWSER_BACK && failed && browser_folder(browser) == NULL;
+            bool places = commands[c] == BROWSER_BACK && list_failed && browser_folder(browser) == NULL;
             if (result == BROWSER_MOVED)
                 CHECK_RUN(places || (browser_folder(browser) != NULL && strcmp(browser_folder(browser), after[c]) == 0), n);
             else {
                 CHECK_RUN(failed && result == BROWSER_NONE, n);
                 CHECK_RUN(strcmp(before, now) == 0, n);
-                CHECK_RUN(strcmp(fileio_last_error(), "out of memory") == 0, n);
+                const char *why = browser_why(browser);
+                CHECK_RUN(list_failed ? why == NULL : (why != NULL && strcmp(why, "out of memory") == 0), n);
             }
             browser_free(browser);
             runs = n;
@@ -375,6 +531,37 @@ static void prove_browser(void)
         }
         report(commands[c] == BROWSER_OK ? "going into a folder" : "going back out of it");
     }
+
+    // A folder's first image, for its preview: the right one, or none
+    Browser *browser = browser_open(BROWSER_FOLDER, "/home/me", PLACES, 2, fake_list, NULL, NULL);
+    for (int n = 1;; n++) {
+        char out[BROWSER_PATH_MAX] = "";
+        arm(n);
+        bool found = browser_first_image(browser, "/home/me/Pictures", out, sizeof(out));
+        disarm();
+        if (failed)
+            CHECK_RUN(!found, n);
+        else
+            CHECK_RUN(found && strcmp(out, "/home/me/Pictures/beach.png") == 0, n);
+        runs = n;
+        if (!failed)
+            break;
+    }
+    browser_free(browser);
+    no_leak(__LINE__, runs);
+    report("finding a folder's first image");
+}
+
+// A function to prove that removing a key allocates nothing, so it cannot fail for want of memory
+static void prove_remove(void)
+{
+    IniDoc *doc = inidoc_parse(CONFIG_TEXT, strlen(CONFIG_TEXT));
+    arm(1);
+    bool removed = inidoc_remove(doc, "Layout", "Rows");
+    disarm();
+    CHECK(removed && !failed && calls == 0);
+    inidoc_free(doc);
+    no_leak(__LINE__, 1);
 }
 
 // A function to prove that the settings model fails cleanly when it cannot be made
@@ -411,7 +598,15 @@ int main(void)
     prove_serialize();
     prove_config_save();
     prove_list();
+    prove_read_all();
+    prove_make_dirs();
+#ifdef _WIN32
+    prove_places("listing the places", NULL);
+#else
+    prove_linux_places();
+#endif
     prove_browser();
+    prove_remove();
     prove_settings();
     alloc_set_hooks(NULL);
     return check_report();

@@ -7,6 +7,7 @@
 static const char *const IMAGE_EXTENSIONS[] = { ".jpg", ".jpeg", ".png", ".webp" };
 static const char *const TOO_FEW = "a slideshow needs 2 or more images";
 static const char *const TOO_LONG = "the path is too long for the settings to hold (1023 bytes at most)";
+static const char *const OUT_OF_MEMORY = "out of memory";
 
 typedef enum {
     LOAD_DONE,
@@ -26,6 +27,7 @@ struct Browser {
     int row_count;
     int cursor;
     char chosen[BROWSER_PATH_MAX];
+    const char *why;        // Why the last command did nothing because of the browser itself; NULL otherwise
 };
 
 // A function to tell a path separator, in either style
@@ -199,7 +201,7 @@ static bool load_places(Browser *browser, const char *selected)
         ok = add_row(rows, &count, BROWSER_ROW_PLACE, browser->places[i].label, alloc_strdup(browser->places[i].path), true, NULL);
     if (!ok) {
         free_row_list(rows, count);
-        fileio_set_error("out of memory");
+        browser->why = OUT_OF_MEMORY;
         return false;
     }
     free_rows(browser);
@@ -272,7 +274,7 @@ static LoadResult load_folder(Browser *browser, const char *folder, const char *
     if (!ok) {
         free_row_list(rows, row_count);
         alloc_free(copy);
-        fileio_set_error("out of memory");
+        browser->why = OUT_OF_MEMORY;
         return LOAD_NO_MEMORY;
     }
     free_rows(browser);
@@ -287,7 +289,8 @@ static LoadResult load_folder(Browser *browser, const char *folder, const char *
 // A function to open the browser: at `start` (an image opens its folder with the image highlighted),
 // else at the first place that can be listed (Pictures, then Home, ...) and is not on a network
 // share, which could keep the browser waiting on the network, else at the places. NULL when out of
-// memory.
+// memory, rather than a browser opened somewhere other than asked. A folder whose list function
+// fails (out of memory there included) cannot be listed, and the next place is tried.
 Browser *browser_open(BrowserMode mode, const char *start, const BrowserPlace *places, int place_count,
                       BrowserList list, BrowserCheck check, void *context)
 {
@@ -314,26 +317,33 @@ Browser *browser_open(BrowserMode mode, const char *start, const BrowserPlace *p
     }
 
     // A start folder's trailing separators are dropped ("/home/me/Pictures/"), except a root's
-    char *folder = ok && start != NULL && start[0] != '\0' ? alloc_strdup(start) : NULL;
-    bool opened = false;
+    char *folder = NULL;
+    if (ok && start != NULL && start[0] != '\0') {
+        folder = alloc_strdup(start);
+        ok = folder != NULL;
+    }
+    LoadResult loaded = LOAD_UNLISTED;
     if (folder != NULL) {
         size_t length = strlen(folder);
         while (length > 1 && is_separator(folder[length - 1]) && !is_root(folder, length))
             folder[--length] = '\0';
-        char *parent = alloc_malloc(length + 1);
         if (mode == BROWSER_IMAGE && browser_is_image(folder)) {
-            if (parent != NULL && browser_parent(folder, parent, length + 1))
-                opened = load_folder(browser, parent, folder) == LOAD_DONE;
+            char *parent = alloc_malloc(length + 1);
+            ok = parent != NULL;
+            if (ok && browser_parent(folder, parent, length + 1))
+                loaded = load_folder(browser, parent, folder);
+            alloc_free(parent);
         }
         else
-            opened = load_folder(browser, folder, NULL) == LOAD_DONE;
-        alloc_free(parent);
+            loaded = load_folder(browser, folder, NULL);
         alloc_free(folder);
     }
-    for (int i = 0; ok && !opened && i < browser->place_count; i++) {
+    for (int i = 0; ok && loaded == LOAD_UNLISTED && i < browser->place_count; i++) {
         if (!browser->places[i].network)
-            opened = load_folder(browser, browser->places[i].path, NULL) == LOAD_DONE;
+            loaded = load_folder(browser, browser->places[i].path, NULL);
     }
+    ok = ok && loaded != LOAD_NO_MEMORY;
+    bool opened = loaded == LOAD_DONE;
     if (!ok || (!opened && !load_places(browser, NULL))) {
         browser_free(browser);
         return NULL;
@@ -361,6 +371,7 @@ BrowserResult browser_command(Browser *browser, BrowserCommand command, int page
 {
     int last = browser->row_count - 1;
     int before = browser->cursor;
+    browser->why = NULL;
     if (page_rows < 1)
         page_rows = 1;
     switch (command) {
@@ -386,7 +397,7 @@ BrowserResult browser_command(Browser *browser, BrowserCommand command, int page
                 char *path = alloc_strdup(row->path);   // The row goes when the folder opens
                 bool opened = path != NULL && load_folder(browser, path, NULL) == LOAD_DONE;
                 if (path == NULL)
-                    fileio_set_error("out of memory");
+                    browser->why = OUT_OF_MEMORY;
                 alloc_free(path);
                 return opened ? BROWSER_MOVED : BROWSER_NONE;
             }
@@ -405,7 +416,7 @@ BrowserResult browser_command(Browser *browser, BrowserCommand command, int page
             // of memory, nowhere
             bool moved = from != NULL && parent != NULL;
             if (!moved)
-                fileio_set_error("out of memory");
+                browser->why = OUT_OF_MEMORY;
             else {
                 LoadResult loaded = browser_parent(from, parent, size) ? load_folder(browser, parent, from) : LOAD_UNLISTED;
                 moved = loaded == LOAD_UNLISTED ? load_places(browser, from) : loaded == LOAD_DONE;
@@ -442,6 +453,14 @@ const char *browser_folder(const Browser *browser)
     return browser->folder;
 }
 
+// A function to say why the last command did nothing because of the browser itself ("out of
+// memory"); NULL when it did what it could, or when the folder's own list failed, whose reason is
+// the list function's (fileio_last_error() for fileio_list)
+const char *browser_why(const Browser *browser)
+{
+    return browser->why;
+}
+
 // A function to get the path just chosen
 const char *browser_chosen(const Browser *browser)
 {
@@ -449,7 +468,7 @@ const char *browser_chosen(const Browser *browser)
 }
 
 // A function to find a folder's first image by name, for previewing a folder; false when it has
-// none, or its path does not fit in `out`
+// none, it cannot be listed, its path does not fit in `out`, or memory runs out: a preview only
 bool browser_first_image(const Browser *browser, const char *folder, char *out, size_t size)
 {
     FileioEntry *entries = NULL;

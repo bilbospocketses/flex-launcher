@@ -36,7 +36,8 @@ typedef struct {
 typedef struct {
     const char *label;
     const char *path;
-    bool network;        // On a network share: never opened unasked, since it may keep the browser waiting
+    bool network;        // It may be on a network share (FileioPlace's flag): never opened unasked, since
+                         // it could keep the browser waiting
 } BrowserPlace;
 
 typedef int (*BrowserList)(const char *folder, FileioEntry **entries, void *context);
@@ -72,6 +73,7 @@ const BrowserRow *browser_row(const Browser *browser, int index);
 int browser_cursor(const Browser *browser);
 const char *browser_folder(const Browser *browser);
 const char *browser_chosen(const Browser *browser);
+const char *browser_why(const Browser *browser);
 bool browser_first_image(const Browser *browser, const char *folder, char *out, size_t size);
 bool browser_is_image(const char *name);
 bool browser_parent(const char *path, char *out, size_t size);
