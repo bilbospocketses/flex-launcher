@@ -163,7 +163,7 @@ Take a mark before each part, and close settings after each part with Back (`But
 3. **The two Menu keys, once each.** Key `compose`, record the new lines, and close. Then key `menu`, record, and close.
    - Expected: between them, the two keys log `Key … (#40000065) detected` (`SDLK_APPLICATION`) and `Key … (#40000076) detected` (`SDLK_MENU`), and **each one opens settings** (`Settings opened` after its Key line).
    - If one of the two codes never arrives, that half is BLOCKED; note which HMP key gave which code.
-   Both codes open settings, as the configuration guide says: `Application` (#40000065) and `Menu` (#40000076).
+   Both codes open settings, as the configuration guide says: #40000065 and #40000076. Match on the keycode, not the name: SDL may name either code `Menu` (the tested Ubuntu build logs `Key Menu` for both), and `#40000065` reads `Application` on other SDL versions.
 4. **The Menu keys held.** For each key that arrived in part 3: `Send-QaGuestKeys -Keys '<key> 2000'`, wait 1 s, then take a **Frame**.
    - Expected: settings are open. The new lines hold **at least two** `Key … detected` lines for that key, which shows the auto-repeat reached StreamFlex, exactly one `Settings opened`, and no `Settings closed`.
    - With only one Key line, the hold did not repeat: BLOCKED, not PASS. (A repeat is logged before StreamFlex drops it, so one line means the guest sent no repeats.)
