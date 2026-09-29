@@ -1576,7 +1576,14 @@ static inline void post_launch()
 void quit(int status)
 {
     log_debug("Quitting program");
-    if (status != EXIT_SUCCESS)
+    bool message_box = status != EXIT_SUCCESS;
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: STREAMFLEX_TEST_NO_MESSAGE_BOX leaves the message box
+    // out, which some SDLs show and wait on
+    if (getenv("STREAMFLEX_TEST_NO_MESSAGE_BOX") != NULL)
+        message_box = false;
+#endif
+    if (message_box)
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, 
             PROJECT_NAME, 
             "A critical error occurred. Check the log file for details.", 
