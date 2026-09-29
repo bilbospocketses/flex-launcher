@@ -219,14 +219,15 @@ grep -E 'Loading menu|Settings (opened|closed)|Key Home' "$out/f50-home.log" | s
 
 # Settings do not open while an application is launching (sleep 6, which never takes the screen,
 # so the launch lasts ApplicationTimeout, 3 s): the Menu key is refused with a log line, and
-# opens them once the launch is over
+# opens them once the launch is over. Had the first press opened them, the second would close them.
 wait_launch() { sleep 3; }
 CFG=$FX/f50-launch.ini run_keys f50-launch Return Menu +wait_launch Menu
 ok=1
 precedes "$out/f50-launch.log" 'Settings: not opened while an application is launching' 'Settings opened' \
-    && [ "$(grep -c 'Settings opened' "$out/f50-launch.log")" = 1 ] && ran_clean f50-launch && ok=0
+    && [ "$(grep -c 'Settings opened' "$out/f50-launch.log")" = 1 ] && ! grep -q 'Settings closed' "$out/f50-launch.log" \
+    && ran_clean f50-launch && ok=0
 result "settings: they do not open while an application is launching (exit $(cat "$out/f50-launch.code"))" $ok
-grep -E 'Settings (opened|: not opened)' "$out/f50-launch.log" | sed 's/^/      /'
+grep -E 'Settings( opened|: not opened| closed)' "$out/f50-launch.log" | sed 's/^/      /'
 
 # The sample config turns the gamepad on, so a gamepad's Start opens settings out of the box. (The
 # built-in default for a config with no such line is unchanged, and no fixture relies on either.)
