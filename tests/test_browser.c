@@ -263,6 +263,24 @@ static void test_is_image(void)
     CHECK(!browser_is_image("png"));
 }
 
+// A function to test the rule every image scan uses (the browser, the Folder row's count and both
+// platforms' slideshows): a file with an image's extension in any case, never a folder or a hidden file
+static void test_is_image_file(void)
+{
+    FileioEntry camera = { .name = "DSC_0001.JPG", .is_dir = false, .hidden = false };
+    FileioEntry mixed = { .name = "Beach.Png", .is_dir = false, .hidden = false };
+    FileioEntry apple_double = { .name = "._DSC_0001.JPG", .is_dir = false, .hidden = true };
+    FileioEntry hidden_attribute = { .name = "thumb.jpg", .is_dir = false, .hidden = true };
+    FileioEntry folder = { .name = "Holiday.jpg", .is_dir = true, .hidden = false };
+    FileioEntry notes = { .name = "notes.txt", .is_dir = false, .hidden = false };
+    CHECK(browser_is_image_file(&camera));
+    CHECK(browser_is_image_file(&mixed));
+    CHECK(!browser_is_image_file(&apple_double));
+    CHECK(!browser_is_image_file(&hidden_attribute));
+    CHECK(!browser_is_image_file(&folder));
+    CHECK(!browser_is_image_file(&notes));
+}
+
 // A function to test a Windows path written with forward slashes ("C:/Users/me/Pictures/trip.png"):
 // its rows use forward slashes too, so the image it started at is highlighted, and choosing gives a
 // path in one style
@@ -461,6 +479,7 @@ int main(void)
     test_first_image();
     test_windows_paths();
     test_is_image();
+    test_is_image_file();
     test_forward_slash_windows_paths();
     test_paths_too_long_to_choose();
     test_empty_folder();

@@ -18,7 +18,14 @@ run_quick f30-slideshow
 ok=1
 ran_clean f30-slideshow && grep -q "Found 3 images in directory /home/tester/Pictures" "$out/f30-slideshow.log" \
     && grep -q 'Background set up: Slideshow' "$out/f30-slideshow.log" && ok=0
-result "a slideshow finds its three images (exit $(cat "$out/f30-slideshow.code"))" $ok
+result "a slideshow finds its three images, leaving out a hidden picture and a text file (exit $(cat "$out/f30-slideshow.code"))" $ok
+
+# Upper-case extensions (a camera's DSC_0001.JPG) are images, as the settings' browser says
+run_quick f30-upper
+ok=1
+ran_clean f30-upper && grep -q "Found 2 images in directory /home/tester/upper" "$out/f30-upper.log" \
+    && grep -q 'Background set up: Slideshow' "$out/f30-upper.log" && ok=0
+result "a slideshow finds images whose extensions are upper-case (exit $(cat "$out/f30-upper.code"))" $ok
 
 run_quick f30-one
 ok=1

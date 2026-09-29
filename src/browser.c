@@ -81,6 +81,14 @@ bool browser_is_image(const char *name)
     return false;
 }
 
+// A function to tell a listed file that counts as an image: not a folder, not hidden, and with an
+// image's extension, whatever its case. The browser, the Folder row's count and both platforms'
+// slideshow scans all use it, so they agree on every folder.
+bool browser_is_image_file(const FileioEntry *entry)
+{
+    return !entry->is_dir && !entry->hidden && browser_is_image(entry->name);
+}
+
 // A function to tell a root, which has no parent: "/", "C:", "C:\" or "\\server\share"
 static bool is_root(const char *path, size_t length)
 {
@@ -244,7 +252,7 @@ static LoadResult load_folder(Browser *browser, const char *folder, const char *
             continue;
         if (entries[i].is_dir)
             folders[folder_count++] = &entries[i];
-        else if (browser_is_image(entries[i].name))
+        else if (browser_is_image_file(&entries[i]))
             images[image_count++] = &entries[i];
     }
     BrowserRow *rows = NULL;
@@ -475,7 +483,7 @@ bool browser_first_image(const Browser *browser, const char *folder, char *out, 
     int count = browser->list(folder, &entries, browser->context);
     const FileioEntry *first = NULL;
     for (int i = 0; i < count; i++) {
-        if (entries[i].hidden || entries[i].is_dir || !browser_is_image(entries[i].name))
+        if (!browser_is_image_file(&entries[i]))
             continue;
         if (first == NULL || compare_names(entries[i].name, first->name) < 0)
             first = &entries[i];

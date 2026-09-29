@@ -75,8 +75,16 @@ exe=/work/build/streamflex
 TESTER_HOME=/home/tester
 LOG=$TESTER_HOME/.local/share/streamflex/streamflex.log
 
-# Pictures for the background checks: three in Pictures, one on its own, and an empty folder
+# Pictures for the background checks: three in Pictures, one on its own, and an empty folder.
+# Pictures also holds a file that is not a picture and a hidden real picture, which every scan
+# must leave out, so its "3 images" proves the rule. ~/upper has only upper-case extensions (its
+# .JPG holds a PNG: SDL_image goes by what a file holds, the scans by its name).
 python3 "$HERE/make_images.py" "$TESTER_HOME/Pictures"
+printf 'not a picture\n' > "$TESTER_HOME/Pictures/notes.txt"
+cp "$TESTER_HOME/Pictures/red.png" "$TESTER_HOME/Pictures/.hidden.png"
+mkdir -p "$TESTER_HOME/upper"
+cp "$TESTER_HOME/Pictures/blue.png" "$TESTER_HOME/upper/BLUE.PNG"
+cp "$TESTER_HOME/Pictures/green.png" "$TESTER_HOME/upper/GREEN.JPG"
 mkdir -p "$TESTER_HOME/one" "$TESTER_HOME/empty"
 cp "$TESTER_HOME/Pictures/red.png" "$TESTER_HOME/one/"
 # Slideshow folders that fail: two files that only look like pictures, and one picture beside one

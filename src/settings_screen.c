@@ -619,7 +619,7 @@ static int count_images(const char *folder)
     int count = fileio_list(folder, &entries);
     int images = count < 0 ? -1 : 0;
     for (int i = 0; i < count; i++) {
-        if (!entries[i].hidden && !entries[i].is_dir && browser_is_image(entries[i].name))
+        if (browser_is_image_file(&entries[i]))
             images++;
     }
     fileio_free_list(entries, count > 0 ? count : 0);

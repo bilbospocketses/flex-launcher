@@ -13,7 +13,7 @@
 #include "../util.h"
 #include "../debug.h"
 #include "../fileio.h"
-#include "slideshow.h"
+#include "../browser.h"
 
 static void parse_command(char *cmd, char *file, size_t file_size, char **params);
 static char *path_basename(const char *path);
@@ -191,26 +191,15 @@ bool start_process(char *cmd, bool application)
     return ret;
 }
 
-// A function to tell an image file by its extension, whatever its case
-static bool has_image_extension(const char *name)
-{
-    size_t length = strlen(name);
-    for (size_t i = 0; i < NUM_IMAGE_EXTENSIONS; i++) {
-        size_t extension_length = strlen(extensions[i]);
-        if (length > extension_length && SDL_strcasecmp(name + length - extension_length, extensions[i]) == 0)
-            return true;
-    }
-    return false;
-}
-
-// A function to scan the slideshow directory for image files
+// A function to scan the slideshow directory for image files, by the rule the settings' folder
+// browser uses (browser_is_image_file): any case of extension, hidden files left out
 void scan_slideshow_directory(Slideshow *slideshow, const char *directory)
 {
     FileioEntry *entries = NULL;
     int count = fileio_list(directory, &entries);
     char file_output[MAX_PATH_CHARS + 1];
     for (int i = 0; i < count; i++) {
-        if (entries[i].is_dir || !has_image_extension(entries[i].name))
+        if (!browser_is_image_file(&entries[i]))
             continue;
         join_paths(file_output, sizeof(file_output), 2, directory, entries[i].name);
         char **grown = realloc(slideshow->images, (size_t) (slideshow->num_images + 1) * sizeof(char*));

@@ -76,6 +76,7 @@ const char *browser_chosen(const Browser *browser);
 const char *browser_why(const Browser *browser);
 bool browser_first_image(const Browser *browser, const char *folder, char *out, size_t size);
 bool browser_is_image(const char *name);
+bool browser_is_image_file(const FileioEntry *entry);   // The one rule for every image scan
 bool browser_parent(const char *path, char *out, size_t size);
 
 #endif

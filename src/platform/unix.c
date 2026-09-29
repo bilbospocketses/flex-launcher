@@ -12,13 +12,13 @@
 #include "unix.h"
 #include "../util.h"
 #include "../debug.h"
+#include "../fileio.h"
+#include "../browser.h"
 #include "platform.h"
-#include "slideshow.h"
 
 static int desktop_handler(void *user, const char *section, const char *name, const char *value);
 static void strip_field_codes(char *cmd);
 static bool ends_with(const char *string, const char *phrase);
-static int image_filter(const struct dirent *file);
 
 // A function to handle .desktop lines
 static int desktop_handler(void *user, const char *section, const char *name, const char *value)
@@ -167,33 +167,25 @@ bool start_process(char *cmd, bool application)
     return true;
 }
 
-// A function to determine if a file is an image file
-int image_filter(const struct dirent *file)
-{
-    size_t len_file = strlen(file->d_name);
-    size_t len_extension;
-    for (size_t i = 0; i < NUM_IMAGE_EXTENSIONS; i++) {
-        len_extension = strlen(extensions[i]);
-        if (len_file > len_extension && 
-        !strcmp(file->d_name + len_file - len_extension, extensions[i]))
-            return 1;
-    }
-    return 0;
-}
-
-// A function to scan a directory for images
+// A function to scan the slideshow directory for image files, by the rule the settings' folder
+// browser uses (browser_is_image_file): any case of extension, hidden files left out
 void scan_slideshow_directory(Slideshow *slideshow, const char *directory)
 {
-    struct dirent **files;
-    slideshow->num_images = scandir(directory, &files, image_filter, NULL);
-    slideshow->images = malloc((size_t) slideshow->num_images * sizeof(char*));
+    FileioEntry *entries = NULL;
+    int count = fileio_list(directory, &entries);
     char file_path[MAX_PATH_CHARS + 1];
-    for (int i = 0; i < slideshow->num_images; i++) {
-        join_paths(file_path, sizeof(file_path), 2, directory, files[i]->d_name);
-        slideshow->images[i] = strdup(file_path);
-        free(files[i]);
+    for (int i = 0; i < count; i++) {
+        if (!browser_is_image_file(&entries[i]))
+            continue;
+        join_paths(file_path, sizeof(file_path), 2, directory, entries[i].name);
+        char **grown = realloc(slideshow->images, (size_t) (slideshow->num_images + 1) * sizeof(char*));
+        if (grown == NULL)
+            break;
+        slideshow->images = grown;
+        slideshow->images[slideshow->num_images] = strdup(file_path);
+        slideshow->num_images++;
     }
-    free(files);
+    fileio_free_list(entries, count);
 }
 
 void get_region(char *buffer)
