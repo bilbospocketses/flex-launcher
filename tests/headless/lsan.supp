@@ -1,0 +1,7 @@
+# LeakSanitizer suppressions for the leak pass (run.sh leaks). Each names one function inside
+# another project's code whose allocations that project never frees, never a whole library: a
+# library-wide pattern would also hide our own leaks from calls into it.
+
+# SDL3 (Fedora's sdl2-compat runs on it): the X11 message box a fatal error shows keeps the text
+# of its lines (232 and 8 bytes, SDL 3.4.16). Reached by the check of a config that cannot be opened.
+leak:X11Toolkit_MakeTextElements

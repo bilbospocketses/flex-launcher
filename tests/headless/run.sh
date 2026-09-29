@@ -121,9 +121,13 @@ echo "Mesa: $gallium, from $mesa_driver"
 # is slower, so only this pass does it. It keeps setarch -R: the ASan build crashes at random
 # without it whether or not leaks are looked for.
 asan_options=detect_leaks=0
+lsan_options=
 preload=()
 if [ "$fault" = leaks ]; then
     asan_options=detect_leaks=1:fast_unwind_on_malloc=0
+    # lsan.supp names leaks inside other projects' code only (see the file), never a library
+    # as a whole: a library-wide pattern would hide our own leaks from calls into it
+    lsan_options=suppressions=$HERE/lsan.supp
     # The runtime the launcher links: gcc's libasan.so can be a linker script, which ld.so
     # cannot preload
     libasan=$(ldd "$exe" | awk '$1 ~ /^libasan\.so/ { print $3; exit }')
@@ -131,7 +135,7 @@ if [ "$fault" = leaks ]; then
     preload=(env "LD_PRELOAD=$libasan $mesa_driver")
 fi
 TESTER=(setpriv --reuid=tester --regid=tester --init-groups --
-        env HOME=$TESTER_HOME DISPLAY=:99 ASAN_OPTIONS=$asan_options UBSAN_OPTIONS=print_stacktrace=1
+        env HOME=$TESTER_HOME DISPLAY=:99 ASAN_OPTIONS=$asan_options LSAN_OPTIONS=$lsan_options UBSAN_OPTIONS=print_stacktrace=1
             "GALLIUM_DRIVER=$gallium" setarch "$(uname -m)" -R "${preload[@]}")
 
 # A function to give the launcher its config: the fixture NAME.ini, the file CFG names, or

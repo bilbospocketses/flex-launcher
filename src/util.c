@@ -124,7 +124,7 @@ void parse_config_file(const char *config_file_path)
 {
     FILE *file = fileio_open(config_file_path, "r");
     if (file == NULL)
-        log_fatal("Could not open config file");
+        log_fatal("Could not open config file %s: %s", config_file_path, fileio_last_error());
     int error = ini_parse_file(file, config_handler, NULL);
     fclose(file);
     
