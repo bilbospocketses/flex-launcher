@@ -1,28 +1,6 @@
 # The settings screen, driven by key presses: Menu opens it, the arrows, Return and BackSpace
-# move through it, and Back at the top saves. Each check starts from a fresh copy of its fixture
-# that the test user can write.
-
-# A function to give the test user a copy of a fixture it can write; prints its path
-writable_config() {
-    mkdir -p "$TESTER_HOME/cfg"
-    rm -f "$TESTER_HOME/cfg/$1.ini" "$TESTER_HOME/cfg/$1.ini.bak" "$TESTER_HOME/cfg/$1.ini.tmp" "$TESTER_HOME/cfg/$1.ini.bak.tmp"
-    cp "$FX/$1.ini" "$TESTER_HOME/cfg/$1.ini"
-    chown -R tester:tester "$TESTER_HOME/cfg"
-    chmod 644 "$TESTER_HOME/cfg/$1.ini"
-    echo "$TESTER_HOME/cfg/$1.ini"
-}
-
-# A function to count the lines that differ between two files (a changed line counts twice)
-changed_lines() { diff "$1" "$2" | grep -c '^[<>]'; }
-
-# A function to tell whether a log has a line holding FIRST before its first line holding SECOND
-precedes() {
-    awk -v a="$2" -v b="$3" '
-        index($0, b) { ok = seen; done = 1; exit }
-        index($0, a) { seen = 1 }
-        END { exit !(done && ok) }
-    ' "$1"
-}
+# move through it, and Back at the top saves. Each check that saves starts from a fresh copy of
+# its fixture that the test user can write (writable_config, in run.sh).
 
 # The keys that open settings, go to All menus, step Columns up once and back out, saving
 ALL_MENUS_COLUMNS_UP="Menu Down Return Return Down Right BackSpace BackSpace BackSpace"

@@ -48,8 +48,10 @@ result() {
     if [ "$2" = 0 ]; then echo "PASS  $1"; else echo "FAIL  $1"; failures=$((failures + 1)); fi
 }
 
-# A compiler warning in our code fails the run; the bundled libraries in src/external are not ours
-warnings=$(grep -iE 'warning:' "$out/build.log")
+# A compiler warning in our code fails the run; the bundled libraries in src/external are not
+# ours. make's own warnings are left out: a busy host can step the container's clock, and make
+# then warns of a clock skew, which says nothing about the code.
+warnings=$(grep -iE 'warning:' "$out/build.log" | grep -vE '^g?make(\[[0-9]+\])?: ')
 ours=$(printf '%s\n' "$warnings" | grep -v '^/work/src/external/' | sed '/^$/d')
 printf '%s\n' "$warnings" | sed '/^$/d; s/^/BUILD WARNING: /'
 ok=1; [ -z "$ours" ] && ok=0
@@ -111,22 +113,54 @@ config_args() {
     [ "$cfg" = none ] || printf '%s\n' -c "$cfg"
 }
 
-# A config whose StartupCmd quits by itself. One that hangs gets TERM after 30 s, and KILL 5 s
-# later: SDL turns TERM into a quit event, which a launcher stuck in a loop never reads.
-run_quick() {
-    local name=$1
-    local args; mapfile -t args < <(config_args "$name")
-    rm -f "$LOG"
-    timeout -k 5 -s TERM 30 "${TESTER[@]}" "$exe" "${args[@]}" -d > "$out/$name.out" 2> "$out/$name.err"
-    echo $? > "$out/$name.code"
-    cp "$LOG" "$out/$name.log" 2> /dev/null || : > "$out/$name.log"
+# A function to give the test user a copy of a fixture it can write; prints its path
+writable_config() {
+    mkdir -p "$TESTER_HOME/cfg"
+    rm -f "$TESTER_HOME/cfg/$1.ini" "$TESTER_HOME/cfg/$1.ini.bak" "$TESTER_HOME/cfg/$1.ini.tmp" "$TESTER_HOME/cfg/$1.ini.bak.tmp"
+    cp "$FX/$1.ini" "$TESTER_HOME/cfg/$1.ini"
+    chown -R tester:tester "$TESTER_HOME/cfg"
+    chmod 644 "$TESTER_HOME/cfg/$1.ini"
+    echo "$TESTER_HOME/cfg/$1.ini"
 }
 
 # A function to tell whether the process PID is still running (an exited child stays a zombie
-# until it is waited for, and kill -0 still finds a zombie)
+# until it is waited for, and kill -0 still finds a zombie). The state comes after the process's
+# name in brackets, which may hold spaces, so it is read after the last ") ".
 running() {
-    local state
-    read -r _ _ state _ 2> /dev/null < "/proc/$1/stat" && [ "$state" != Z ]
+    local stat
+    read -r stat 2> /dev/null < "/proc/$1/stat" || return 1
+    stat=${stat##*") "}
+    [ "${stat%% *}" != Z ]
+}
+
+# A function to end the launcher PID's run and return its exit code: TERM (SDL turns it into a
+# quit event), then KILL 10 s later for a launcher stuck in a loop that never reads it (exit
+# 137). Every run ends through here, so every run has the same escalation.
+stop_run() {
+    local pid=$1 i
+    kill -TERM "$pid" 2> /dev/null
+    for i in $(seq 50); do running "$pid" || break; sleep 0.2; done
+    kill -KILL "$pid" 2> /dev/null
+    # A killed run's "Killed" notice goes nowhere: its exit code, 137, says so
+    wait "$pid" 2> /dev/null
+}
+
+# A function to run a config whose StartupCmd quits by itself. One still running after 30 s
+# (QUICK_LIMIT, which only the harness's own checks shorten) is ended by stop_run, and "did not
+# quit by itself" goes into NAME.code beside the exit code, so its check fails even when TERM
+# made it exit 0.
+run_quick() {
+    local name=$1 limit=${QUICK_LIMIT:-30} pid code hung="" i
+    local args; mapfile -t args < <(config_args "$name")
+    rm -f "$LOG"
+    "${TESTER[@]}" "$exe" "${args[@]}" -d > "$out/$name.out" 2> "$out/$name.err" &
+    pid=$!
+    for i in $(seq $((limit * 5))); do running "$pid" || break; sleep 0.2; done
+    running "$pid" && hung=yes
+    stop_run "$pid"; code=$?
+    [ -z "$hung" ] || code="$code, and did not quit by itself within $limit s"
+    echo "$code" > "$out/$name.code"
+    cp "$LOG" "$out/$name.log" 2> /dev/null || : > "$out/$name.log"
 }
 
 # A function to wait up to 20 s for a line in the launcher's log. It fails when the line never
@@ -143,15 +177,15 @@ wait_line() {
 
 # A function to run a config that keeps running, and drive it. It starts the launcher, waits for
 # a line in its log (WAIT_FOR, by default the first "Loading menu"), sends the keys a second
-# apart, waits for the line UNTIL when that is set, then quits it with TERM (SDL turns that into
-# a quit event) and KILLs it 10 s later (exit 137). A key written +name calls the function
-# `name` with the run's name instead: that is how a check does something at a moment the log
-# chooses. Every wait is bounded; a line that never came is written into NAME.code beside the
-# exit code, so the check's exit code test fails. run_after_line and run_slideshow use this too.
+# apart, waits for the line UNTIL when that is set, then ends it with stop_run (TERM, and KILL
+# 10 s later). A key written +name calls the function `name` with the run's name and PID
+# instead: that is how a check does something at a moment the log chooses. Every wait is
+# bounded; a line that never came is written into NAME.code beside the exit code, so the check's
+# exit code test fails. run_after_line and run_slideshow use this too.
 run_keys() {
     local name=$1; shift
     local args; mapfile -t args < <(config_args "$name")
-    local start=${WAIT_FOR:-Loading menu} missing="" pid code k i
+    local start=${WAIT_FOR:-Loading menu} missing="" pid code k
     rm -f "$LOG" "$out/$name.seen" "$out/$name.pixels"
     "${TESTER[@]}" "$exe" "${args[@]}" -d > "$out/$name.out" 2> "$out/$name.err" &
     pid=$!
@@ -166,11 +200,7 @@ run_keys() {
     else
         missing=$start
     fi
-    kill -TERM "$pid" 2> /dev/null
-    for i in $(seq 50); do running "$pid" || break; sleep 0.2; done
-    kill -KILL "$pid" 2> /dev/null
-    # A killed run's "Killed" notice goes nowhere: its exit code, 137, says so
-    wait "$pid" 2> /dev/null; code=$?
+    stop_run "$pid"; code=$?
     [ -z "$missing" ] || code="$code, and never logged '$missing'"
     echo "$code" > "$out/$name.code"
     cp "$LOG" "$out/$name.log" 2> /dev/null || : > "$out/$name.log"
@@ -201,15 +231,29 @@ ran_clean() { [ "$(cat "$out/$1.code")" = "${2:-0}" ] && sanitizer_clean "$1"; }
 
 # A function to tell whether a log has the line START, a line END after it, and a line holding
 # NEEDLE between the two (all fixed strings). A range whose END never comes does not count, so
-# a launcher that stopped logging halfway cannot pass by running to the end of the file.
+# a launcher that stopped logging halfway cannot pass by running to the end of the file. The
+# strings reach awk through its environment: awk -v would read a backslash in them as an escape.
 in_range() {
-    awk -v s="$2" -v e="$3" -v n="$4" '
-        !open && index($0, s) { open = 1; next }
-        open && index($0, n) { found = 1 }
-        open && index($0, e) { closed = 1; exit }
+    s=$2 e=$3 n=$4 awk '
+        !open && index($0, ENVIRON["s"]) { open = 1; next }
+        open && index($0, ENVIRON["n"]) { found = 1 }
+        open && index($0, ENVIRON["e"]) { closed = 1; exit }
         END { exit !(closed && found) }
     ' "$1"
 }
+
+# A function to tell whether a log has a line holding FIRST before its first line holding
+# SECOND (fixed strings, passed to awk as in_range passes them)
+precedes() {
+    a=$2 b=$3 awk '
+        index($0, ENVIRON["b"]) { ok = seen; done = 1; exit }
+        index($0, ENVIRON["a"]) { seen = 1 }
+        END { exit !(done && ok) }
+    ' "$1"
+}
+
+# A function to count the lines that differ between two files (a changed line counts twice)
+changed_lines() { diff "$1" "$2" | grep -c '^[<>]'; }
 
 # A function to map a point of the launcher's scene (the full 1920 x 1080 screen it would draw)
 # to the screen, inside the settings preview, whose place the live log gives. It fails when the
@@ -223,13 +267,14 @@ preview_point() {
 }
 
 # A function to wait up to 10 s for the screen to show the colours asked for, each x,y=r,g,b:
-# it takes a screenshot, reads the points and tries again until they match. Every reading is
-# kept in NAME.pixels under TAG, and the last screenshot in NAME-TAG.xwd when they never match.
+# it takes a screenshot, reads the points and tries again until they match. Every reading, and
+# any error taking the screenshot, is kept in NAME.pixels under TAG, and the last screenshot in
+# NAME-TAG.xwd when they never match.
 screen_shows() {
     local name=$1 tag=$2; shift 2
     local shot=/tmp/screen.xwd i
     for i in $(seq 50); do
-        if xwd -root -silent -out "$shot" && { echo "$tag:"; python3 "$HERE/pixels.py" "$shot" "$@"; } \
+        if { echo "$tag:"; xwd -root -silent -out "$shot" && python3 "$HERE/pixels.py" "$shot" "$@"; } \
             >> "$out/$name.pixels" 2>&1; then
             return 0
         fi
@@ -242,10 +287,16 @@ screen_shows() {
 # A function for a +key (see run_keys), called with the run's NAME and PID: wait for the log line
 # LINE, then for the settings preview to show each colour asked for, written sx,sy=r,g,b with the
 # point in the launcher's scene (or @x,y=r,g,b, a point of the screen). Writes "TAG yes" or
-# "TAG no" to NAME.seen for the check to read; a preview whose place was never logged is "no".
+# "TAG no" to NAME.seen for the check to read. A preview whose place was never logged is "no",
+# and so is a probe with no points, which any screen would pass.
 look() {
     local name=$1 pid=$2 tag=$3 line=$4; shift 4
     local asked=() p rest point placed=yes seen=no
+    if [ $# = 0 ]; then
+        echo "$tag: no points to read" >> "$out/$name.pixels"
+        echo "$tag no" >> "$out/$name.seen"
+        return
+    fi
     # Xvfb has no window manager to carry out the launcher's fullscreen request, so its window
     # stays 1 x 1 and nothing it draws reaches the screen: give it the screen, as one would
     xdotool search --name '^StreamFlex$' windowmove %@ 0 0 windowsize %@ 1920 1080 > /dev/null 2>&1

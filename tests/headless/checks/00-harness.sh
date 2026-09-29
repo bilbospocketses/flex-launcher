@@ -1,6 +1,8 @@
 # The harness's own helpers (run.sh), checked before anything relies on them: a launcher that
 # starts slowly still gets its keys, one that ignores TERM is killed and fails its check, one
-# that exits without logging does not hold the run up, and a log range must be closed to count
+# that exits without logging does not hold the run up, a zombie is not running whatever its
+# name, a quick run that has to be stopped fails, a log range must be closed to count, the log
+# helpers take their strings as written, and a pixel probe must have points to read
 
 # Stand-in launchers, run as the test user as the real one is
 mkdir -p /tmp/harness
@@ -16,7 +18,14 @@ echo "Loading menu 'Stand-in'" >> "$LOG"
 trap '' TERM
 exec sleep 60
 EOF
+cat > /tmp/harness/quits-on-term << EOF
+#!/bin/sh
+trap 'exit 0' TERM
+while :; do sleep 0.2; done
+EOF
 printf '#!/bin/sh\nexit 0\n' > /tmp/harness/exits-at-once
+printf '#!/bin/sh\nuntil [ -e /tmp/harness/cue ]; do sleep 0.1; done\n' > /tmp/harness/exits-on-cue
+cp /tmp/harness/exits-on-cue '/tmp/harness/exits on cue'
 chmod 755 /tmp/harness/*
 
 # A launcher that takes 6 s to start: the keys wait for its first menu, so Back still comes
@@ -44,6 +53,38 @@ ok=1
 result "harness: a launcher that exits without logging ends the wait at once, and fails (exit $(cat "$out/h-gone.code"))" $ok
 echo "      the wait took $took s"
 
+# A zombie (a process that has exited but not been waited for) is not running, also when its
+# name has a space: /proc/PID/stat shows the name in brackets, before the state. The stand-ins
+# are children of a sleep, which never waits for them, so they stay zombies until it ends; they
+# exit on a cue given once their parent has become the sleep.
+rm -f /tmp/harness/cue /tmp/harness/plain.pid /tmp/harness/spaced.pid
+bash -c '/tmp/harness/exits-on-cue & echo $! > /tmp/harness/plain.pid
+         "/tmp/harness/exits on cue" & echo $! > /tmp/harness/spaced.pid
+         exec sleep 10' &
+zombies=$!
+for i in $(seq 25); do [ "$(cat "/proc/$zombies/comm" 2> /dev/null)" = sleep ] && break; sleep 0.2; done
+: > /tmp/harness/cue
+for i in $(seq 25); do
+    grep -qs ') Z ' "/proc/$(cat /tmp/harness/plain.pid)/stat" \
+        && grep -qs '(exits on cue) Z ' "/proc/$(cat /tmp/harness/spaced.pid)/stat" && break
+    sleep 0.2
+done
+ok=1
+grep -qs ') Z ' "/proc/$(cat /tmp/harness/plain.pid)/stat" \
+    && grep -qs '(exits on cue) Z ' "/proc/$(cat /tmp/harness/spaced.pid)/stat" \
+    && ! running "$(cat /tmp/harness/plain.pid)" && ! running "$(cat /tmp/harness/spaced.pid)" && ok=0
+result "harness: a zombie is not running, with a space in its name or without" $ok
+kill "$zombies"; wait "$zombies" 2> /dev/null
+
+# A quick run (a StartupCmd that quits) that has to be stopped fails its check, though it exits
+# 0 on TERM as the launcher does; one that quits by itself passes. QUICK_LIMIT shortens the 30 s.
+QUICK_LIMIT=2 CFG=none exe=/tmp/harness/quits-on-term run_quick h-hang
+CFG=none exe=/tmp/harness/exits-at-once run_quick h-quits
+ok=1
+[ "$(cat "$out/h-hang.code")" = "0, and did not quit by itself within 2 s" ] && ! ran_clean h-hang \
+    && ran_clean h-quits && ok=0
+result "harness: a quick run that has to be stopped fails, one that quits passes (exit $(cat "$out/h-hang.code"))" $ok
+
 # A log range counts only once its end line comes: a launcher that stopped logging inside
 # settings cannot pass a check on the lines inside them
 printf 'Settings opened\nScreensaver off\n' > "$out/h-range-open.log"
@@ -52,3 +93,23 @@ ok=1
 ! in_range "$out/h-range-open.log" 'Settings opened' 'Settings closed' 'Screensaver off' \
     && in_range "$out/h-range-closed.log" 'Settings opened' 'Settings closed' 'Screensaver off' && ok=0
 result "harness: a log range with no end line does not count" $ok
+
+# The log helpers match their strings as written, backslashes included, and precedes tells the
+# order of two lines
+printf 'Settings opened\nImage=C:\\temp\\new.png\nSettings closed\n' > "$out/h-strings.log"
+ok=1
+in_range "$out/h-strings.log" 'Settings opened' 'Settings closed' 'C:\temp\new.png' \
+    && precedes "$out/h-strings.log" 'C:\temp\new.png' 'Settings closed' \
+    && ! precedes "$out/h-strings.log" 'Settings closed' 'C:\temp\new.png' && ok=0
+result "harness: the log helpers match a backslash as written, and precedes tells the order" $ok
+
+# A pixel probe says "no" when it has no points to read (any screen would pass it) and when the
+# log never said where the preview is (it would read the screen's corner)
+printf 'Settings opened\n' > "$out/h-look.log"
+rm -f "$out/h-look.seen" "$out/h-look.pixels"
+LOG=$out/h-look.log look h-look $$ nothing 'Settings opened'
+LOG=$out/h-look.log look h-look $$ unplaced 'Settings opened' 30,30=0,0,0
+ok=1
+grep -qx 'nothing no' "$out/h-look.seen" && grep -qx 'unplaced no' "$out/h-look.seen" && ok=0
+result "harness: a pixel probe with no points, or no preview to place them in, says no" $ok
+sed 's/^/      /' "$out/h-look.seen"
