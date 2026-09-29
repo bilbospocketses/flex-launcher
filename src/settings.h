@@ -1,7 +1,7 @@
 // The settings screen's model: the table of settings it can change, how each one's value is read
 // from and written to config.ini, stepped with Left and Right and described on screen, and the
 // pages the remote moves through. Pure: no SDL, no globals, so tests/test_settings.c builds it on
-// its own. settings_screen.c draws it and applies what it changes.
+// its own; memory comes from alloc.h. settings_screen.c draws it and applies what it changes.
 #ifndef SETTINGS_H
 #define SETTINGS_H
 
@@ -9,7 +9,7 @@
 #include <stddef.h>
 
 #define SETTING_TEXT_MAX 1024  // Longest path a setting holds
-#define SETTINGS_MAX_ROWS 64   // Most rows one page shows
+#define SETTINGS_MAX_ROWS 64   // Most rows one page shows; Menus counts the rest in a note
 #define SETTINGS_MAX_DEPTH 8   // Deepest the pages go
 
 typedef enum {

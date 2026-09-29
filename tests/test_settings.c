@@ -450,6 +450,152 @@ static void test_save_failed_page(void)
     settings_free(state);
 }
 
+// A function to test the All menus page, the Titles page, and UP on the first row
+static void test_all_menus_and_titles_pages(void)
+{
+    SettingsState *state = open_model();
+    SettingsRow rows[SETTINGS_MAX_ROWS];
+    char path[256];
+    CHECK_INT(settings_command(state, SETTINGS_UP).kind, SETTINGS_EVENT_NONE);   // Nothing above the first row
+    CHECK_INT(settings_cursor(state), 0);
+
+    // All menus: [Layout]'s three settings, with no note about following All menus
+    settings_command(state, SETTINGS_DOWN);
+    settings_command(state, SETTINGS_OK);
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_MENUS);
+    CHECK_INT(settings_cursor(state), 0);
+    settings_command(state, SETTINGS_OK);
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_MENU);
+    CHECK_INT(settings_preview_menu(state), -1);
+    settings_path(state, path, sizeof(path));
+    CHECK_STR(path, "Settings" ARROW "Menus" ARROW "All menus");
+    int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 3);
+    CHECK(rows[0].slot == settings_slot(state, SET_ID_LAYOUT_ROWS, -1));
+    CHECK_STR(rows[0].value, "1");
+    CHECK(rows[1].slot == settings_slot(state, SET_ID_LAYOUT_COLUMNS, -1));
+    CHECK_STR(rows[1].value, "4");
+    CHECK(rows[2].slot == settings_slot(state, SET_ID_LAYOUT_ICON_SIZE, -1));
+    CHECK_STR(rows[2].value, "Fill");
+    for (int i = 0; i < count; i++)
+        CHECK(rows[i].kind != SETTINGS_ROW_NOTE);
+    SettingsEvent event = settings_command(state, SETTINGS_RIGHT);
+    CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
+    CHECK(event.slot == settings_slot(state, SET_ID_LAYOUT_ROWS, -1));
+    CHECK_INT(event.slot->value.number, 2);
+
+    // Titles: one row, its size
+    settings_command(state, SETTINGS_BACK);
+    settings_command(state, SETTINGS_BACK);
+    settings_command(state, SETTINGS_DOWN);
+    CHECK_INT(settings_cursor(state), 2);
+    settings_command(state, SETTINGS_OK);
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_TITLES);
+    settings_path(state, path, sizeof(path));
+    CHECK_STR(path, "Settings" ARROW "Titles");
+    count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 1);
+    CHECK_STR(rows[0].label, "Size");
+    CHECK_STR(rows[0].value, "Medium");
+    event = settings_command(state, SETTINGS_RIGHT);
+    CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
+    CHECK(event.slot == settings_slot(state, SET_ID_TITLE_SIZE, -1));
+    settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_STR(rows[0].value, "Large");
+    CHECK_INT(settings_command(state, SETTINGS_UP).kind, SETTINGS_EVENT_NONE);
+    settings_free(state);
+}
+
+// A function to test walking every slot by its place: the global settings, then each menu's
+static void test_slots_by_place(void)
+{
+    SettingsState *state = open_model();
+    CHECK_INT(settings_slot_count(state), SET_ID_GLOBAL_COUNT + 2 * SET_ID_PER_MENU_COUNT);
+    SettingSlot *slot = settings_slot_at(state, 0);
+    CHECK(slot != NULL && slot->def->id == SET_ID_BACKGROUND_MODE && slot->menu == -1);
+    slot = settings_slot_at(state, SET_ID_GLOBAL_COUNT);
+    CHECK(slot != NULL && slot->def->id == SET_ID_MENU_ROWS && slot->menu == 0);
+    CHECK(slot == settings_slot(state, SET_ID_MENU_ROWS, 0));
+    slot = settings_slot_at(state, settings_slot_count(state) - 1);
+    CHECK(slot != NULL && slot->def->id == SET_ID_MENU_ICON_SIZE && slot->menu == 1);
+    CHECK(settings_slot_at(state, settings_slot_count(state)) == NULL);
+    CHECK(settings_slot_at(state, -1) == NULL);
+    CHECK(settings_slot(state, SET_ID_MENU_ROWS, 2) == NULL);
+    settings_free(state);
+}
+
+// A function to test that one menu is "1 menu"
+static void test_one_menu(void)
+{
+    static const char *const names[] = { "Main" };
+    SettingsState *state = settings_create(names, 1);
+    SettingsRow rows[SETTINGS_MAX_ROWS];
+    settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_STR(rows[1].value, "1 menu");
+    settings_free(state);
+}
+
+// A function to test that the Background page opened in an incomplete mode (Mode=Image with no
+// Image= line) has nothing to go back to: Back and Close leave the mode, with no event and no notice
+static void test_background_entered_incomplete(void)
+{
+    SettingsState *state = open_model();
+    SettingValue image = parsed(SET_ID_BACKGROUND_MODE, "Image");
+    settings_set_entry(state, SET_ID_BACKGROUND_MODE, -1, &image);
+    settings_command(state, SETTINGS_OK);
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_BACKGROUND);
+    SettingsEvent event = settings_command(state, SETTINGS_BACK);
+    CHECK_INT(event.kind, SETTINGS_EVENT_MOVED);
+    CHECK(event.slot == NULL);
+    CHECK_STR(settings_notice(state), "");
+    CHECK_INT(settings_slot(state, SET_ID_BACKGROUND_MODE, -1)->value.number, 1);
+
+    settings_command(state, SETTINGS_OK);
+    event = settings_command(state, SETTINGS_CLOSE);
+    CHECK_INT(event.kind, SETTINGS_EVENT_CLOSE);
+    CHECK(event.slot == NULL);
+    CHECK_STR(settings_notice(state), "");
+    CHECK(!settings_any_changed(state));
+    settings_free(state);
+}
+
+// A function to test a config with more menus than a page has rows: the Menus page lists what
+// fits and says how many more there are in its last row, rather than cutting them off unseen
+static void test_more_menus_than_rows(void)
+{
+    enum { MENUS = 70 };
+    static char names[MENUS][16];
+    const char *pointers[MENUS];
+    for (int i = 0; i < MENUS; i++) {
+        snprintf(names[i], sizeof(names[i]), "Menu %d", i + 1);
+        pointers[i] = names[i];
+    }
+    SettingsState *state = settings_create(pointers, MENUS);
+    SettingsRow rows[SETTINGS_MAX_ROWS];
+    settings_command(state, SETTINGS_DOWN);
+    settings_command(state, SETTINGS_OK);
+    int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, SETTINGS_MAX_ROWS);
+    CHECK_STR(rows[count - 2].label, "Menu 61");
+    CHECK_INT(rows[count - 1].kind, SETTINGS_ROW_NOTE);
+    CHECK(rows[count - 1].note != NULL && strstr(rows[count - 1].note, "9 more menus") != NULL);
+    for (int i = 0; i < 100; i++)
+        settings_command(state, SETTINGS_DOWN);
+    CHECK_INT(settings_cursor(state), count - 2);             // The cursor stops on the last menu listed
+    CHECK_INT(settings_preview_menu(state), 60);
+    settings_free(state);
+
+    // Exactly as many as fit need no note
+    state = settings_create(pointers, SETTINGS_MAX_ROWS - 2);
+    settings_command(state, SETTINGS_DOWN);
+    settings_command(state, SETTINGS_OK);
+    count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, SETTINGS_MAX_ROWS);
+    CHECK_INT(rows[count - 1].kind, SETTINGS_ROW_LINK);
+    CHECK_STR(rows[count - 1].label, "Menu 62");
+    settings_free(state);
+}
+
 int main(void)
 {
     test_round_trips();
@@ -459,5 +605,11 @@ int main(void)
     test_top_and_menus();
     test_background_page();
     test_save_failed_page();
+    test_all_menus_and_titles_pages();
+    test_slots_by_place();
+    test_one_menu();
+    test_background_entered_incomplete();
+    test_more_menus_than_rows();
     return check_report();
 }
+

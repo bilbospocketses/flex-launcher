@@ -4,6 +4,7 @@
 #include <limits.h>
 #include "settings.h"
 #include "layout.h"
+#include "alloc.h"
 #include <launcher_config.h>
 
 #define ARROW " \xE2\x80\xBA "   // U+203A with a space either side, between the pages in the page path
@@ -468,24 +469,25 @@ struct SettingsState {
     int depth;
     char notice[256];
     char failure[1400];
+    char more_menus[128];  // The Menus page's note for the menus it has no room to list
 };
 
 // A function to start the model over the launcher's menus; the caller then sets every entry value
 SettingsState *settings_create(const char *const *menu_names, int menu_count)
 {
-    SettingsState *state = calloc(1, sizeof(SettingsState));
+    SettingsState *state = alloc_calloc(1, sizeof(SettingsState));
     if (state == NULL)
         return NULL;
     state->menu_count = menu_count;
     state->slot_count = SET_ID_GLOBAL_COUNT + menu_count * SET_ID_PER_MENU_COUNT;
-    state->slots = calloc((size_t) state->slot_count, sizeof(SettingSlot));
-    state->names = calloc((size_t) (menu_count > 0 ? menu_count : 1), sizeof(char*));
+    state->slots = alloc_calloc((size_t) state->slot_count, sizeof(SettingSlot));
+    state->names = alloc_calloc((size_t) (menu_count > 0 ? menu_count : 1), sizeof(char*));
     if (state->slots == NULL || state->names == NULL) {
         settings_free(state);
         return NULL;
     }
     for (int i = 0; i < menu_count; i++) {
-        state->names[i] = strdup(menu_names[i]);
+        state->names[i] = alloc_strdup(menu_names[i]);
         if (state->names[i] == NULL) {
             settings_free(state);
             return NULL;
@@ -515,10 +517,10 @@ void settings_free(SettingsState *state)
     if (state == NULL)
         return;
     for (int i = 0; state->names != NULL && i < state->menu_count; i++)
-        free(state->names[i]);
-    free(state->names);
-    free(state->slots);
-    free(state);
+        alloc_free(state->names[i]);
+    alloc_free(state->names);
+    alloc_free(state->slots);
+    alloc_free(state);
 }
 
 // A function to find a setting's slot; `menu` matters only for the per-menu settings
@@ -697,15 +699,25 @@ int settings_rows(SettingsState *state, SettingsRow *rows, int max)
                 n = add_row(rows, n, max, note_row(TRANSPARENT_NOTE));
             break;
         }
-        case SETTINGS_PAGE_MENUS:
+        case SETTINGS_PAGE_MENUS: {
+            // A page holds SETTINGS_MAX_ROWS rows. Menus past that are counted in a note in the last
+            // row, never cut off unseen.
+            int room = SETTINGS_MAX_ROWS - 2;
+            int shown = state->menu_count <= room ? state->menu_count : room - 1;
             grid_summary(state, -1, text, sizeof(text));
             n = add_row(rows, n, max, link_row("All menus", text, SETTINGS_PAGE_MENU, -1));
             n = add_row(rows, n, max, new_row(SETTINGS_ROW_DIVIDER, ""));
-            for (int m = 0; m < state->menu_count; m++) {
+            for (int m = 0; m < shown; m++) {
                 grid_summary(state, m, text, sizeof(text));
                 n = add_row(rows, n, max, link_row(state->names[m], text, SETTINGS_PAGE_MENU, m));
             }
+            if (shown < state->menu_count) {
+                snprintf(state->more_menus, sizeof(state->more_menus),
+                    "%d more menus have no room here: set their grids in config.ini", state->menu_count - shown);
+                n = add_row(rows, n, max, note_row(state->more_menus));
+            }
             break;
+        }
         case SETTINGS_PAGE_MENU: {
             int m = top->menu;
             n = add_row(rows, n, max, setting_row(state, settings_slot(state, m < 0 ? SET_ID_LAYOUT_ROWS : SET_ID_MENU_ROWS, m)));
@@ -786,7 +798,9 @@ static SettingsEvent leave_background(SettingsState *state)
         missing = "No image was chosen";
     else if (mode->value.number == MODE_SLIDESHOW && settings_slot(state, SET_ID_SLIDESHOW_DIRECTORY, -1)->value.text[0] == '\0')
         missing = "No folder was chosen";
-    if (missing == NULL)
+    // A page opened in that mode already (Mode=Image with no Image= line, say) has nothing to go
+    // back to: the mode stays, with no event and no notice
+    if (missing == NULL || mode->value.number == state->stack[state->depth].entry_mode)
         return event;
     event.before = mode->value;
     mode->value.number = state->stack[state->depth].entry_mode;
