@@ -58,8 +58,8 @@ result "settings: a read-only config shows why, and Leave without saving closes 
 # A read-only config so deep that its failure message wraps past the column (W is the widest
 # letter): the message is cut in the middle to fit, so all three rows stay on show, and Leave
 # without saving still closes. Its log lines, longer than the log's line buffer, are cut there.
-long=$TESTER_HOME/cfg/long
-for i in 1 2 3 4; do long=$long/$(printf 'W%.0s' $(seq 230)); done
+w230=$(printf '%230s' '' | tr ' ' W)
+long=$TESTER_HOME/cfg/long/$w230/$w230/$w230/$w230
 mkdir -p "$long"
 cp "$FX/f50-grid.ini" "$long/f50-grid.ini"
 chown -R tester:tester "$TESTER_HOME/cfg"
@@ -100,11 +100,11 @@ hold_menu() { xdotool keydown Menu; sleep 2; xdotool keyup Menu; sleep 1; }
 hold_menukb() { xdotool keydown XF86MenuKB; sleep 2; xdotool keyup XF86MenuKB; sleep 1; }
 for held in held:Menu:40000065 heldkb:MenuKB:40000076; do
     IFS=: read -r name key code <<< "$held"
-    CFG=$FX/f50-keys.ini run_keys f50-$name +hold_$(tr 'A-Z' 'a-z' <<< "$key")
+    CFG=$FX/f50-keys.ini run_keys "f50-$name" "+hold_${key,,}"
     n=$(grep -c "Key Menu (#$code) detected" "$out/f50-$name.log")
     ok=1
     [ "$n" -gt 1 ] && [ "$(grep -c 'Settings opened' "$out/f50-$name.log")" = 1 ] \
-        && ! grep -q 'Settings closed' "$out/f50-$name.log" && ran_clean f50-$name && ok=0
+        && ! grep -q 'Settings closed' "$out/f50-$name.log" && ran_clean "f50-$name" && ok=0
     result "settings: a held $key key (#$code) opens them once, and they stay open (exit $(cat "$out/f50-$name.code"))" $ok
     echo "      the key came $n times; settings opened $(grep -c 'Settings opened' "$out/f50-$name.log") times"
 done

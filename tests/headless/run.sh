@@ -135,7 +135,7 @@ if [ "$fault" = leaks ]; then
     preload=(env "LD_PRELOAD=$libasan $mesa_driver")
 fi
 TESTER=(setpriv --reuid=tester --regid=tester --init-groups --
-        env HOME=$TESTER_HOME DISPLAY=:99 ASAN_OPTIONS=$asan_options LSAN_OPTIONS=$lsan_options UBSAN_OPTIONS=print_stacktrace=1
+        env HOME=$TESTER_HOME DISPLAY=:99 ASAN_OPTIONS=$asan_options "LSAN_OPTIONS=$lsan_options" UBSAN_OPTIONS=print_stacktrace=1
             "GALLIUM_DRIVER=$gallium" setarch "$(uname -m)" -R "${preload[@]}")
 
 # A function to give the launcher its config: the fixture NAME.ini, the file CFG names, or
