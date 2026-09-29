@@ -1033,10 +1033,10 @@ int show_menu(Menu *menu)
     return load_menu(menu, false, false);
 }
 
-// A function to go to the default menu, as :home does
-void show_home()
+// A function to go to the default menu, as :home does; non-zero when it cannot be shown
+int show_home()
 {
-    load_menu(default_menu, false, true);
+    return load_menu(default_menu, false, true);
 }
 
 // A function to fill the screen with a grey checkerboard. In the settings preview it stands for a

@@ -779,15 +779,16 @@ static void free_screen(void)
     menu_count = 0;
 }
 
-// A function to close settings, back to the menu they opened over (or the default menu for :home)
+// A function to close settings, back to the menu they opened over, or for :home straight to the
+// default menu: one menu is loaded either way
 static void close_settings(void)
 {
-    if (origin != NULL && current_menu != origin)
-        show_menu(origin);
+    if (!go_home || show_home() != 0) {
+        if (origin != NULL && current_menu != origin)
+            show_menu(origin);
+    }
     free_screen();
     log_debug("Settings closed");
-    if (go_home)
-        show_home();
     trim_title_fonts();
 }
 

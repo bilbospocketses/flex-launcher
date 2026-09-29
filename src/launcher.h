@@ -340,4 +340,4 @@ void reload_titles(void);
 void trim_title_fonts(void);
 void refresh_layout(void);
 int show_menu(Menu *menu);
-void show_home(void);
+int show_home(void);
