@@ -391,9 +391,7 @@ SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *
     // Render surface
     SDL_Surface *surface = NULL;
     if (info->shadow) {
-        int shadow_offset = h / 40;
-        if (shadow_offset < 2)
-            shadow_offset = 2;
+        int shadow_offset = layout_shadow_offset(h);
         SDL_Surface *foreground = TTF_RenderUTF8_Blended(output_font,
                                       text_buffer,
                                       *info->color

@@ -41,6 +41,7 @@ typedef struct {
     int title_size_pct;    // FontSize as a percentage of the button; 0 = fixed (its line height is title_block)
     int title_min_size;    // The readable minimum point size for a percentage FontSize
     int title_line_pm;     // The title font's line height per point, in thousandths, for a percentage FontSize
+    bool title_shadow;     // Titles have a shadow, which reaches layout_shadow_offset() px below and right of them
 } LayoutParams;
 
 // The part of the screen the buttons may use
@@ -82,6 +83,8 @@ bool layout_parse_title_padding(const char *value, int *padding, bool *percent);
 int layout_title_size(const LayoutParams *params, int button);
 int layout_title_padding(const LayoutParams *params, int button);
 int layout_title_block(const LayoutParams *params, int button);
+int layout_shadow_offset(int line_height);
+int layout_title_width(bool shadow, int button, int line_height);
 int layout_compute(const LayoutParams *params, const LayoutArea *area, int entry_count,
                    LayoutGeometry *geometry, char *why, size_t why_size);
 LayoutPosition layout_move(const LayoutGeometry *geometry, int entry_count, LayoutPosition position,

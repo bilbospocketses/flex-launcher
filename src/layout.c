@@ -113,13 +113,31 @@ int layout_title_padding(const LayoutParams *params, int button)
     return min_int(max_int(params->title_padding, 0), max_int(button, 0) / 2);
 }
 
-// A function to find everything under a button: its padding and its title's line height. A
-// percentage size's line is measured per point at a large size; one px more covers rounding.
+// A function to find how far a title's shadow sits below and right of it: 1/40 of the title's line
+// height, at least 2 px. render_text() draws it this far off, so the layout keeps the same room.
+int layout_shadow_offset(int line_height)
+{
+    return max_int(line_height / 40, 2);
+}
+
+// A function to find how wide a title may be drawn under its button: the button, less the shadow
+// that reaches past the title's right edge
+int layout_title_width(bool shadow, int button, int line_height)
+{
+    return shadow ? max_int(button - layout_shadow_offset(line_height), 0) : button;
+}
+
+// A function to find everything under a button: its padding, its title's line height, and its
+// shadow's offset below that. A percentage size's line is measured per point at a large size; one
+// px more covers rounding. A title drawn in a smaller font (Shrink) has a line and a shadow no taller.
 int layout_title_block(const LayoutParams *params, int button)
 {
     int size = layout_title_size(params, button);
     int line = size > 0 ? (size * params->title_line_pm + 999) / 1000 + 1 : 0;
-    return max_int(params->title_block, 0) + line + layout_title_padding(params, button);
+    line += max_int(params->title_block, 0);
+    if (params->title_shadow && line > 0)
+        line += layout_shadow_offset(line);
+    return line + layout_title_padding(params, button);
 }
 
 // A function to find the largest button for which `rows` rows fit the area's height, each with

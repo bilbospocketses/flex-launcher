@@ -379,6 +379,54 @@ static void test_fixed_titles(void)
     CHECK_INT(g.title_block, 68);
 }
 
+// A function to test shadowed titles: the shadow's offset (1/40 of the line, at least 2 px) is kept
+// under the title, so the buttons make room for it, and a title is cut that much narrower
+static void test_title_shadows(void)
+{
+    CHECK_INT(layout_shadow_offset(0), 2);
+    CHECK_INT(layout_shadow_offset(79), 2);
+    CHECK_INT(layout_shadow_offset(120), 3);
+    CHECK_INT(layout_shadow_offset(400), 10);
+    CHECK_INT(layout_title_width(false, 200, 120), 200);
+    CHECK_INT(layout_title_width(true, 200, 50), 198);
+    CHECK_INT(layout_title_width(true, 200, 120), 197);
+    CHECK_INT(layout_title_width(true, 1, 50), 0);
+
+    // A fixed FontSize: the shadow sits under its line
+    LayoutParams p = params(1, 4, 0);
+    LayoutGeometry g;
+    p.title_block = 37;
+    p.title_shadow = true;
+    CHECK_INT(layout_compute(&p, &SCREEN_1080, 6, &g, NULL, 0), 0);
+    CHECK_INT(g.button, 393);       // A width-limited strip keeps its buttons
+    CHECK_INT(g.title_block, 39);   // 37 + 2
+    p.title_block = 120;
+    CHECK_INT(layout_compute(&p, &SCREEN_1080, 6, &g, NULL, 0), 0);
+    CHECK_INT(g.title_block, 123);  // 120 + 3
+
+    // A height-limited grid gives the shadow's 2 px of each row to its titles
+    p = params(3, 6, 0);
+    p.title_shadow = true;
+    CHECK_INT(layout_compute(&p, &SCREEN_1080, 18, &g, NULL, 0), 0);
+    CHECK_INT(g.title_block, 62);   // 60 + 2
+    CHECK_INT(g.button, 178);       // (972 - 2*96 - 2*30) / 3 - 62; 180 without the shadow
+    CHECK_INT(g.y_advance, 336);    // 178 + 62 + 96
+
+    // A percentage FontSize: the shadow of its 56 px line
+    p = scaled(1, 4, 0);
+    p.title_shadow = true;
+    CHECK_INT(layout_compute(&p, &SCREEN_1080, 6, &g, NULL, 0), 0);
+    CHECK_INT(g.title_size, 55);
+    CHECK_INT(g.title_block, 89);   // 55 + 1 + 2 + 31
+
+    // Titles off: no title, so no shadow
+    p = params(1, 4, 0);
+    p.title_block = 0;
+    p.title_shadow = true;
+    CHECK_INT(layout_compute(&p, &SCREEN_1080, 6, &g, NULL, 0), 0);
+    CHECK_INT(g.title_block, 0);
+}
+
 // A function to test titles turned off: nothing sits under the buttons
 static void test_no_titles(void)
 {
@@ -630,6 +678,7 @@ int main(void)
     test_titles_stop_at_the_minimum();
     test_titles_grow_with_large_buttons();
     test_fixed_titles();
+    test_title_shadows();
     test_no_titles();
     test_titles_scale_the_row_count();
     test_title_limits();

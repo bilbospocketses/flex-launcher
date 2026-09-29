@@ -813,6 +813,7 @@ int compute_menu_layout(const Menu *menu, LayoutGeometry *geometry, char *why, s
         .title_min_size    = geo.title_min_size,
         .title_line_pm     = geo.title_line_pm
     };
+    params.title_shadow = titles && config.title_shadows;
     return layout_compute(&params, &layout_area, (int) menu->num_entries, geometry, why, why_size);
 }
 
@@ -881,6 +882,7 @@ static void render_buttons(Menu *menu, const LayoutGeometry *geometry)
         }
     }
     int line_height = TTF_FontHeight(title_info.font);
+    title_info.max_width = layout_title_width(config.title_shadows, size, line_height);   // Room for the shadow
     for (unsigned int i = 0; i < menu->num_entries; i++) {
         Entry *entry = menu->items[i];
         if (entry->icon != NULL)
