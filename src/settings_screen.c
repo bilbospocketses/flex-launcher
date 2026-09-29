@@ -1077,6 +1077,16 @@ static const char *fit_note(const char *note, int width, int max_height)
     return fitted_note;
 }
 
+// A function to tell how tall a row draws: a note as tall as its fitted text, as draw_row() draws
+// it, any other row one row_height
+static int row_drawn_height(const SettingsRow *row, int note_room)
+{
+    if (row->kind != SETTINGS_ROW_NOTE)
+        return row_height;
+    int width = column_width - 2 * (margin / 2);
+    return max_int(row_height, wrapped_height(font_small, fit_note(row->note, width, note_room), width) + row_height / 2);
+}
+
 // A function to draw one row; returns the height it took. A note row takes at most note_room.
 static int draw_row(const SettingsRow *row, bool highlighted, int x, int y, int width, int note_room)
 {
@@ -1125,12 +1135,36 @@ static void draw_model_rows(int x, int top, int bottom)
         first_row = cursor - visible + 1;
     first_row = max_int(0, min_int(first_row, count - visible));
 
-    // A note gets the room the other rows leave it, so the rows under it (Try again and Leave
-    // without saving, under a failed save's reason) are always on show
+    // A note gets the room the other rows on show with it leave, so the rows under it (Try again
+    // and Leave without saving, under a failed save's reason) are always on show. A page longer
+    // than the column scrolls, so no more than a column's worth of rows count, and a note always
+    // keeps three lines.
     int notes = 0;
     for (int i = 0; i < count; i++)
         notes += rows[i].kind == SETTINGS_ROW_NOTE ? 1 : 0;
-    int note_room = notes > 0 ? ((bottom - top) - (count - notes) * row_height) / notes - row_height / 2 : 0;
+    int note_room = 0;
+    if (notes > 0) {
+        int others = min_int(count - notes, visible - 1);
+        note_room = ((bottom - top) - others * row_height) / notes - row_height / 2;
+        note_room = max_int(note_room, 3 * TTF_FontHeight(font_small));
+    }
+
+    // With the cursor on the last row it can rest on, what follows it (the Menus page's note on
+    // the menus it has no room for, say) comes on show too: the page scrolls to its end
+    bool rest_after = false;
+    for (int i = cursor + 1; i < count; i++) {
+        if (rows[i].enabled && rows[i].kind != SETTINGS_ROW_DIVIDER && rows[i].kind != SETTINGS_ROW_NOTE)
+            rest_after = true;
+    }
+    if (!rest_after) {
+        int room = bottom - top;
+        int from = count;
+        while (from > 0 && room >= row_drawn_height(&rows[from - 1], note_room)) {
+            room -= row_drawn_height(&rows[from - 1], note_room);
+            from--;
+        }
+        first_row = max_int(first_row, min_int(from, cursor));
+    }
     int y = top;
     int last = first_row - 1;
     for (int i = first_row; i < count && y + row_height <= bottom; i++) {

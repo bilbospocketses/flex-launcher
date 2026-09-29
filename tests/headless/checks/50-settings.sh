@@ -248,3 +248,15 @@ grep -E 'Settings( opened|: not opened| closed)' "$out/f50-launch.log" | sed 's/
 ok=1
 sed -n '/^\[Gamepad\]/,/^\[/p' /work/build/config.ini | grep -qx 'Enabled=true' && ok=0
 result "the sample config turns the gamepad on" $ok
+
+# Seventy menus: the Menus page holds 61 of them and a note on the other 9 in its last row. With
+# the cursor on the last menu the page scrolls to its end, so the note is on show, and it keeps
+# room enough to be read whole, not cut to "..." for a page longer than the column.
+all_downs() { local keys; mapfile -t keys < <(yes Down | head -70); xdotool key --delay 30 "${keys[@]}"; sleep 2; }
+CFG=$FX/f50-manymenus.ini run_keys f50-manymenus Menu Down Return +all_downs Menu
+ok=1
+in_range "$out/f50-manymenus.log" 'Settings opened' 'Settings closed' 'of 64 on show' \
+    && sed -n '/Settings opened/,/Settings closed/p' "$out/f50-manymenus.log" | grep -qE 'Settings: rows [0-9]+ to 63 of 64 on show' \
+    && ! grep -q 'Settings: the note was cut' "$out/f50-manymenus.log" && ran_clean f50-manymenus && ok=0
+result "settings: a page longer than the column shows its last note whole (exit $(cat "$out/f50-manymenus.code"))" $ok
+grep -E 'Settings: (rows .* of 64|the note was cut)' "$out/f50-manymenus.log" | tail -3 | sed 's/^/      /'
