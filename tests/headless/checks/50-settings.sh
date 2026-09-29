@@ -86,8 +86,8 @@ cmp -s "$FX/f50-grid.ini" /usr/local/share/streamflex/config.ini && grep -qx 'Co
 result "settings: a read-only system config is saved as ~/.config/streamflex/config.ini (exit $(cat "$out/f50-system.code"))" $ok
 rm -rf "$TESTER_HOME/.config/streamflex"
 
-# A config found in the working folder, as when StreamFlex is started from its own folder: the log
-# and the save name it by its full path, never ./config.ini (on Windows, .\config.ini)
+# A config found in the working folder, as when StreamFlex is started from its own folder: the save
+# names it by its full path, never ./config.ini (on Windows, .\config.ini), and the log gives both
 rm -rf "$TESTER_HOME/cwd"
 mkdir -p "$TESTER_HOME/cwd"
 cp "$FX/f50-grid.ini" "$TESTER_HOME/cwd/config.ini"
@@ -95,11 +95,37 @@ chown -R tester:tester "$TESTER_HOME/cwd"
 ( cd "$TESTER_HOME/cwd" && CFG=none run_keys f50-cwd $ALL_MENUS_COLUMNS_UP )
 cfg=$TESTER_HOME/cwd/config.ini
 ok=1
-grep -qx "Config file found: $cfg" "$out/f50-cwd.log" \
+grep -qx "Config file found: ./config.ini ($cfg)" "$out/f50-cwd.log" \
     && grep -q "Settings saved 1 change(s) to $cfg (backup: $cfg.bak)" "$out/f50-cwd.log" \
     && grep -qx 'Columns=5 ; four across' "$cfg" && ran_clean f50-cwd && ok=0
 result "settings: a config found in the working folder is named by its full path (exit $(cat "$out/f50-cwd.code"))" $ok
 grep -E 'Config file found|Settings saved' "$out/f50-cwd.log" | sed 's/^/      /'
+
+# -c naming a link: the save follows it to the file it points to, so the log gives both the path
+# given and that file
+mkdir -p "$TESTER_HOME/linked"
+ln -sfn "$TESTER_HOME/cwd/config.ini" "$TESTER_HOME/linked/config.ini"
+chown -h tester:tester "$TESTER_HOME/linked" "$TESTER_HOME/linked/config.ini"
+CFG=$TESTER_HOME/linked/config.ini run_keys f50-link
+ok=1
+grep -qx "Config file found: $TESTER_HOME/linked/config.ini ($TESTER_HOME/cwd/config.ini)" "$out/f50-link.log" \
+    && ran_clean f50-link && ok=0
+result "settings: a config named through a link is logged as given and as found (exit $(cat "$out/f50-link.code"))" $ok
+grep 'Config file' "$out/f50-link.log" | sed 's/^/      /'
+
+# A config whose full path does not fit the launcher's path buffer (1001 bytes) is named as given,
+# and the debug log says why
+w230=$(printf '%230s' '' | tr ' ' W)
+deep=$TESTER_HOME/cfg/deep/$w230/$w230/$w230/$w230/$w230
+mkdir -p "$deep"
+cp "$FX/f50-grid.ini" "$deep/f50-grid.ini"
+chown -R tester:tester "$TESTER_HOME/cfg"
+CFG=$deep/f50-grid.ini run_keys f50-deep
+ok=1
+grep -q '^Config file: its full path could not be found (the path is too long), so it is named as given$' "$out/f50-deep.log" \
+    && grep -q "^Config file found: $TESTER_HOME/cfg/deep/WWW" "$out/f50-deep.log" && ran_clean f50-deep && ok=0
+result "a config path too long to resolve is named as given, and the log says why (exit $(cat "$out/f50-deep.code"))" $ok
+grep '^Config file:' "$out/f50-deep.log" | sed 's/^/      /'
 
 # While settings are open, the Esc=:quit hotkey is ignored, and the Menu key closes them again
 run_keys f50-hotkey Menu Escape Menu

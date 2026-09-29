@@ -122,14 +122,23 @@ void handle_arguments(int argc, char *argv[], char **config_file_path)
     }
 
     // Keep the file's absolute path, so the log, the settings screen's save and its messages say
-    // where it is, not ".\config.ini" from wherever StreamFlex was started
+    // where it is, not ".\config.ini" from wherever StreamFlex was started. On Linux a link is
+    // followed, as the save follows it, so a path that changes is logged as given and as found.
     char full_path[MAX_PATH_CHARS + 1];
-    char *copy = fileio_full_path(*config_file_path, full_path, sizeof(full_path)) ? strdup(full_path) : NULL;
-    if (copy != NULL) {
-        free(*config_file_path);
-        *config_file_path = copy;
+    if (!fileio_full_path(*config_file_path, full_path, sizeof(full_path))) {
+        log_debug("Config file: its full path could not be found (%s), so it is named as given", fileio_last_error());
+        log_debug("Config file found: %s", *config_file_path);
     }
-    log_debug("Config file found: %s", *config_file_path);
+    else if (strcmp(full_path, *config_file_path) == 0)
+        log_debug("Config file found: %s", *config_file_path);
+    else {
+        log_debug("Config file found: %s (%s)", *config_file_path, full_path);
+        char *copy = strdup(full_path);
+        if (copy != NULL) {
+            free(*config_file_path);
+            *config_file_path = copy;
+        }
+    }
 }
 
 // A function to parse the config file and store the settings into the config struct
