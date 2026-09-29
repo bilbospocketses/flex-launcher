@@ -564,8 +564,13 @@ int config_handler(void *user, const char *section, const char *name, const char
             token = strtok(NULL, delimiter);
         }
 
-        // Delete entry if parse failed to find 3 valid tokens
+        // Delete entry if parse failed to find 3 valid tokens, or its command is :select
         if (i != 3 || MATCH(":select", entry->cmd)) {
+            if (i != 3)
+                log_error("Menu '%s': '%s' needs a title, an icon and a command, ignoring it", section, name);
+            else
+                log_error("Menu '%s': '%s' uses :select, which only a hotkey or gamepad button can, ignoring it",
+                    section, name);
             free(entry->title);
             free(entry->icon_path);
             free(entry->cmd);
