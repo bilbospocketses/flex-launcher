@@ -8,6 +8,10 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-29
+
+The second part of the overhaul: a settings screen, opened with the remote's Menu key, a gamepad's Start or `:settings`, that changes the background, each menu's grid and the title size with a live preview, and saves only what changed into your config. A config written for 0.2.0 still works. Visible differences: the gamepad is on unless the config turns it off, titles scale with each menu's buttons (the same size as before on 256 px buttons), and the Windows zip no longer carries a Visual C++ runtime DLL.
+
 ### Added
 - **A settings screen.** Press the Menu key on the remote, Start on a gamepad, or run the new `:settings` command, and change the background, each menu's grid and the title size from the remote, with a live preview beside the settings. A folder browser chooses a background image or slideshow folder, previewing each image as you move over it. Leaving saves only what changed into your config file, keeping its comments and layout, and keeps the previous version as `config.ini.bak`; nothing is written when nothing changed, and a save that fails says why and leaves the file as it was. On Linux, a read-only packaged config is saved as your own `~/.config/streamflex/config.ini`.
 - The default config's System menu has a Settings tile, and its gamepad section maps Start to `:settings`. A config that maps nothing to `:settings` gets Start for it anyway, unless it uses Start for something else.
