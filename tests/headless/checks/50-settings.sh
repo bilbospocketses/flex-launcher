@@ -86,6 +86,21 @@ cmp -s "$FX/f50-grid.ini" /usr/local/share/streamflex/config.ini && grep -qx 'Co
 result "settings: a read-only system config is saved as ~/.config/streamflex/config.ini (exit $(cat "$out/f50-system.code"))" $ok
 rm -rf "$TESTER_HOME/.config/streamflex"
 
+# A config found in the working folder, as when StreamFlex is started from its own folder: the log
+# and the save name it by its full path, never ./config.ini (on Windows, .\config.ini)
+rm -rf "$TESTER_HOME/cwd"
+mkdir -p "$TESTER_HOME/cwd"
+cp "$FX/f50-grid.ini" "$TESTER_HOME/cwd/config.ini"
+chown -R tester:tester "$TESTER_HOME/cwd"
+( cd "$TESTER_HOME/cwd" && CFG=none run_keys f50-cwd $ALL_MENUS_COLUMNS_UP )
+cfg=$TESTER_HOME/cwd/config.ini
+ok=1
+grep -qx "Config file found: $cfg" "$out/f50-cwd.log" \
+    && grep -q "Settings saved 1 change(s) to $cfg (backup: $cfg.bak)" "$out/f50-cwd.log" \
+    && grep -qx 'Columns=5 ; four across' "$cfg" && ran_clean f50-cwd && ok=0
+result "settings: a config found in the working folder is named by its full path (exit $(cat "$out/f50-cwd.code"))" $ok
+grep -E 'Config file found|Settings saved' "$out/f50-cwd.log" | sed 's/^/      /'
+
 # While settings are open, the Esc=:quit hotkey is ignored, and the Menu key closes them again
 run_keys f50-hotkey Menu Escape Menu
 ok=1

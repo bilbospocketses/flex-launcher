@@ -318,6 +318,30 @@ static void prove_make_dirs(void)
     report("making folders");
 }
 
+// A function to prove that finding a file's full path fails cleanly: false with "out of memory",
+// or the path (Linux allocates nothing for it)
+static void prove_full_path(void)
+{
+    CHECK(fileio_write_all(DIR "/full.txt", "x", 1));
+    char expected[1024];
+    CHECK(fileio_full_path(DIR "/full.txt", expected, sizeof(expected)));
+    for (int n = 1;; n++) {
+        char path[1024] = "";
+        set_other_reason();
+        arm(n);
+        bool found = fileio_full_path(DIR "/full.txt", path, sizeof(path));
+        disarm();
+        if (failed)
+            CHECK_RUN(!found && path[0] == '\0' && strcmp(fileio_last_error(), "out of memory") == 0, n);
+        else
+            CHECK_RUN(found && strcmp(path, expected) == 0, n);
+        runs = n;
+        if (!no_leak(__LINE__, n) || !failed)
+            break;
+    }
+    report("finding a file's full path");
+}
+
 // A function to tell whether two lists of places are the same, place by place
 static bool same_places(const FileioPlace *a, int a_count, const FileioPlace *b, int b_count)
 {
@@ -601,6 +625,7 @@ int main(void)
     prove_list();
     prove_read_all();
     prove_make_dirs();
+    prove_full_path();
 #ifdef _WIN32
     prove_places("listing the places", NULL);
 #else

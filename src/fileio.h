@@ -32,6 +32,7 @@ bool fileio_make_dirs(const char *path);   // Windows: a share alone (\\server\s
                                            // since looking can wait on the network, so true there does
                                            // not say the share exists; what is done there next says so
 bool fileio_real_path(const char *path, char *out, size_t size);   // on Linux, follows symbolic links; on Windows, the path as given
+bool fileio_full_path(const char *path, char *out, size_t size);   // absolute: on Linux the real path; on Windows from the working folder
 int fileio_list(const char *folder, FileioEntry **entries);
 void fileio_free_list(FileioEntry *entries, int count);
 const char *fileio_last_error(void);

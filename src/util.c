@@ -120,6 +120,15 @@ void handle_arguments(int argc, char *argv[], char **config_file_path)
         if (*config_file_path == NULL)
             log_fatal("No config file found");
     }
+
+    // Keep the file's absolute path, so the log, the settings screen's save and its messages say
+    // where it is, not ".\config.ini" from wherever StreamFlex was started
+    char full_path[MAX_PATH_CHARS + 1];
+    char *copy = fileio_full_path(*config_file_path, full_path, sizeof(full_path)) ? strdup(full_path) : NULL;
+    if (copy != NULL) {
+        free(*config_file_path);
+        *config_file_path = copy;
+    }
     log_debug("Config file found: %s", *config_file_path);
 }
 

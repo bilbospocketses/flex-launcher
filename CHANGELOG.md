@@ -9,6 +9,7 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 ## [Unreleased]
 
 ### Fixed
+- Settings and their messages name the config file by its full path. Started from its own folder, StreamFlex showed `Couldn't save to .\config.ini: ...` on screen and logged `.\config.ini`; it now says `C:\StreamFlex\config.ini`.
 - The debug log (`-d`) names every folder the settings' folder browser moves into, not only the one it opens in.
 
 ## [0.3.0] - 2026-09-29
