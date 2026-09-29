@@ -39,8 +39,9 @@ static void move_selection(LayoutDirection direction);
 static void load_submenu(const char *submenu);
 static void load_back_menu(Menu *menu);
 static void draw_screen(void);
-static void handle_keypress(SDL_Keysym *key);
+static void handle_keypress(SDL_Keysym *key, bool repeat);
 static bool hotkey_bound(SDL_Keycode keycode);
+static bool menu_key(SDL_Keycode keycode);
 static void execute_command(const char *command);
 static void poll_gamepad(void);
 static void init_gamepad(Gamepad **gamepad, int device_index);
@@ -449,11 +450,23 @@ static bool hotkey_bound(SDL_Keycode keycode)
     return false;
 }
 
-// A function to handle key presses from keyboard
-static void handle_keypress(SDL_Keysym *key)
+// A function to tell whether a key is the built-in Menu key, which opens settings unless a hotkey
+// has it: a keyboard's context-menu key (SDLK_APPLICATION) or a remote's Menu button (SDLK_MENU)
+static bool menu_key(SDL_Keycode keycode)
+{
+    return (keycode == SDLK_APPLICATION || keycode == SDLK_MENU) && !hotkey_bound(keycode);
+}
+
+// A function to handle key presses from keyboard; `repeat` marks the keyboard's own repeats of a
+// held key
+static void handle_keypress(SDL_Keysym *key, bool repeat)
 {
     if (config.debug)
         log_debug("Key %s (#%X) detected", SDL_GetKeyName(key->sym), key->sym);
+
+    // A held Menu key opens (or closes) settings once: its repeats would strobe them
+    if (repeat && menu_key(key->sym))
+        return;
 
     // While settings are open, the built-in keys are their commands; other keys run their hotkey,
     // which execute_command() hands to settings (and settings ignore unless it is one of theirs)
@@ -479,7 +492,7 @@ static void handle_keypress(SDL_Keysym *key)
                 command = SCMD_BACK;
                 break;
             default:
-                if (key->sym == SDLK_APPLICATION && !hotkey_bound(SDLK_APPLICATION))
+                if (menu_key(key->sym))
                     command = SCMD_SETTINGS;
                 break;
         }
@@ -512,8 +525,8 @@ static void handle_keypress(SDL_Keysym *key)
     else if (key->sym == SDLK_BACKSPACE)
         load_back_menu(current_menu);
 
-    // The Menu key (the context-menu key on a keyboard) opens settings, unless a hotkey has it
-    else if (key->sym == SDLK_APPLICATION && !hotkey_bound(SDLK_APPLICATION))
+    // The Menu key opens settings, unless a hotkey has it
+    else if (menu_key(key->sym))
         execute_command(SCMD_SETTINGS);
 
     //Check hotkeys
@@ -1287,11 +1300,37 @@ static void poll_gamepad()
         }
         else if (i->repeat == delay_period) {
             ticks.last_input = ticks.main;
-            execute_command(i->cmd);
+
+            // :settings acts on the first press only: repeating it would strobe settings open and shut
+            if (strcmp(i->cmd, SCMD_SETTINGS))
+                execute_command(i->cmd);
             i->repeat -= repeat_period;
         }
     }
 }
+
+#ifdef STREAMFLEX_TEST_HOOKS
+// A function only the headless harness builds, since it has no gamepad: with STREAMFLEX_TEST_PAD
+// set, it attaches a virtual one, and holds its Start button while the file that names exists
+static void test_pad_update()
+{
+    static SDL_Joystick *pad = NULL;
+    static bool attached = false;
+    const char *held = getenv("STREAMFLEX_TEST_PAD");
+    if (held == NULL || !config.gamepad_enabled)
+        return;
+    if (!attached) {
+        attached = true;
+        int index = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER,
+                        SDL_CONTROLLER_AXIS_MAX, SDL_CONTROLLER_BUTTON_MAX, 0);
+        pad = index >= 0 ? SDL_JoystickOpen(index) : NULL;
+        if (pad == NULL)
+            log_error("Test hook: no virtual gamepad\n%s", SDL_GetError());
+    }
+    if (pad != NULL)
+        SDL_JoystickSetVirtualButton(pad, SDL_CONTROLLER_BUTTON_START, file_exists(held) ? SDL_PRESSED : SDL_RELEASED);
+}
+#endif
 
 // A function to update the slideshow
 static void update_slideshow()
@@ -1636,6 +1675,9 @@ int main(int argc, char *argv[])
     log_debug("Begin program loop");
     while (1) {
         ticks.main = SDL_GetTicks();
+#ifdef STREAMFLEX_TEST_HOOKS
+        test_pad_update();
+#endif
         while (SDL_PollEvent(&event)) {
             switch(event.type) {
                 case SDL_QUIT:
@@ -1644,7 +1686,7 @@ int main(int argc, char *argv[])
 
                 case SDL_KEYDOWN:
                     ticks.last_input = ticks.main;
-                    handle_keypress(&event.key.keysym);
+                    handle_keypress(&event.key.keysym, event.key.repeat != 0);
                     break;
                 
                 case SDL_MOUSEBUTTONDOWN:

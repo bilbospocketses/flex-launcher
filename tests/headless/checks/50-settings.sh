@@ -76,6 +76,43 @@ in_range "$out/f50-hotkey.log" 'Settings opened' 'Settings closed' "Settings: ig
     && ran_clean f50-hotkey && ok=0
 result "settings: a :quit hotkey is ignored while they are open, and Menu closes them (exit $(cat "$out/f50-hotkey.code"))" $ok
 
+# A held Menu key opens settings once, and they stay open: the keyboard's repeats of it do nothing.
+# The same for a remote's Menu button, SDLK_MENU (X's XF86MenuKB, where Menu is SDLK_APPLICATION).
+# The key must have come more than once, or nothing was repeated and the check proves nothing.
+hold_menu() { xdotool keydown Menu; sleep 2; xdotool keyup Menu; sleep 1; }
+hold_menukb() { xdotool keydown XF86MenuKB; sleep 2; xdotool keyup XF86MenuKB; sleep 1; }
+for held in held:Menu:40000065 heldkb:MenuKB:40000076; do
+    IFS=: read -r name key code <<< "$held"
+    CFG=$FX/f50-keys.ini run_keys f50-$name +hold_$(tr 'A-Z' 'a-z' <<< "$key")
+    n=$(grep -c "Key Menu (#$code) detected" "$out/f50-$name.log")
+    ok=1
+    [ "$n" -gt 1 ] && [ "$(grep -c 'Settings opened' "$out/f50-$name.log")" = 1 ] \
+        && ! grep -q 'Settings closed' "$out/f50-$name.log" && ran_clean f50-$name && ok=0
+    result "settings: a held $key key (#$code) opens them once, and they stay open (exit $(cat "$out/f50-$name.code"))" $ok
+    echo "      the key came $n times; settings opened $(grep -c 'Settings opened' "$out/f50-$name.log") times"
+done
+
+# A remote's Menu button opens settings as the keyboard's Menu key does, and closes them again
+CFG=$FX/f50-keys.ini run_keys f50-menukb XF86MenuKB XF86MenuKB
+ok=1
+grep -q 'Key Menu (#40000076) detected' "$out/f50-menukb.log" \
+    && in_range "$out/f50-menukb.log" 'Key Menu (#40000076) detected' 'Settings closed' "Settings opened over menu 'Main'" \
+    && ran_clean f50-menukb && ok=0
+result "settings: the Menu key's other code (#40000076) opens and closes them (exit $(cat "$out/f50-menukb.code"))" $ok
+
+# A gamepad's Start button held for 2 s opens settings once. The harness has no gamepad, so its
+# build's test hook attaches a virtual one (STREAMFLEX_TEST_PAD), whose Start is held while the
+# file that names exists.
+hold_start() { : > /tmp/pad-start; sleep 2; rm -f /tmp/pad-start; sleep 1; }
+rm -f /tmp/pad-start
+STREAMFLEX_TEST_PAD=/tmp/pad-start WAIT_FOR='Gamepad connected' run_keys f50-padheld +hold_start
+ok=1
+[ "$(grep -c 'Gamepad ButtonStart detected' "$out/f50-padheld.log")" = 1 ] \
+    && [ "$(grep -c 'Settings opened' "$out/f50-padheld.log")" = 1 ] \
+    && ! grep -q 'Settings closed' "$out/f50-padheld.log" && ran_clean f50-padheld && ok=0
+result "settings: a held Start button opens them once, and they stay open (exit $(cat "$out/f50-padheld.code"))" $ok
+echo "      settings opened $(grep -c 'Settings opened' "$out/f50-padheld.log") times"
+
 # Quitting while settings are open closes them first, so the QuitCmd still runs
 run_keys f50-quitcmd Menu
 ok=1

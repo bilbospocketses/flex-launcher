@@ -10,7 +10,8 @@
 #                               a path no config or input can reach
 #   run.sh <label> leaks        every check again, with LeakSanitizer on: a run that leaks fails
 #                               its check, and each leak is listed at the end as a failure too
-# The build defines STREAMFLEX_TEST_HOOKS, which only this harness does (see decode_image()).
+# The build defines STREAMFLEX_TEST_HOOKS, which only this harness does (see decode_image() and
+# test_pad_update()).
 # Prints PASS or FAIL per check and exits non-zero when any failed. Every run's output, log and
 # exit code are kept in /out/<label>.
 set -u
