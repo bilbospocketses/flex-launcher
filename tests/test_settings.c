@@ -242,6 +242,19 @@ static void entry(SettingsState *state, SettingId id, const char *text)
     settings_set_entry(state, id, -1, &value);
 }
 
+// A function to get the value an event's slot holds now. An event with no slot (a wrong kind, or a
+// NULL slot) fails a check and gives an empty value, so the checks after it report, never crash.
+static const SettingValue *event_value(const SettingsEvent *event)
+{
+    static SettingValue none;
+    if (event->slot != NULL)
+        return &event->slot->value;
+    check_count++;
+    check_failures++;
+    fprintf(stderr, "event_value: the event (kind %d) has no slot\n", (int) event->kind);
+    return &none;
+}
+
 // A function to open a model over two menus, with the values a typical config gives
 static SettingsState *open_model(void)
 {
@@ -419,7 +432,7 @@ static void test_background_page(void)
     SettingsEvent event = settings_command(state, SETTINGS_BACK);
     CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
     CHECK(event.slot == settings_slot(state, SET_ID_BACKGROUND_MODE, -1));
-    CHECK_INT(event.slot->value.number, 0);
+    CHECK_INT(event_value(&event)->number, 0);
     CHECK(strstr(settings_notice(state), "No image was chosen") != NULL);
     CHECK_INT(settings_page(state), SETTINGS_PAGE_TOP);
     CHECK(!settings_any_changed(state));
@@ -431,7 +444,7 @@ static void test_background_page(void)
     event = settings_command(state, SETTINGS_OK);
     CHECK_INT(event.kind, SETTINGS_EVENT_BROWSE);
     CHECK(event.slot == settings_slot(state, SET_ID_BACKGROUND_IMAGE, -1));
-    SettingSlot *image = event.slot;
+    SettingSlot *image = settings_slot(state, SET_ID_BACKGROUND_IMAGE, -1);   // Never NULL, as event.slot may be
     CHECK_INT(settings_choose(state, image, "/pics/a.png").kind, SETTINGS_EVENT_CHANGED);
     CHECK_INT(settings_choose(state, image, "/pics/a.png").kind, SETTINGS_EVENT_NONE);
     CHECK_INT(settings_command(state, SETTINGS_BACK).kind, SETTINGS_EVENT_MOVED);
@@ -460,7 +473,7 @@ static void test_background_page(void)
     event = settings_command(state, SETTINGS_CLOSE);
     CHECK_INT(event.kind, SETTINGS_EVENT_CLOSE);
     CHECK(event.slot == settings_slot(state, SET_ID_BACKGROUND_MODE, -1));
-    CHECK_INT(event.slot->value.number, 1);
+    CHECK_INT(event_value(&event)->number, 1);
     settings_free(state);
 }
 
@@ -528,7 +541,7 @@ static void test_all_menus_and_titles_pages(void)
     SettingsEvent event = settings_command(state, SETTINGS_RIGHT);
     CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
     CHECK(event.slot == settings_slot(state, SET_ID_LAYOUT_ROWS, -1));
-    CHECK_INT(event.slot->value.number, 2);
+    CHECK_INT(event_value(&event)->number, 2);
 
     // Titles: nine rows, its size first
     settings_command(state, SETTINGS_BACK);
@@ -1000,12 +1013,12 @@ static void test_general_page(void)
     CHECK_INT(settings_cursor(state), 0);
     SettingsEvent event = settings_command(state, SETTINGS_RIGHT);
     CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
-    CHECK_STR(event.slot->value.text, "Games");
+    CHECK_STR(event_value(&event)->text, "Games");
     CHECK_STR(event.before.text, "Main");
     CHECK_INT(settings_command(state, SETTINGS_RIGHT).kind, SETTINGS_EVENT_NONE);   // Games is the last
     event = settings_command(state, SETTINGS_LEFT);                                  // And back to Main
     CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
-    CHECK(event.slot != NULL && strcmp(event.slot->value.text, "Main") == 0);
+    CHECK_STR(event_value(&event)->text, "Main");
     event = settings_command(state, SETTINGS_OK);
     CHECK_INT(event.kind, SETTINGS_EVENT_PICK);
     CHECK(event.slot == settings_slot(state, SET_ID_DEFAULT_MENU, -1));
@@ -1118,7 +1131,7 @@ static void test_other_pages(void)
     cursor_to(state, "Device");
     SettingsEvent event = settings_command(state, SETTINGS_RIGHT);
     CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
-    CHECK_INT(event.slot->value.number, 0);
+    CHECK_INT(event_value(&event)->number, 0);
     CHECK_STR(row_labelled(state, rows, "Device")->value, "Xbox Controller");
     settings_command(state, SETTINGS_RIGHT);
     CHECK_STR(row_labelled(state, rows, "Device")->value, "8BitDo Pro 2");
@@ -1130,7 +1143,7 @@ static void test_other_pages(void)
     CHECK_INT(settings_slot(state, SET_ID_GAMEPAD_DEVICE, -1)->value.number, 1);
     event = settings_command(state, SETTINGS_RIGHT);                 // And back to it
     CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
-    CHECK(event.slot != NULL && event.slot->value.number == 5);
+    CHECK_INT(event_value(&event)->number, 5);
     settings_command(state, SETTINGS_LEFT);
     CHECK_INT(settings_command(state, SETTINGS_OK).kind, SETTINGS_EVENT_PICK);
 
