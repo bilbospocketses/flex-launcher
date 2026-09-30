@@ -34,6 +34,8 @@ set(SOURCES
   config_fields.h
   listpick.c
   listpick.h
+  colourpick.c
+  colourpick.h
   browser.c
   browser.h
   settings_screen.c

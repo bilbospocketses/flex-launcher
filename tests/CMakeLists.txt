@@ -63,6 +63,14 @@ add_executable(test_listpick test_listpick.c "${PROJECT_SOURCE_DIR}/src/listpick
 target_include_directories(test_listpick PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME listpick COMMAND test_listpick)
 
+# Unit tests for the colour picker's model and the contrast maths (pure; the maths needs libm)
+add_executable(test_colourpick test_colourpick.c "${PROJECT_SOURCE_DIR}/src/colourpick.c")
+target_include_directories(test_colourpick PRIVATE "${PROJECT_SOURCE_DIR}/src")
+if (UNIX)
+  target_link_libraries(test_colourpick m)
+endif ()
+add_test(NAME colourpick COMMAND test_colourpick)
+
 # Unit tests for the folder browser's model, over a pretend file system
 add_executable(test_browser test_browser.c "${PROJECT_SOURCE_DIR}/src/browser.c" "${PROJECT_SOURCE_DIR}/src/fileio.c"
   "${PROJECT_SOURCE_DIR}/src/alloc.c")
