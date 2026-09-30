@@ -13,7 +13,8 @@ static int max_int(int a, int b)
     return a > b ? a : b;
 }
 
-// A function to take hundredths of a percent of a size, truncated as convert_percent_to_int() did
+// A function to take hundredths of a percent of a size, exactly and then truncated; the float path in
+// convert_percent_to_int() could come out 1 px low (900 x 52% gave 467, where this gives 468)
 static int hundredths_of(int size, int hundredths)
 {
     return (int) ((long long) size * hundredths / 10000);
@@ -51,9 +52,12 @@ void derive_settings(const DeriveInput *in, Effective *out)
     int margin = in->clock_margin_percent ? hundredths_of(h, in->clock_margin) : in->clock_margin;
     out->clock_margin = max_int(0, min_int(margin, h * DERIVE_MAX_CLOCK_MARGIN_PM / 1000));
 
-    // Titles turned off take their padding with them
-    out->title_padding = in->titles_enabled ? in->title_padding : 0;
-    out->title_padding_pct = in->titles_enabled ? in->title_padding_pct : 0;
+    // Titles turned off take their padding with them. The padding is a percentage or px, never both:
+    // a percentage wins, and without one the px value is used
+    if (in->titles_enabled && in->title_padding_pct > 0)
+        out->title_padding_pct = in->title_padding_pct;
+    else if (in->titles_enabled)
+        out->title_padding = in->title_padding;
 
     // The highlight's padding never overlaps the next button, and its outline stays inside it
     out->highlight_hpadding = max_int(0, min_int(in->highlight_hpadding, out->icon_spacing / 2));

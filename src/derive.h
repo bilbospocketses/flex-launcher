@@ -25,7 +25,7 @@ typedef struct DeriveInput {
     int screen_width;
     int screen_height;
     bool titles_enabled;
-    int title_padding;             // px; used when title_padding_pct is 0
+    int title_padding;             // px; used when title_padding_pct is 0 or less
     int title_padding_pct;         // Whole percent of the button
     DeriveColor title_color;
     DeriveColor title_shadow_color;
@@ -60,7 +60,7 @@ typedef struct Effective {
     int icon_spacing;              // px
     int vcenter;                   // px from the top of the screen
     int clock_margin;              // px
-    int title_padding;             // px; 0 without titles
+    int title_padding;             // px; 0 without titles, or for a percentage padding
     int title_padding_pct;         // Whole percent; 0 without titles, or for a px padding
     int highlight_hpadding;        // px, at most half the gap between buttons
     int highlight_vpadding;
