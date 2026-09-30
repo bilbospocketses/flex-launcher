@@ -21,7 +21,7 @@ const char *debug_string(const char *value);
 #define endline "\n"
 #endif
 
-#define log_debug(msg, ...) output_log(LOGLEVEL_DEBUG, msg endline, ##__VA_ARGS__)
+#define log_debug(msg, ...) output_log(LOGLEVEL_DEBUG, "" msg endline, ##__VA_ARGS__)
 #define log_error(msg, ...) output_log(LOGLEVEL_ERROR, "" msg endline, ##__VA_ARGS__)
 #define log_fatal(msg, ...) output_log(LOGLEVEL_FATAL, "" msg endline, ##__VA_ARGS__)
 

@@ -46,9 +46,15 @@ static void start_gamepad(void);
 static void stop_gamepad(void);
 static void connect_present_pads(void);
 #ifdef STREAMFLEX_TEST_HOOKS
+static void test_pad_attach(void);
+static int test_pad_device(SDL_JoystickID id);
+static void test_pad_swap(void);
 static void test_pad_update(void);
 static void test_pad_stop(void);
 #endif
+static SDL_Thread *start_clock_thread(void);
+static bool renderer_vsync(void);
+static void check_vsync(void);
 static void calculate_layout_area(void);
 static int apply_layout(Menu *menu);
 static void render_buttons(Menu *menu, const LayoutGeometry *geometry);
@@ -211,7 +217,8 @@ Effective eff;                        // The values drawn with, derived from con
 SDL_Color title_color;                // eff's title colours as SDL colours, for the titles (the clock keeps its own)
 SDL_Color title_shadow_color;
 static bool gamepad_on = false;   // The game controller subsystem is running
-static bool vsync_on = true;     // The renderer presents with VSync
+static bool vsync_wanted = true; // VSync and FPSLimit ask the renderer for VSync
+static bool vsync_on = false;    // The renderer really gives it; without it present_frame() paces each frame
 
 
 // A function to initialize SDL
@@ -244,6 +251,36 @@ static void init_sdl()
     geo.title_min_size = (int) (TITLE_MIN_SIZE * (float) geo.screen_height + 0.5F);
 }
 
+// A function to tell whether the renderer really presents with VSync. Before SDL 2.26 nothing
+// stands in for a VSync the driver refuses: the OpenGL renderer then reports none, and the software
+// renderer reports VSync it does not give.
+static bool renderer_vsync()
+{
+    SDL_RendererInfo info;
+    if (renderer == NULL || SDL_GetRendererInfo(renderer, &info) != 0 || !(info.flags & SDL_RENDERER_PRESENTVSYNC))
+        return false;
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: its SDL simulates VSync, so a refusal is made up here
+    if (getenv("STREAMFLEX_TEST_VSYNC_REFUSED") != NULL)
+        return false;
+#endif
+    SDL_version version;
+    SDL_GetVersion(&version);
+    if (version.major == 2 && version.minor < 26 && strcmp(info.name, "software") == 0)
+        return false;
+    return true;
+}
+
+// A function to find out whether the renderer gives the VSync wanted, and say so; without it,
+// present_frame() paces each frame to refresh_period
+static void check_vsync()
+{
+    vsync_on = renderer_vsync();
+    log_debug("Frame timing: VSync wanted %s, the renderer gives %s", vsync_wanted ? "on" : "off", vsync_on ? "on" : "off");
+    if (vsync_wanted && !vsync_on)
+        log_error("The renderer refused VSync: each frame is paced to %u ms instead", refresh_period);
+}
+
 // A function to work out the frame timing from VSync and FPSLimit, live: VSync, or the FPS limit's
 // own frame time when it is off and the limit lies between the minimum and the display's rate
 // (otherwise VSync, as always). The settings stay as written; the renderer follows (SDL 2.0.18).
@@ -252,15 +289,12 @@ static void init_sdl()
 void apply_frame_timing()
 {
     int rate = display_mode.refresh_rate;
-    bool vsync = config.vsync || config.fps_limit < MIN_FPS_LIMIT || config.fps_limit > rate;
-    if (renderer != NULL && vsync != vsync_on) {
-        if (SDL_RenderSetVSync(renderer, vsync ? 1 : 0) != 0) {
-            log_error("Could not turn VSync %s\n%s", vsync ? "on" : "off", SDL_GetError());
-            vsync = vsync_on;
-        }
-    }
-    vsync_on = vsync;
-    refresh_period = 1000 / (Uint32) (vsync ? rate : config.fps_limit);
+    bool wanted = config.vsync || config.fps_limit < MIN_FPS_LIMIT || config.fps_limit > rate;
+    bool changed = wanted != vsync_wanted;
+    vsync_wanted = wanted;
+
+    // With VSync wanted the frame is the display's, which also paces a renderer that refused it
+    refresh_period = 1000 / (Uint32) (wanted ? rate : config.fps_limit);
     delay_period = GAMEPAD_REPEAT_DELAY / refresh_period;
     repeat_period = GAMEPAD_REPEAT_INTERVAL / refresh_period;
     if (!repeat_period)
@@ -268,10 +302,18 @@ void apply_frame_timing()
     update_slideshow_timing();
     if (screensaver != NULL)
         screensaver->transition_change_rate = screensaver->alpha_end_value / ((float) SCREENSAVER_TRANSITION_TIME / (float) refresh_period);
-    if (vsync)
+    if (wanted)
         log_debug("Frame timing: VSync at %i Hz, %u ms a frame", rate, refresh_period);
     else
         log_debug("Frame timing: FPS limit %i, %u ms a frame", config.fps_limit, refresh_period);
+
+    // The renderer is asked only when the wish changes, so one that refused VSync is not asked, or
+    // logged, again for each FPSLimit change. A failure to switch counts as a refusal.
+    if (renderer != NULL && changed) {
+        if (SDL_RenderSetVSync(renderer, wanted ? 1 : 0) != 0)
+            log_error("Could not turn VSync %s\n%s", wanted ? "on" : "off", SDL_GetError());
+        check_vsync();
+    }
 }
 
 // A function to let the OS screensaver run, or block it, as InhibitOSScreensaver says
@@ -308,7 +350,7 @@ static void create_window()
     // Create HW accelerated renderer, get screen resolution for geometry calculations
     apply_frame_timing();
     Uint32 renderer_flags = SDL_RENDERER_ACCELERATED;
-    if (vsync_on)
+    if (vsync_wanted)
         renderer_flags |= SDL_RENDERER_PRESENTVSYNC;
     renderer = SDL_CreateRenderer(window, -1, renderer_flags);
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
@@ -319,6 +361,7 @@ static void create_window()
     SDL_RendererInfo renderer_info;
     if (SDL_GetRendererInfo(renderer, &renderer_info) == 0)
         log_debug("Video: SDL's %s driver, the %s renderer", SDL_GetCurrentVideoDriver(), renderer_info.name);
+    check_vsync();
 
     // Set background color
     set_draw_color();
@@ -716,7 +759,7 @@ static void start_screensaver()
     if (!config.screensaver_enabled || screensaver != NULL)
         return;
     if (eff.screensaver_alpha < 1) {
-        log_error("Invalid screensaver intensity value, disabling feature");
+        log_error("Invalid screensaver intensity value, so the screensaver was not started");
         return;
     }
     SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, geo.screen_width, geo.screen_height, 32, SDL_PIXELFORMAT_ARGB8888);
@@ -827,7 +870,7 @@ static void start_scroll()
     scroll->texture = NULL;
     int scroll_indicator_height = (int) ((float) geo.screen_height * SCROLL_INDICATOR_HEIGHT);
     if (render_scroll_indicators(scroll, scroll_indicator_height, &geo)) {
-        log_error("Could not render scroll indicator, disabling feature");
+        log_error("Could not render scroll indicator, so the scroll indicators were not started");
         free(scroll);
         scroll = NULL;
         return;
@@ -1045,7 +1088,7 @@ static void calculate_layout_area()
 {
     int top = geo.screen_margin;
     if (clk != NULL) {
-        SDL_Rect *lowest = config.clock_show_date ? &clk->date_rect : &clk->time_rect;
+        SDL_Rect *lowest = clk->show_date ? &clk->date_rect : &clk->time_rect;
         if (lowest->y + lowest->h > top)
             top = lowest->y + lowest->h;
     }
@@ -1367,7 +1410,7 @@ void draw_scene(bool preview)
     // Draw clock
     if (clk != NULL) {
         SDL_RenderCopy(renderer, clk->time_texture, NULL, &clk->time_rect);
-        if (config.clock_show_date)
+        if (clk->show_date)
             SDL_RenderCopy(renderer, clk->date_texture, NULL, &clk->date_rect);
     }
 
@@ -1525,7 +1568,9 @@ static void open_controller(Gamepad *gamepad, bool raise_error)
     }
 }
 
-// A function to connect gamepad(s)
+// A function to connect gamepad(s): the pad at a device index, added to the list unless its
+// instance id is there already, or with -1 every pad in the list. A pad already open is left as it
+// is: SDL counts each open, and pre_launch()'s one close would not let it go.
 static void connect_gamepad(int device_index, bool open, bool raise_error)
 {
     if (device_index >= 0) {
@@ -1535,7 +1580,8 @@ static void connect_gamepad(int device_index, bool open, bool raise_error)
             if (gamepad->id == (int) id)
                 break;
         }
-        if (gamepad == NULL) {
+        bool added = gamepad == NULL;
+        if (added) {
             init_gamepad(&gamepad, device_index);
             if (gamepads == NULL)
                 gamepads = gamepad;
@@ -1548,12 +1594,17 @@ static void connect_gamepad(int device_index, bool open, bool raise_error)
                 gamepad->previous = i;
             }
         }
-        if (open)
+        bool opening = open && gamepad->controller == NULL;
+        if (added || opening)
+            log_debug("Gamepad connected with device index %i, instance id %i", device_index, gamepad->id);
+        if (opening)
             open_controller(gamepad, raise_error);
     }
     else if (open) {
-        for (Gamepad *i = gamepads; i != NULL; i = i->next)
-            open_controller(i, raise_error);
+        for (Gamepad *i = gamepads; i != NULL; i = i->next) {
+            if (i->controller == NULL)
+                open_controller(i, raise_error);
+        }
     }
 }
 
@@ -1588,27 +1639,77 @@ static void disconnect_gamepad(int id, bool disconnect, bool remove)
 #ifdef STREAMFLEX_TEST_HOOKS
 static SDL_Joystick *test_pad = NULL;   // The harness's virtual gamepad, while attached
 static int test_pad_index = -1;
+static SDL_JoystickID test_swap[3] = { -1, -1, -1 };   // STREAMFLEX_TEST_PAD_SWAP's pads A, B and C
+static int test_swap_step = 0;
+
+// A function only the headless harness builds: with STREAMFLEX_TEST_PAD set, it attaches the
+// virtual gamepad once the gamepad runs
+static void test_pad_attach()
+{
+    if (getenv("STREAMFLEX_TEST_PAD") == NULL || !gamepad_on || test_pad_index >= 0)
+        return;
+    test_pad_index = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER,
+                         SDL_CONTROLLER_AXIS_MAX, SDL_CONTROLLER_BUTTON_MAX, 0);
+    test_pad = test_pad_index >= 0 ? SDL_JoystickOpen(test_pad_index) : NULL;
+    if (test_pad == NULL)
+        log_error("Test hook: no virtual gamepad\n%s", SDL_GetError());
+}
+
+// A function only the headless harness builds, to find a joystick's device index from its
+// instance id; -1 when it is gone
+static int test_pad_device(SDL_JoystickID id)
+{
+    int count = SDL_NumJoysticks();
+    for (int i = 0; i < count; i++) {
+        if (SDL_JoystickGetDeviceInstanceID(i) == id)
+            return i;
+    }
+    return -1;
+}
+
+// A function only the headless harness builds: with STREAMFLEX_TEST_PAD_SWAP set, it takes one step
+// a frame through attach A, attach B, detach A, attach C, so C arrives at B's old device index with
+// an instance id of its own
+static void test_pad_swap()
+{
+    static const char *const names[] = { "A", "B", "C" };
+    if (getenv("STREAMFLEX_TEST_PAD_SWAP") == NULL || !gamepad_on || test_swap_step > 3)
+        return;
+    int step = test_swap_step++;
+    if (step == 2) {
+        int index = test_pad_device(test_swap[0]);
+        if (index >= 0)
+            SDL_JoystickDetachVirtual(index);
+        test_swap[0] = -1;
+        log_debug("Test hook: pad A detached from device index %i", index);
+        return;
+    }
+    int slot = step == 3 ? 2 : step;
+    int index = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER,
+                    SDL_CONTROLLER_AXIS_MAX, SDL_CONTROLLER_BUTTON_MAX, 0);
+    if (index < 0) {
+        log_error("Test hook: no virtual gamepad %s\n%s", names[slot], SDL_GetError());
+        return;
+    }
+    test_swap[slot] = SDL_JoystickGetDeviceInstanceID(index);
+    log_debug("Test hook: pad %s attached at device index %i, instance id %i", names[slot], index, (int) test_swap[slot]);
+}
 
 // A function only the headless harness builds, since it has no gamepad: with STREAMFLEX_TEST_PAD
 // set, it attaches a virtual one while the gamepad runs, and holds its Start button while the file
 // that names exists
 static void test_pad_update()
 {
+    test_pad_swap();
     const char *held = getenv("STREAMFLEX_TEST_PAD");
     if (held == NULL || !gamepad_on)
         return;
-    if (test_pad_index < 0) {
-        test_pad_index = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER,
-                             SDL_CONTROLLER_AXIS_MAX, SDL_CONTROLLER_BUTTON_MAX, 0);
-        test_pad = test_pad_index >= 0 ? SDL_JoystickOpen(test_pad_index) : NULL;
-        if (test_pad == NULL)
-            log_error("Test hook: no virtual gamepad\n%s", SDL_GetError());
-    }
+    test_pad_attach();
     if (test_pad != NULL)
         SDL_JoystickSetVirtualButton(test_pad, SDL_CONTROLLER_BUTTON_START, file_exists(held) ? SDL_PRESSED : SDL_RELEASED);
 }
 
-// A function to let the virtual gamepad go before its subsystem stops
+// A function to let the virtual gamepads go before their subsystem stops
 static void test_pad_stop()
 {
     if (test_pad != NULL)
@@ -1617,6 +1718,12 @@ static void test_pad_stop()
         SDL_JoystickDetachVirtual(test_pad_index);
     test_pad = NULL;
     test_pad_index = -1;
+    for (int i = 0; i < 3; i++) {
+        int index = test_swap[i] >= 0 ? test_pad_device(test_swap[i]) : -1;
+        if (index >= 0)
+            SDL_JoystickDetachVirtual(index);
+        test_swap[i] = -1;
+    }
 }
 #endif
 
@@ -1626,16 +1733,14 @@ bool gamepad_running()
     return gamepad_on;
 }
 
-// A function to open every game controller present that the Device setting allows, by listing them:
-// a pad already connected sends no connect event when the subsystem restarts
+// A function to open every game controller present that the Device setting allows, by listing them.
+// Starting the subsystem also queues a connect event for each, which then finds the pad open already.
 static void connect_present_pads()
 {
     int count = SDL_NumJoysticks();
     for (int i = 0; i < count; i++) {
-        if (SDL_IsGameController(i) == SDL_TRUE && (config.gamepad_device < 0 || config.gamepad_device == i)) {
-            log_debug("Gamepad connected with device index %i", i);
+        if (SDL_IsGameController(i) == SDL_TRUE && (config.gamepad_device < 0 || config.gamepad_device == i))
             connect_gamepad(i, !state.application_running, true);
-        }
     }
 }
 
@@ -1651,6 +1756,12 @@ static void start_gamepad()
         return;
     }
     gamepad_on = true;
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: its virtual pad is attached here, as a pad plugged in
+    // before the launcher started is present, so the listing below finds it while its connect
+    // event is still queued
+    test_pad_attach();
+#endif
     if (!mappings_loaded && config.gamepad_mappings_file != NULL) {
         mappings_loaded = true;
         if (SDL_GameControllerAddMappingsFromFile(config.gamepad_mappings_file) < 0)
@@ -1837,6 +1948,19 @@ static void update_screensaver()
     }
 }
 
+// A function to start the clock's render thread; NULL when it cannot start
+static SDL_Thread *start_clock_thread()
+{
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: the thread fails to start
+    if (getenv("STREAMFLEX_TEST_CLOCK_THREAD_FAIL") != NULL) {
+        SDL_SetError("Test hook: the clock's thread does not start");
+        return NULL;
+    }
+#endif
+    return SDL_CreateThread(render_clock_async, "Clock Thread", (void*) clk);
+}
+
 // A function to update the clock display
 static void update_clock(bool block)
 {
@@ -1855,10 +1979,17 @@ static void update_clock(bool block)
                 if (block)
                     render_clock(clk);
                 else {
-                    clock_thread = SDL_CreateThread(render_clock_async, "Clock Thread", (void*) clk);
+                    clock_thread = start_clock_thread();
+
+                    // A thread that cannot start leaves the render to this one, as the blocking
+                    // render does, and the handoff below takes it at once; the next one tries again
+                    if (clock_thread == NULL) {
+                        log_error("Could not start the clock's render thread, rendering on the main thread\n%s", SDL_GetError());
+                        render_clock(clk);
+                    }
 #ifdef STREAMFLEX_TEST_HOOKS
                     // Only the headless harness builds this: a check waits for a render to be in flight
-                    if (getenv("STREAMFLEX_TEST_CLOCK_DELAY_MS") != NULL)
+                    else if (getenv("STREAMFLEX_TEST_CLOCK_DELAY_MS") != NULL)
                         log_debug("Clock: rendering on its thread");
 #endif
                 }
@@ -1871,6 +2002,8 @@ static void update_clock(bool block)
         if (SDL_AtomicGet(&state.clock_ready)) {
             SDL_WaitThread(clock_thread, NULL);
             clock_thread = NULL;
+            clk->time_rect = clk->next_time_rect;   // The render placed them where the main thread
+            clk->date_rect = clk->next_date_rect;   // does not draw from until now
             SDL_DestroyTexture(clk->time_texture);
             clk->time_texture = load_texture(clk->time_surface);
             clk->time_surface = NULL;
@@ -2067,10 +2200,8 @@ int main(int argc, char *argv[])
 
                 case SDL_JOYDEVICEADDED:
                     if (gamepad_on && SDL_IsGameController(event.jdevice.which) == SDL_TRUE &&
-                        (config.gamepad_device < 0 || config.gamepad_device == event.jdevice.which)) {
-                        log_debug("Gamepad connected with device index %i", event.jdevice.which);
+                        (config.gamepad_device < 0 || config.gamepad_device == event.jdevice.which))
                         connect_gamepad(event.jdevice.which, !state.application_running, true);
-                    }
                     break;
 
                 case SDL_JOYDEVICEREMOVED:

@@ -14,11 +14,11 @@
 #include "debug.h"
 #include "platform/platform.h"
 
-static void calculate_text_metrics(TTF_Font *font, const char *text, int *h, int *x_offset);
+static void calculate_text_metrics(TTF_Font *font, Alignment alignment, const char *text, int *h, int *x_offset);
 static void calculate_clock_geometry(Clock *clk);
 static void format_time(Clock *clk);
 static void format_date(Clock *clk);
-static void calculate_clock_positioning(Clock *clk);
+static void calculate_clock_positioning(Clock *clk, SDL_Rect *time_rect, SDL_Rect *date_rect);
 
 extern Config config;
 extern State state;
@@ -26,7 +26,7 @@ extern Geometry geo;
 extern Effective eff;
 
 // A function to calculate height and x offset of text
-static void calculate_text_metrics(TTF_Font *font, const char *text, int *h, int *x_offset)
+static void calculate_text_metrics(TTF_Font *font, Alignment alignment, const char *text, int *h, int *x_offset)
 {
     int ymin = 0;
     int ymax = 0; 
@@ -52,12 +52,12 @@ static void calculate_text_metrics(TTF_Font *font, const char *text, int *h, int
             ymax = current_ymax;
         if (current_ymin < ymin)
             ymin = current_ymin;
-        if (p == text && config.clock_alignment == ALIGNMENT_LEFT)
+        if (p == text && alignment == ALIGNMENT_LEFT)
             *x_offset = xmin;
 
     p += bytes;
     }
-    if (config.clock_alignment == ALIGNMENT_RIGHT)
+    if (alignment == ALIGNMENT_RIGHT)
         *x_offset = xadvance - xmax;
     *h = ymax - ymin;
 }
@@ -69,14 +69,16 @@ static void calculate_clock_geometry(Clock *clk)
     int h_time, h_date;
 
     // Calculate text height and x offset
-    calculate_text_metrics(clk->text_info.font, 
+    calculate_text_metrics(clk->text_info.font,
+        clk->alignment,
         clk->time_string,
         &h_time,
         &clk->x_offset_time
     );
 
-    if (config.clock_show_date) {
-        calculate_text_metrics(clk->text_info.font, 
+    if (clk->show_date) {
+        calculate_text_metrics(clk->text_info.font,
+            clk->alignment,
             clk->date_string,
             &h_date,
             &clk->x_offset_date
@@ -151,7 +153,7 @@ static void format_date(Clock *clk)
     char date[MAX_CLOCK_CHARS + 1];
 
     // Get weekday name
-    if (config.clock_include_weekday) {
+    if (clk->include_weekday) {
         strftime(weekday, 
             sizeof(weekday), 
             "%a ", 
@@ -178,22 +180,22 @@ static void format_date(Clock *clk)
     );
 }
 
-// A function to calculate the x and y coordinates of the clock text
-static void calculate_clock_positioning(Clock *clk)
+// A function to calculate the x and y coordinates of the clock text, into the rects given
+static void calculate_clock_positioning(Clock *clk, SDL_Rect *time_rect, SDL_Rect *date_rect)
 {
-    if (config.clock_alignment == ALIGNMENT_LEFT) {
-        clk->time_rect.x = eff.clock_margin - clk->x_offset_time;
-        if (config.clock_show_date)
-            clk->date_rect.x = eff.clock_margin - clk->x_offset_date;
+    if (clk->alignment == ALIGNMENT_LEFT) {
+        time_rect->x = clk->margin - clk->x_offset_time;
+        if (clk->show_date)
+            date_rect->x = clk->margin - clk->x_offset_date;
     }
     else {
-        clk->time_rect.x = geo.screen_width - eff.clock_margin - clk->time_rect.w + clk->x_offset_time;
-        if (config.clock_show_date)
-            clk->date_rect.x = geo.screen_width - eff.clock_margin - clk->date_rect.w + clk->x_offset_date;
+        time_rect->x = clk->screen_width - clk->margin - time_rect->w + clk->x_offset_time;
+        if (clk->show_date)
+            date_rect->x = clk->screen_width - clk->margin - date_rect->w + clk->x_offset_date;
     }
-    clk->time_rect.y = eff.clock_margin - clk->y_offset;
-    if (config.clock_show_date)
-        clk->date_rect.y = clk->time_rect.y + clk->y_advance;
+    time_rect->y = clk->margin - clk->y_offset;
+    if (clk->show_date)
+        date_rect->y = time_rect->y + clk->y_advance;
 }
 
 // A function to initialize the clock; non-zero when no font opens
@@ -216,6 +218,11 @@ int init_clock(Clock *clk)
     clk->time_format = config.clock_time_format;
     clk->date_format = config.clock_date_format;
     clk->time_info = NULL;
+    clk->show_date = config.clock_show_date;
+    clk->alignment = config.clock_alignment;
+    clk->include_weekday = config.clock_include_weekday;
+    clk->margin = eff.clock_margin;
+    clk->screen_width = geo.screen_width;
 
     // Load the font
     int error = load_font(&clk->text_info, config.clock_font_path, config.clock_font_face, FILENAME_DEFAULT_CLOCK_FONT);
@@ -238,7 +245,7 @@ int init_clock(Clock *clk)
         get_region(region);
         if (clk->time_format == FORMAT_TIME_AUTO)
             clk->time_format = get_time_format(region);
-        if (config.clock_show_date && clk->date_format == FORMAT_DATE_AUTO)
+        if (clk->show_date && clk->date_format == FORMAT_DATE_AUTO)
             clk->date_format = get_date_format(region);
     }
 
@@ -249,7 +256,7 @@ int init_clock(Clock *clk)
                             &clk->time_rect,
                             NULL
                         );
-    if (config.clock_show_date) {
+    if (clk->show_date) {
         format_date(clk);
         clk->date_texture = render_text_texture(clk->date_string,
                                 &clk->text_info,
@@ -260,31 +267,35 @@ int init_clock(Clock *clk)
 
     // Calculate geometry
     calculate_clock_geometry(clk);
-    calculate_clock_positioning(clk);
+    calculate_clock_positioning(clk, &clk->time_rect, &clk->date_rect);
     clk->render_time = false;
     clk->render_date = false;
     return 0;
 }
 
-// A function to render the time to image
+// A function to render the time to image, on the clock's thread or the main one. It reads and
+// writes only the Clock: the new rects go into next_time_rect and next_date_rect, which the main
+// thread takes with the surfaces, since it draws from time_rect and date_rect meanwhile.
 void render_clock(Clock *clk)
 {
+    clk->next_time_rect = clk->time_rect;
+    clk->next_date_rect = clk->date_rect;
     format_time(clk);
     clk->time_surface = render_text(clk->time_string,
                             &clk->text_info,
-                            &clk->time_rect,
+                            &clk->next_time_rect,
                             NULL
                         );
     if (clk->render_date) {
         format_date(clk);
         clk->date_surface = render_text(clk->date_string,
                                 &clk->text_info,
-                                &clk->date_rect,
+                                &clk->next_date_rect,
                                 NULL
                             );
         calculate_clock_geometry(clk);
     }
-    calculate_clock_positioning(clk);
+    calculate_clock_positioning(clk, &clk->next_time_rect, &clk->next_date_rect);
     SDL_AtomicSet(&state.clock_ready, 1);
 }
 

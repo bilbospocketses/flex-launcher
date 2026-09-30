@@ -361,8 +361,10 @@ list_leaks() {
 if [ "$fault" = scrollfail ]; then
     run_quick f11-scroll
     ok=1
-    ran_clean f11-scroll && grep -q 'Could not render scroll indicator' "$out/f11-scroll.log" && ok=0
-    result "item 11: a failed scroll arrow disables the arrows and exits cleanly (exit $(cat "$out/f11-scroll.code"))" $ok
+    ran_clean f11-scroll \
+        && grep -q 'Could not render scroll indicator, so the scroll indicators were not started' "$out/f11-scroll.log" \
+        && ! grep -q 'Scroll indicators started' "$out/f11-scroll.log" && ok=0
+    result "item 11: a failed scroll arrow leaves the arrows not started, and exits cleanly (exit $(cat "$out/f11-scroll.code"))" $ok
     grep -m3 -E 'AddressSanitizer|double-free|runtime error' "$out/f11-scroll.err" | sed 's/^/      /'
 else
     # A check file that does not parse would stop part-way through when sourced, and the checks
