@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <string.h>
 #include "listpick.h"
 #include "alloc.h"
@@ -104,6 +103,8 @@ bool listpick_select(ListPick *pick, const char *value, const char *custom_row_l
             pick->cursor = 0;
             return true;
         }
+        if (pick->chosen == pick->rows[0].value)
+            pick->chosen = NULL;   // Its text goes with the row
         free_row(&pick->rows[0]);
         memmove(&pick->rows[0], &pick->rows[1], (size_t) (pick->count - 1) * sizeof(ListPickRow));
         pick->count--;

@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 #include "check.h"
 #include "listpick.h"
@@ -34,6 +35,8 @@ static void test_moves(void)
     CHECK_INT(listpick_cursor(pick), 2);
     CHECK_INT(listpick_command(pick, LISTPICK_PAGE_UP, 0), LISTPICK_MOVED);   // A page is at least one row
     CHECK_INT(listpick_cursor(pick), 1);
+    CHECK_INT(listpick_command(pick, LISTPICK_UP, 3), LISTPICK_MOVED);
+    CHECK_INT(listpick_cursor(pick), 0);
     listpick_free(pick);
 }
 
@@ -67,8 +70,11 @@ static void test_custom(void)
 {
     ListPick *pick = sample();
     CHECK(!listpick_has(pick, "retroarch -f"));
+    CHECK(listpick_has(pick, ":left"));
     CHECK(listpick_select(pick, "retroarch -f", "Custom: retroarch -f"));
     CHECK_INT(listpick_count(pick), 7);
+    CHECK(!listpick_has(pick, "retroarch -f"));                // The Custom row is not one of the rows
+
     const ListPickRow *row = listpick_row(pick, 0);
     CHECK(row->custom);
     CHECK_STR(row->label, "Custom: retroarch -f");
@@ -85,6 +91,39 @@ static void test_custom(void)
     CHECK_INT(listpick_count(pick), 6);
     CHECK_STR(listpick_row(pick, listpick_cursor(pick))->value, ":left");
     CHECK(listpick_row(pick, 6) == NULL);
+    CHECK_STR(listpick_chosen(pick), "");                     // The unpinned row's value is gone, and so is the choice
+    listpick_free(pick);
+}
+
+// A function to test a picker that outgrows its first rows, as the command and font pickers do
+static void test_grow(void)
+{
+    ListPick *pick = listpick_create();
+    char label[32];
+    char value[32];
+    for (int i = 0; i < 40; i++) {
+        snprintf(label, sizeof(label), "Row %d", i);
+        snprintf(value, sizeof(value), "value-%d", i);
+        CHECK(listpick_add(pick, label, value, true, NULL));
+    }
+    CHECK_INT(listpick_count(pick), 40);
+    CHECK_STR(listpick_row(pick, 0)->label, "Row 0");
+    CHECK_STR(listpick_row(pick, 39)->label, "Row 39");
+
+    // A Custom row goes in at the top, moving all 40 down
+    CHECK(listpick_select(pick, "not listed", "Custom: not listed"));
+    CHECK_INT(listpick_count(pick), 41);
+    CHECK(listpick_row(pick, 0)->custom);
+    CHECK_STR(listpick_row(pick, 1)->label, "Row 0");
+    CHECK_STR(listpick_row(pick, 40)->label, "Row 39");
+    CHECK_STR(listpick_row(pick, 40)->value, "value-39");
+
+    // Paging reaches the last row and stops there
+    for (int i = 0; i < 10; i++)
+        listpick_command(pick, LISTPICK_PAGE_DOWN, 8);
+    CHECK_INT(listpick_cursor(pick), 40);
+    CHECK_INT(listpick_command(pick, LISTPICK_OK, 8), LISTPICK_CHOSEN);
+    CHECK_STR(listpick_chosen(pick), "value-39");
     listpick_free(pick);
 }
 
@@ -106,6 +145,7 @@ int main(void)
     test_moves();
     test_choose();
     test_custom();
+    test_grow();
     test_empty();
     return check_report();
 }

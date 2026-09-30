@@ -1,7 +1,7 @@
 // The allocation-failure proof for the pure modules: each operation runs again and again, with
 // its first allocation failing, then its second, and so on, until a run in which none failed. Every
-// run must end without a crash or a leak, and a run that failed must leave the document, the file
-// or the browser as it was.
+// run must end without a crash or a leak, and a run that failed must leave what it worked on as it
+// was.
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -648,6 +648,14 @@ static void prove_listpick(void)
         CHECK_RUN(failed || (added && pinned), n);
         if (!failed)
             CHECK_RUN(listpick_count(pick) == 3 && listpick_row(pick, 0)->custom, n);
+        else if (pick != NULL) {
+            // Allocations 2-4 make "Left" (label, value, the rows), 5-6 "Right", 7-8 the Custom row:
+            // the one that failed is not there, and those before it are
+            int kept = n <= 4 ? 0 : n <= 6 ? 1 : 2;
+            CHECK_RUN(!added || !pinned, n);
+            CHECK_RUN(listpick_count(pick) == kept, n);
+            CHECK_RUN(listpick_count(pick) == 0 || !listpick_row(pick, 0)->custom, n);
+        }
         listpick_free(pick);
         runs = n;
         if (!no_leak(__LINE__, n) || !failed)

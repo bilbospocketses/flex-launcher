@@ -8,7 +8,7 @@
 
 #include <stdbool.h>
 
-#define LISTPICK_TEXT_MAX 1024  // Longest label or value a row holds
+#define LISTPICK_TEXT_MAX 1024  // The buffer size a caller uses for a row's text; rows keep any length
 
 typedef struct {
     char *label;        // What the row shows
@@ -38,6 +38,7 @@ typedef struct ListPick ListPick;
 
 ListPick *listpick_create(void);
 void listpick_free(ListPick *pick);
+// label and value (here and in listpick_select) are never NULL
 bool listpick_add(ListPick *pick, const char *label, const char *value, bool enabled, const char *why);
 bool listpick_has(const ListPick *pick, const char *value);
 bool listpick_select(ListPick *pick, const char *value, const char *custom_row_label);
