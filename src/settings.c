@@ -28,6 +28,7 @@ static const char *const DATE_LABELS[] = { "Sep 28", "28 Sep", "Auto" };
 #define MODE_IMAGE 1
 #define MODE_SLIDESHOW 2
 
+// The colour presets. colourpick.c's first ten swatches repeat these, in order: change both together.
 static const struct {
     const char *name;
     SettingColor color;

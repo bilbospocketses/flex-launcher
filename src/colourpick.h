@@ -48,6 +48,8 @@ SettingColor colourpick_swatch(int index);
 int colourpick_find(SettingColor color);
 double colour_luminance(SettingColor color);
 double colour_contrast(double a, double b);
+// rgba: RGBA32 bytes, R at byte 0 (SDL_PIXELFORMAT_RGBA32), alpha ignored; pitch is bytes per row, at
+// least width * 4; rgba is non-NULL whenever width and height are both positive
 double colour_mean_luminance(const unsigned char *rgba, int width, int height, int pitch);
 double colour_over(double below, SettingColor over, int alpha);
 

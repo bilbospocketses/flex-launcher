@@ -4,7 +4,8 @@
 
 #define SAMPLES 64   // The most points across and down an image's mean luminance reads
 
-// The swatches, row by row: 3a's ten presets, four neutrals, then ten accents
+// The swatches, row by row: 3a's ten presets, four neutrals, then ten accents. The first ten must
+// equal settings.c's PRESETS, in order, names and colours.
 static const struct {
     const char *name;
     SettingColor color;
@@ -193,8 +194,8 @@ double colour_contrast(double a, double b)
     return (light + 0.05) / (dark + 0.05);
 }
 
-// A function to give an image's mean relative luminance (RGBA bytes, alpha ignored), read at most
-// SAMPLES points across and down; 0 for an empty image
+// A function to give an image's mean relative luminance, read at most SAMPLES points across and down;
+// 0 for an empty image. The contract is colourpick.h's.
 double colour_mean_luminance(const unsigned char *rgba, int width, int height, int pitch)
 {
     if (width <= 0 || height <= 0)

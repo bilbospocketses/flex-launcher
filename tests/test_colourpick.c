@@ -66,9 +66,12 @@ static void test_grid(void)
 
     // Back on the grid cancels, and the preview goes back
     colourpick_open(&pick, rgb(0x0B, 0x1F, 0x3A));
+    colourpick_command(&pick, COLOURPICK_LEFT);                  // Column 5, so Back must restore it too
     colourpick_command(&pick, COLOURPICK_DOWN);
     CHECK_INT(colourpick_command(&pick, COLOURPICK_BACK), COLOURPICK_CANCELLED);
     CHECK(same(colourpick_shown(&pick), rgb(0x0B, 0x1F, 0x3A)));
+    CHECK_INT(pick.cursor, 5);                                     // Back on Navy's swatch, not on Custom
+    CHECK_INT(pick.column, 5);
 }
 
 // A function to test the hex editor: digits chosen, stepped with wrapping, kept or left
