@@ -235,6 +235,13 @@ static void test_descriptions(void)
     CHECK_STR(described(SET_ID_TITLE_SIZE, &value, NULL), "Fixed 36");
 }
 
+// A function to set a global setting's entry value from the file's text
+static void entry(SettingsState *state, SettingId id, const char *text)
+{
+    SettingValue value = parsed(id, text);
+    settings_set_entry(state, id, -1, &value);
+}
+
 // A function to open a model over two menus, with the values a typical config gives
 static SettingsState *open_model(void)
 {
@@ -265,6 +272,20 @@ static SettingsState *open_model(void)
     settings_set_entry(state, SET_ID_MENU_ROWS, 1, &value);
     value = parsed(SET_ID_MENU_COLUMNS, "6");
     settings_set_entry(state, SET_ID_MENU_COLUMNS, 1, &value);
+    entry(state, SET_ID_DEFAULT_MENU, "Main");
+    entry(state, SET_ID_VSYNC, "true");
+    entry(state, SET_ID_TITLES_ENABLED, "true");
+    entry(state, SET_ID_TITLE_SHADOWS, "false");
+    entry(state, SET_ID_HIGHLIGHT_ENABLED, "true");
+    entry(state, SET_ID_HIGHLIGHT_OUTLINE_SIZE, "0");
+    entry(state, SET_ID_SCROLL_ENABLED, "true");
+    entry(state, SET_ID_OVERLAY, "false");
+    entry(state, SET_ID_CLOCK_ENABLED, "false");
+    entry(state, SET_ID_CLOCK_SHOW_DATE, "false");
+    entry(state, SET_ID_SCREENSAVER_ENABLED, "false");
+    entry(state, SET_ID_SCREENSAVER_IDLE_TIME, "300");
+    entry(state, SET_ID_GAMEPAD_ENABLED, "true");
+    entry(state, SET_ID_GAMEPAD_DEVICE, "-1");
     return state;
 }
 
@@ -275,22 +296,34 @@ static void test_top_and_menus(void)
     SettingsRow rows[SETTINGS_MAX_ROWS];
     char path[256];
     int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
-    CHECK_INT(count, 5);
-    CHECK_STR(rows[0].label, "Background");
-    CHECK_STR(rows[0].value, "Colour");
-    CHECK_STR(rows[1].label, "Menus");
-    CHECK_STR(rows[1].value, "2 menus");
-    CHECK_STR(rows[2].label, "Titles");
-    CHECK_STR(rows[2].value, "Medium");
-    CHECK_INT(rows[3].kind, SETTINGS_ROW_DIVIDER);
-    CHECK_STR(rows[4].label, "Discard changes");
-    CHECK(!rows[4].enabled);
+    CHECK_INT(count, 11);
+    static const char *const labels[] = { "General", "Background", "Menus", "Titles", "Highlight",
+                                          "Scroll indicators", "Clock", "Screensaver", "Controls" };
+    for (int i = 0; i < 9; i++) {
+        CHECK_STR(rows[i].label, labels[i]);
+        CHECK_INT(rows[i].kind, SETTINGS_ROW_LINK);
+    }
+    CHECK_STR(rows[0].value, "Main");            // General: the default menu
+    CHECK_STR(rows[1].value, "Colour");
+    CHECK_STR(rows[2].value, "2 menus");
+    CHECK_STR(rows[3].value, "Medium");
+    CHECK_STR(rows[4].value, "On");
+    CHECK_STR(rows[5].value, "On");
+    CHECK_STR(rows[6].value, "Off");
+    CHECK_STR(rows[7].value, "Off");
+    CHECK_STR(rows[8].value, "Gamepad on");
+    CHECK_INT(rows[9].kind, SETTINGS_ROW_DIVIDER);
+    CHECK_STR(rows[10].label, "Discard changes");
+    CHECK(!rows[10].enabled);
+    CHECK(rows[10].why == NULL);                  // Greyed with no reason: the cursor skips it
     CHECK_INT(settings_cursor(state), 0);
-    CHECK_INT(settings_command(state, SETTINGS_DOWN).kind, SETTINGS_EVENT_MOVED);
-    CHECK_INT(settings_command(state, SETTINGS_DOWN).kind, SETTINGS_EVENT_MOVED);
+    for (int i = 0; i < 8; i++)
+        CHECK_INT(settings_command(state, SETTINGS_DOWN).kind, SETTINGS_EVENT_MOVED);
     CHECK_INT(settings_command(state, SETTINGS_DOWN).kind, SETTINGS_EVENT_NONE);   // Discard is greyed
+    CHECK_INT(settings_cursor(state), 8);
+    for (int i = 0; i < 6; i++)
+        settings_command(state, SETTINGS_UP);
     CHECK_INT(settings_cursor(state), 2);
-    settings_command(state, SETTINGS_UP);
 
     // Menus: All menus, a divider, then each menu with its grid as columns x rows
     CHECK_INT(settings_command(state, SETTINGS_OK).kind, SETTINGS_EVENT_MOVED);
@@ -318,7 +351,8 @@ static void test_top_and_menus(void)
     CHECK_INT(settings_preview_menu(state), 1);
     settings_path(state, path, sizeof(path));
     CHECK_STR(path, "Settings" ARROW "Menus" ARROW "Games");
-    settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 4);                                     // Three rows and the note
     CHECK_STR(rows[0].value, "3");
     CHECK_STR(rows[1].value, "6");
     CHECK_STR(rows[2].value, "All menus (Fill)");
@@ -339,16 +373,16 @@ static void test_top_and_menus(void)
     settings_command(state, SETTINGS_BACK);
     settings_command(state, SETTINGS_BACK);
     CHECK_INT(settings_page(state), SETTINGS_PAGE_TOP);
-    CHECK_INT(settings_cursor(state), 1);                    // Where it was
+    CHECK_INT(settings_cursor(state), 2);                    // Where it was
     settings_rows(state, rows, SETTINGS_MAX_ROWS);
-    CHECK(rows[4].enabled);
-    settings_command(state, SETTINGS_DOWN);
-    settings_command(state, SETTINGS_DOWN);
-    CHECK_INT(settings_cursor(state), 4);
+    CHECK(rows[10].enabled);
+    for (int i = 0; i < 7; i++)
+        settings_command(state, SETTINGS_DOWN);
+    CHECK_INT(settings_cursor(state), 10);
     CHECK_INT(settings_command(state, SETTINGS_OK).kind, SETTINGS_EVENT_DISCARD);
     CHECK_INT(settings_slot(state, SET_ID_MENU_ROWS, 1)->value.number, 3);
     CHECK(!settings_any_changed(state));
-    CHECK_INT(settings_cursor(state), 2);
+    CHECK_INT(settings_cursor(state), 8);                    // Off the greyed Discard, onto Controls
 
     CHECK_INT(settings_command(state, SETTINGS_BACK).kind, SETTINGS_EVENT_CLOSE);
     CHECK_INT(settings_command(state, SETTINGS_HOME).kind, SETTINGS_EVENT_CLOSE_HOME);
@@ -361,18 +395,25 @@ static void test_background_page(void)
 {
     SettingsState *state = open_model();
     SettingsRow rows[SETTINGS_MAX_ROWS];
+    settings_command(state, SETTINGS_DOWN);
     settings_command(state, SETTINGS_OK);
     CHECK_INT(settings_page(state), SETTINGS_PAGE_BACKGROUND);
     int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
-    CHECK_INT(count, 2);
+    CHECK_INT(count, 5);
     CHECK_STR(rows[0].value, "Colour");
     CHECK_STR(rows[1].label, "Colour");
     CHECK_STR(rows[1].value, "Black");
+    CHECK_INT(rows[1].kind, SETTINGS_ROW_PICK);                // OK opens the colour picker...
+    CHECK_STR(rows[2].label, "Overlay");
+    CHECK_STR(rows[3].label, "Overlay colour");
+    CHECK(!rows[3].enabled);                                    // ...and the overlay's rows wait for it
+    CHECK_STR(rows[3].why, "Turn Overlay on to change this");
+    CHECK(!rows[4].enabled);
 
     // Image with none chosen: Back puts the mode back, and says why
     settings_command(state, SETTINGS_RIGHT);
     count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
-    CHECK_INT(count, 2);
+    CHECK_INT(count, 5);
     CHECK_INT(rows[1].kind, SETTINGS_ROW_BROWSE);
     CHECK_STR(rows[1].value, "Choose" ELLIPSIS);
     SettingsEvent event = settings_command(state, SETTINGS_BACK);
@@ -400,7 +441,7 @@ static void test_background_page(void)
     settings_command(state, SETTINGS_OK);
     settings_command(state, SETTINGS_RIGHT);
     count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
-    CHECK_INT(count, 4);
+    CHECK_INT(count, 7);
     CHECK_STR(rows[1].label, "Folder");
     CHECK_STR(rows[2].value, "30 s");
     CHECK_STR(rows[3].value, "1.5 s");
@@ -408,7 +449,9 @@ static void test_background_page(void)
     // Transparent: a note in place of rows
     settings_command(state, SETTINGS_RIGHT);
     count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
-    CHECK_INT(count, 2);
+    CHECK_INT(count, 6);
+    CHECK(rows[2].slot == settings_slot(state, SET_ID_CHROMA_KEY_COLOR, -1));
+    CHECK_INT(rows[2].kind, SETTINGS_ROW_PICK);
     CHECK_INT(rows[1].kind, SETTINGS_ROW_NOTE);
     CHECK(rows[1].note != NULL && strstr(rows[1].note, "compositor") != NULL);
 
@@ -459,7 +502,8 @@ static void test_all_menus_and_titles_pages(void)
     CHECK_INT(settings_command(state, SETTINGS_UP).kind, SETTINGS_EVENT_NONE);   // Nothing above the first row
     CHECK_INT(settings_cursor(state), 0);
 
-    // All menus: [Layout]'s three settings, with no note about following All menus
+    // All menus: [Layout]'s five settings, with no note about following All menus
+    settings_command(state, SETTINGS_DOWN);
     settings_command(state, SETTINGS_DOWN);
     settings_command(state, SETTINGS_OK);
     CHECK_INT(settings_page(state), SETTINGS_PAGE_MENUS);
@@ -470,13 +514,15 @@ static void test_all_menus_and_titles_pages(void)
     settings_path(state, path, sizeof(path));
     CHECK_STR(path, "Settings" ARROW "Menus" ARROW "All menus");
     int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
-    CHECK_INT(count, 3);
+    CHECK_INT(count, 5);
     CHECK(rows[0].slot == settings_slot(state, SET_ID_LAYOUT_ROWS, -1));
     CHECK_STR(rows[0].value, "1");
     CHECK(rows[1].slot == settings_slot(state, SET_ID_LAYOUT_COLUMNS, -1));
     CHECK_STR(rows[1].value, "4");
     CHECK(rows[2].slot == settings_slot(state, SET_ID_LAYOUT_ICON_SIZE, -1));
     CHECK_STR(rows[2].value, "Fill");
+    CHECK(rows[3].slot == settings_slot(state, SET_ID_ICON_SPACING, -1));
+    CHECK(rows[4].slot == settings_slot(state, SET_ID_VCENTER, -1));
     for (int i = 0; i < count; i++)
         CHECK(rows[i].kind != SETTINGS_ROW_NOTE);
     SettingsEvent event = settings_command(state, SETTINGS_RIGHT);
@@ -484,17 +530,17 @@ static void test_all_menus_and_titles_pages(void)
     CHECK(event.slot == settings_slot(state, SET_ID_LAYOUT_ROWS, -1));
     CHECK_INT(event.slot->value.number, 2);
 
-    // Titles: one row, its size
+    // Titles: nine rows, its size first
     settings_command(state, SETTINGS_BACK);
     settings_command(state, SETTINGS_BACK);
     settings_command(state, SETTINGS_DOWN);
-    CHECK_INT(settings_cursor(state), 2);
+    CHECK_INT(settings_cursor(state), 3);
     settings_command(state, SETTINGS_OK);
     CHECK_INT(settings_page(state), SETTINGS_PAGE_TITLES);
     settings_path(state, path, sizeof(path));
     CHECK_STR(path, "Settings" ARROW "Titles");
     count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
-    CHECK_INT(count, 1);
+    CHECK_INT(count, 9);
     CHECK_STR(rows[0].label, "Size");
     CHECK_STR(rows[0].value, "Medium");
     event = settings_command(state, SETTINGS_RIGHT);
@@ -531,7 +577,7 @@ static void test_one_menu(void)
     SettingsState *state = settings_create(names, 1);
     SettingsRow rows[SETTINGS_MAX_ROWS];
     settings_rows(state, rows, SETTINGS_MAX_ROWS);
-    CHECK_STR(rows[1].value, "1 menu");
+    CHECK_STR(rows[2].value, "1 menu");
     settings_free(state);
 }
 
@@ -542,6 +588,7 @@ static void test_background_entered_incomplete(void)
     SettingsState *state = open_model();
     SettingValue image = parsed(SET_ID_BACKGROUND_MODE, "Image");
     settings_set_entry(state, SET_ID_BACKGROUND_MODE, -1, &image);
+    settings_command(state, SETTINGS_DOWN);
     settings_command(state, SETTINGS_OK);
     CHECK_INT(settings_page(state), SETTINGS_PAGE_BACKGROUND);
     SettingsEvent event = settings_command(state, SETTINGS_BACK);
@@ -573,6 +620,7 @@ static void test_more_menus_than_rows(void)
     SettingsState *state = settings_create(pointers, MENUS);
     SettingsRow rows[SETTINGS_MAX_ROWS];
     settings_command(state, SETTINGS_DOWN);
+    settings_command(state, SETTINGS_DOWN);
     settings_command(state, SETTINGS_OK);
     int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
     CHECK_INT(count, SETTINGS_MAX_ROWS);
@@ -587,6 +635,7 @@ static void test_more_menus_than_rows(void)
 
     // Exactly as many as fit need no note
     state = settings_create(pointers, SETTINGS_MAX_ROWS - 2);
+    settings_command(state, SETTINGS_DOWN);
     settings_command(state, SETTINGS_DOWN);
     settings_command(state, SETTINGS_OK);
     count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
@@ -867,6 +916,202 @@ static void test_find(void)
     }
 }
 
+// A function to find a row on the page on show by its label
+static const SettingsRow *row_labelled(SettingsState *state, SettingsRow *rows, const char *label)
+{
+    int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    for (int i = 0; i < count; i++) {
+        if (strcmp(rows[i].label, label) == 0)
+            return &rows[i];
+    }
+    return NULL;
+}
+
+// A function to move the cursor onto a row by its label: up to the first row it may rest on, then
+// down until it is there
+static void cursor_to(SettingsState *state, const char *label)
+{
+    SettingsRow rows[SETTINGS_MAX_ROWS];
+    for (int i = 0; i < SETTINGS_MAX_ROWS; i++)
+        settings_command(state, SETTINGS_UP);
+    for (int i = 0; i < SETTINGS_MAX_ROWS; i++) {
+        settings_rows(state, rows, SETTINGS_MAX_ROWS);
+        if (strcmp(rows[settings_cursor(state)].label, label) == 0)
+            return;
+        settings_command(state, SETTINGS_DOWN);
+    }
+}
+
+// A function to open a top-level page by its label
+static void open_page(SettingsState *state, const char *label)
+{
+    cursor_to(state, label);
+    settings_command(state, SETTINGS_OK);
+}
+
+// A function to test the General page: its rows, a row greyed with its reason, and the default menu
+static void test_general_page(void)
+{
+    SettingsState *state = open_model();
+    SettingsRow rows[SETTINGS_MAX_ROWS];
+    char path[256];
+    open_page(state, "General");
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_GENERAL);
+    settings_path(state, path, sizeof(path));
+    CHECK_STR(path, "Settings" ARROW "General");
+    int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 11);
+    static const char *const labels[] = { "Default menu", "Wrap around", "Reset on Back", "Mouse select",
+        "Block the OS screensaver", "VSync", "FPS limit", "After launching an app", "App timeout",
+        "Startup command", "Quit command" };
+    for (int i = 0; i < 11; i++)
+        CHECK_STR(rows[i].label, labels[i]);
+    CHECK_INT(rows[0].kind, SETTINGS_ROW_PICK);
+    CHECK_INT(rows[9].kind, SETTINGS_ROW_PICK);
+    CHECK_STR(rows[9].value, "None");
+
+    // FPS limit is greyed while VSync is on, says why, and can take the cursor, which changes nothing
+    const SettingsRow *fps = row_labelled(state, rows, "FPS limit");
+    CHECK(fps != NULL && !fps->enabled);
+    CHECK_STR(fps->why, "Used only while VSync is off");
+    cursor_to(state, "FPS limit");
+    CHECK_STR(rows[settings_cursor(state)].label, "FPS limit");
+    CHECK_INT(settings_command(state, SETTINGS_RIGHT).kind, SETTINGS_EVENT_NONE);
+    CHECK_INT(settings_command(state, SETTINGS_OK).kind, SETTINGS_EVENT_NONE);
+    settings_command(state, SETTINGS_UP);                        // VSync off: FPS limit opens up
+    CHECK_INT(settings_command(state, SETTINGS_LEFT).kind, SETTINGS_EVENT_CHANGED);
+    fps = row_labelled(state, rows, "FPS limit");
+    CHECK(fps->enabled && fps->why == NULL);
+
+    // Default menu steps through the menus in file order, and OK opens its list
+    cursor_to(state, "Default menu");
+    CHECK_INT(settings_cursor(state), 0);
+    SettingsEvent event = settings_command(state, SETTINGS_RIGHT);
+    CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
+    CHECK_STR(event.slot->value.text, "Games");
+    CHECK_STR(event.before.text, "Main");
+    CHECK_INT(settings_command(state, SETTINGS_RIGHT).kind, SETTINGS_EVENT_NONE);   // Games is the last
+    event = settings_command(state, SETTINGS_OK);
+    CHECK_INT(event.kind, SETTINGS_EVENT_PICK);
+    CHECK(event.slot == settings_slot(state, SET_ID_DEFAULT_MENU, -1));
+
+    // A command picked in the command picker
+    SettingValue quit = parsed(SET_ID_STARTUP_CMD, ":quit");
+    SettingSlot *startup = settings_slot(state, SET_ID_STARTUP_CMD, -1);
+    CHECK_INT(settings_choose_value(state, startup, &quit).kind, SETTINGS_EVENT_CHANGED);
+    CHECK_INT(settings_choose_value(state, startup, &quit).kind, SETTINGS_EVENT_NONE);
+    CHECK_STR(row_labelled(state, rows, "Startup command")->value, "Quit StreamFlex");
+    settings_free(state);
+}
+
+// A function to test the pages whose rows follow a switch: Titles, Highlight, Clock
+static void test_greyed_rows(void)
+{
+    SettingsState *state = open_model();
+    SettingsRow rows[SETTINGS_MAX_ROWS];
+
+    // Titles: Shadow colour waits for Shadows; titles off greys everything but Show titles
+    open_page(state, "Titles");
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_TITLES);
+    static const char *const labels[] = { "Size", "Show titles", "Font", "Colour", "Opacity", "Shadows",
+                                          "Shadow colour", "Too long", "Padding" };
+    int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    for (int i = 0; i < count; i++)
+        CHECK_STR(rows[i].label, labels[i]);
+    CHECK_STR(row_labelled(state, rows, "Shadow colour")->why, "Turn Shadows on to change this");
+    CHECK_INT(row_labelled(state, rows, "Font")->kind, SETTINGS_ROW_PICK);
+    cursor_to(state, "Show titles");
+    settings_command(state, SETTINGS_LEFT);
+    count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    for (int i = 0; i < count; i++) {
+        if (strcmp(rows[i].label, "Show titles") == 0)
+            CHECK(rows[i].enabled);
+        else
+            CHECK(!rows[i].enabled && rows[i].why != NULL && strcmp(rows[i].why, "Titles are off") == 0);
+    }
+    settings_command(state, SETTINGS_BACK);
+    settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_STR(rows[3].value, "Off");                     // The top page's summary follows
+
+    // Highlight: the outline's colour and opacity wait for a size; corners and an outline exclude each other
+    open_page(state, "Highlight");
+    CHECK_STR(row_labelled(state, rows, "Outline colour")->why, "The outline's size is 0");
+    CHECK(row_labelled(state, rows, "Corner radius")->enabled);
+    cursor_to(state, "Outline size");
+    settings_command(state, SETTINGS_RIGHT);
+    CHECK(row_labelled(state, rows, "Outline colour")->enabled);
+    CHECK_STR(row_labelled(state, rows, "Corner radius")->why, "Rounded corners cannot be drawn with an outline");
+    settings_command(state, SETTINGS_BACK);
+
+    // Clock: off greys all but Show; with it on, the date's rows wait for Show date
+    open_page(state, "Clock");
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_CLOCK);
+    CHECK_STR(row_labelled(state, rows, "Size")->why, "The clock is off");
+    cursor_to(state, "Show");
+    settings_command(state, SETTINGS_RIGHT);
+    CHECK(row_labelled(state, rows, "Size")->enabled);
+    CHECK_STR(row_labelled(state, rows, "Date")->why, "Turn Show date on to change this");
+    CHECK_STR(row_labelled(state, rows, "Weekday")->why, "Turn Show date on to change this");
+    settings_free(state);
+}
+
+// A function to test the Screensaver, Scroll indicators and Controls pages, and the gamepad's Device
+static void test_other_pages(void)
+{
+    SettingsState *state = open_model();
+    SettingsRow rows[SETTINGS_MAX_ROWS];
+    char path[256];
+    open_page(state, "Screensaver");
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_SCREENSAVER);
+    CHECK_STR(row_labelled(state, rows, "Idle time")->why, "The screensaver is off");
+    CHECK_STR(row_labelled(state, rows, "Idle time")->value, "5 min");
+    settings_command(state, SETTINGS_BACK);
+
+    open_page(state, "Scroll indicators");
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_SCROLL);
+    CHECK_INT(settings_rows(state, rows, SETTINGS_MAX_ROWS), 5);
+    settings_command(state, SETTINGS_BACK);
+
+    // Controls > Gamepad: On, Device, Mappings file (next start) and its note
+    open_page(state, "Controls");
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_CONTROLS);
+    open_page(state, "Gamepad");
+    CHECK_INT(settings_page(state), SETTINGS_PAGE_GAMEPAD);
+    settings_path(state, path, sizeof(path));
+    CHECK_STR(path, "Settings" ARROW "Controls" ARROW "Gamepad");
+    int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 4);
+    CHECK_STR(rows[1].label, "Device");
+    CHECK_STR(rows[1].value, "Any");
+    CHECK_INT(rows[2].kind, SETTINGS_ROW_BROWSE);
+    CHECK_INT(rows[3].kind, SETTINGS_ROW_NOTE);
+    CHECK(strstr(rows[3].note, "next start") != NULL);
+
+    // Device steps through the pads present, by name; one the file names that is gone stays reachable
+    static const char *const pads[] = { "Xbox Controller", "8BitDo Pro 2" };
+    settings_set_pads(state, pads, 2);
+    cursor_to(state, "Device");
+    SettingsEvent event = settings_command(state, SETTINGS_RIGHT);
+    CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
+    CHECK_INT(event.slot->value.number, 0);
+    CHECK_STR(row_labelled(state, rows, "Device")->value, "Xbox Controller");
+    settings_command(state, SETTINGS_RIGHT);
+    CHECK_STR(row_labelled(state, rows, "Device")->value, "8BitDo Pro 2");
+    CHECK_INT(settings_command(state, SETTINGS_RIGHT).kind, SETTINGS_EVENT_NONE);
+    SettingValue gone = parsed(SET_ID_GAMEPAD_DEVICE, "5");
+    settings_set_entry(state, SET_ID_GAMEPAD_DEVICE, -1, &gone);
+    CHECK_STR(row_labelled(state, rows, "Device")->value, "Pad 5 (not connected)");
+    settings_command(state, SETTINGS_LEFT);
+    CHECK_INT(settings_slot(state, SET_ID_GAMEPAD_DEVICE, -1)->value.number, 1);
+    CHECK_INT(settings_command(state, SETTINGS_OK).kind, SETTINGS_EVENT_PICK);
+
+    // The gamepad off greys the rest
+    cursor_to(state, "On");
+    settings_command(state, SETTINGS_LEFT);
+    CHECK_STR(row_labelled(state, rows, "Device")->why, "The gamepad is off");
+    settings_free(state);
+}
+
 int main(void)
 {
     test_round_trips();
@@ -881,6 +1126,9 @@ int main(void)
     test_one_menu();
     test_background_entered_incomplete();
     test_more_menus_than_rows();
+    test_general_page();
+    test_greyed_rows();
+    test_other_pages();
     test_new_round_trips();
     test_new_rejects();
     test_new_steps();

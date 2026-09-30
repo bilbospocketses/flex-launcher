@@ -606,6 +606,25 @@ static void prove_settings(void)
     report("making the settings model");
 }
 
+// A function to prove that naming the pads fails cleanly: a pad whose name could not be copied has
+// none, and nothing is left allocated once the model is freed
+static void prove_pads(void)
+{
+    static const char *const names[] = { "Main" };
+    static const char *const pads[] = { "Xbox Controller", "8BitDo Pro 2" };
+    for (int n = 1;; n++) {
+        SettingsState *state = settings_create(names, 1);
+        arm(n);
+        settings_set_pads(state, pads, 2);
+        disarm();
+        settings_free(state);
+        runs = n;
+        if (!no_leak(__LINE__, n) || !failed)
+            break;
+    }
+    report("naming the pads");
+}
+
 int main(void)
 {
     AllocHooks hooks = { test_reallocate, test_release };
@@ -634,6 +653,7 @@ int main(void)
     prove_browser();
     prove_remove();
     prove_settings();
+    prove_pads();
     alloc_set_hooks(NULL);
     return check_report();
 }

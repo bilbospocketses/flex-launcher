@@ -11,6 +11,7 @@
 #define SETTING_TEXT_MAX 1024  // Longest path a setting holds
 #define SETTINGS_MAX_ROWS 64   // Most rows one page shows; Menus counts the rest in a note
 #define SETTINGS_MAX_DEPTH 8   // Deepest the pages go
+#define SETTINGS_MAX_PADS 16      // Most gamepads the Device row names
 
 typedef enum {
     SET_TYPE_COUNT,       // A whole number: Rows, Columns
@@ -191,10 +192,17 @@ typedef struct {
 
 typedef enum {
     SETTINGS_PAGE_TOP,
+    SETTINGS_PAGE_GENERAL,
     SETTINGS_PAGE_BACKGROUND,
     SETTINGS_PAGE_MENUS,
     SETTINGS_PAGE_MENU,          // One menu's grid, or All menus ([Layout])
     SETTINGS_PAGE_TITLES,
+    SETTINGS_PAGE_HIGHLIGHT,
+    SETTINGS_PAGE_SCROLL,
+    SETTINGS_PAGE_CLOCK,
+    SETTINGS_PAGE_SCREENSAVER,
+    SETTINGS_PAGE_CONTROLS,
+    SETTINGS_PAGE_GAMEPAD,
     SETTINGS_PAGE_SAVE_FAILED
 } SettingsPage;
 
@@ -202,6 +210,7 @@ typedef enum {
     SETTINGS_ROW_SETTING,        // Left and Right step its value
     SETTINGS_ROW_LINK,           // OK opens another page
     SETTINGS_ROW_BROWSE,         // OK opens the folder browser for its path
+    SETTINGS_ROW_PICK,           // OK opens a picker for its slot; Left and Right step it when its type steps
     SETTINGS_ROW_ACTION,         // OK does something
     SETTINGS_ROW_DIVIDER,
     SETTINGS_ROW_NOTE            // Text only
@@ -223,7 +232,8 @@ typedef struct {
     SettingsPage target;         // LINK rows
     int menu;                    // LINK rows to a menu's page: its index; -1 for All menus
     SettingsAction action;       // ACTION rows
-    bool enabled;                // False: shown greyed, and the cursor skips it
+    bool enabled;                // False: shown greyed, and the cursor skips it unless `why` gives a reason
+    const char *why;             // A greyed row's reason (the cursor may rest on it); NULL for none
 } SettingsRow;
 
 typedef enum {
@@ -242,6 +252,7 @@ typedef enum {
     SETTINGS_EVENT_MOVED,        // The cursor or the page changed: redraw
     SETTINGS_EVENT_CHANGED,      // `slot`'s value changed from `before`: apply it
     SETTINGS_EVENT_BROWSE,       // Open the folder browser for `slot`
+    SETTINGS_EVENT_PICK,         // Open the picker for `slot`
     SETTINGS_EVENT_DISCARD,      // Every value went back to its entry: apply them all
     SETTINGS_EVENT_CLOSE,        // Save and close; apply `slot` first when it is set
     SETTINGS_EVENT_CLOSE_HOME,   // The same, then go to the default menu
@@ -282,6 +293,10 @@ int settings_preview_menu(SettingsState *state);
 const char *settings_notice(const SettingsState *state);
 SettingsEvent settings_command(SettingsState *state, SettingsCommand command);
 SettingsEvent settings_choose(SettingsState *state, SettingSlot *slot, const char *path);
+SettingsEvent settings_choose_value(SettingsState *state, SettingSlot *slot, const SettingValue *value);
+void settings_set_pads(SettingsState *state, const char *const *names, int count);
+int settings_pad_count(const SettingsState *state);
+const char *settings_pad_name(const SettingsState *state, int index);
 void settings_show_save_failed(SettingsState *state, const char *message);
 
 #endif

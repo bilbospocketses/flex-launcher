@@ -918,6 +918,8 @@ struct SettingsState {
     char notice[256];
     char failure[1400];
     char more_menus[128];  // The Menus page's note for the menus it has no room to list
+    char *pads[SETTINGS_MAX_PADS]; // The gamepads present, by device index, for the Device row
+    int pad_count;
 };
 
 // A function to start the model over the launcher's menus; the caller then sets every entry value
@@ -966,9 +968,36 @@ void settings_free(SettingsState *state)
         return;
     for (int i = 0; state->names != NULL && i < state->menu_count; i++)
         alloc_free(state->names[i]);
+    for (int i = 0; i < state->pad_count; i++)
+        alloc_free(state->pads[i]);
     alloc_free(state->names);
     alloc_free(state->slots);
     alloc_free(state);
+}
+
+// A function to name the gamepads present, by device index, for the Device row; names past
+// SETTINGS_MAX_PADS are left out. Out of memory, a pad keeps no name and shows as "Pad N".
+void settings_set_pads(SettingsState *state, const char *const *names, int count)
+{
+    for (int i = 0; i < state->pad_count; i++)
+        alloc_free(state->pads[i]);
+    state->pad_count = count < SETTINGS_MAX_PADS ? count : SETTINGS_MAX_PADS;
+    for (int i = 0; i < state->pad_count; i++)
+        state->pads[i] = alloc_strdup(names[i]);
+}
+
+// A function to count the pads named
+int settings_pad_count(const SettingsState *state)
+{
+    return state->pad_count;
+}
+
+// A function to get a pad's name by device index, for the Device list; NULL past the pads named
+const char *settings_pad_name(const SettingsState *state, int index)
+{
+    if (index < 0 || index >= state->pad_count)
+        return NULL;
+    return state->pads[index] != NULL ? state->pads[index] : "Pad";
 }
 
 // A function to find a setting's slot; `menu` matters only for the per-menu settings
@@ -1034,6 +1063,20 @@ static const SettingValue *inherited_value(SettingsState *state, const SettingSl
     }
 }
 
+static const char *const WHY_OVERLAY = "Turn Overlay on to change this";
+static const char *const WHY_TITLES = "Titles are off";
+static const char *const WHY_SHADOWS = "Turn Shadows on to change this";
+static const char *const WHY_HIGHLIGHT = "The highlight is off";
+static const char *const WHY_NO_OUTLINE = "The outline's size is 0";
+static const char *const WHY_ROUNDED = "Rounded corners cannot be drawn with an outline";
+static const char *const WHY_SCROLL = "The scroll indicators are off";
+static const char *const WHY_CLOCK = "The clock is off";
+static const char *const WHY_DATE = "Turn Show date on to change this";
+static const char *const WHY_SCREENSAVER = "The screensaver is off";
+static const char *const WHY_GAMEPAD = "The gamepad is off";
+static const char *const WHY_VSYNC = "Used only while VSync is off";
+static const char *const MAPPINGS_NOTE = "The mappings file applies at next start: SDL can add mappings, but never take one back.";
+
 // A function to start a row of a kind
 static SettingsRow new_row(SettingsRowKind kind, const char *label)
 {
@@ -1046,13 +1089,65 @@ static SettingsRow new_row(SettingsRowKind kind, const char *label)
     return row;
 }
 
-// A function to make a setting's row: stepped, or opening the browser for a path
+// A function to tell how a setting's row acts: stepped, a picker, or the folder browser
+static SettingsRowKind row_kind(const SettingDef *def)
+{
+    switch (def->type) {
+        case SET_TYPE_PATH:
+            return SETTINGS_ROW_BROWSE;
+        case SET_TYPE_COLOR:
+        case SET_TYPE_FONT:
+        case SET_TYPE_COMMAND:
+        case SET_TYPE_MENU:
+        case SET_TYPE_DEVICE:
+            return SETTINGS_ROW_PICK;
+        default:
+            return SETTINGS_ROW_SETTING;
+    }
+}
+
+// A function to make a setting's row. A device shows the pad's name when it is present.
 static SettingsRow setting_row(SettingsState *state, SettingSlot *slot)
 {
-    SettingsRow row = new_row(slot->def->type == SET_TYPE_PATH ? SETTINGS_ROW_BROWSE : SETTINGS_ROW_SETTING, slot->def->label);
+    SettingsRow row = new_row(row_kind(slot->def), slot->def->label);
     row.slot = slot;
     setting_describe(slot->def, &slot->value, inherited_value(state, slot), row.value, sizeof(row.value));
+    int pad = slot->value.number;
+    if (slot->def->type == SET_TYPE_DEVICE && pad >= 0) {
+        if (pad < state->pad_count && state->pads[pad] != NULL)
+            snprintf(row.value, sizeof(row.value), "%s", state->pads[pad]);
+        else if (pad >= state->pad_count)
+            snprintf(row.value, sizeof(row.value), "Pad %d (not connected)", pad);
+    }
     return row;
+}
+
+// A function to make a global setting's row
+static SettingsRow global_row(SettingsState *state, SettingId id)
+{
+    return setting_row(state, settings_slot(state, id, -1));
+}
+
+// A function to grey a row out with its reason when `grey` holds
+static SettingsRow greyed(SettingsRow row, bool grey, const char *why)
+{
+    if (grey) {
+        row.enabled = false;
+        row.why = why;
+    }
+    return row;
+}
+
+// A function to tell whether an on/off setting is on
+static bool is_on(SettingsState *state, SettingId id)
+{
+    return settings_slot(state, id, -1)->value.number != 0;
+}
+
+// A function to summarise an on/off setting for the top page
+static const char *on_off(SettingsState *state, SettingId id)
+{
+    return is_on(state, id) ? "On" : "Off";
 }
 
 // A function to make a row that opens a page
@@ -1119,6 +1214,8 @@ int settings_rows(SettingsState *state, SettingsRow *rows, int max)
     int n = 0;
     switch (top->page) {
         case SETTINGS_PAGE_TOP: {
+            n = add_row(rows, n, max, link_row("General", settings_slot(state, SET_ID_DEFAULT_MENU, -1)->value.text,
+                                               SETTINGS_PAGE_GENERAL, -1));
             SettingSlot *mode = settings_slot(state, SET_ID_BACKGROUND_MODE, -1);
             setting_describe(mode->def, &mode->value, NULL, text, sizeof(text));
             n = add_row(rows, n, max, link_row("Background", text, SETTINGS_PAGE_BACKGROUND, -1));
@@ -1126,9 +1223,34 @@ int settings_rows(SettingsState *state, SettingsRow *rows, int max)
             n = add_row(rows, n, max, link_row("Menus", text, SETTINGS_PAGE_MENUS, -1));
             SettingSlot *size = settings_slot(state, SET_ID_TITLE_SIZE, -1);
             setting_describe(size->def, &size->value, NULL, text, sizeof(text));
-            n = add_row(rows, n, max, link_row("Titles", text, SETTINGS_PAGE_TITLES, -1));
+            n = add_row(rows, n, max, link_row("Titles", is_on(state, SET_ID_TITLES_ENABLED) ? text : "Off",
+                                               SETTINGS_PAGE_TITLES, -1));
+            n = add_row(rows, n, max, link_row("Highlight", on_off(state, SET_ID_HIGHLIGHT_ENABLED), SETTINGS_PAGE_HIGHLIGHT, -1));
+            n = add_row(rows, n, max, link_row("Scroll indicators", on_off(state, SET_ID_SCROLL_ENABLED), SETTINGS_PAGE_SCROLL, -1));
+            n = add_row(rows, n, max, link_row("Clock", on_off(state, SET_ID_CLOCK_ENABLED), SETTINGS_PAGE_CLOCK, -1));
+            SettingSlot *idle = settings_slot(state, SET_ID_SCREENSAVER_IDLE_TIME, -1);
+            char after[sizeof(text) + 8] = "Off";   // "After " and any description, never cut short
+            if (is_on(state, SET_ID_SCREENSAVER_ENABLED)) {
+                setting_describe(idle->def, &idle->value, NULL, text, sizeof(text));
+                snprintf(after, sizeof(after), "After %s", text);
+            }
+            n = add_row(rows, n, max, link_row("Screensaver", after, SETTINGS_PAGE_SCREENSAVER, -1));
+            n = add_row(rows, n, max, link_row("Controls", is_on(state, SET_ID_GAMEPAD_ENABLED) ? "Gamepad on" : "Gamepad off",
+                                               SETTINGS_PAGE_CONTROLS, -1));
             n = add_row(rows, n, max, new_row(SETTINGS_ROW_DIVIDER, ""));
             n = add_row(rows, n, max, action_row("Discard changes", SETTINGS_ACTION_DISCARD, settings_any_changed(state)));
+            break;
+        }
+        case SETTINGS_PAGE_GENERAL: {
+            static const SettingId ids[] = { SET_ID_DEFAULT_MENU, SET_ID_WRAP_ENTRIES, SET_ID_RESET_ON_BACK,
+                SET_ID_MOUSE_SELECT, SET_ID_INHIBIT_OS_SCREENSAVER, SET_ID_VSYNC, SET_ID_FPS_LIMIT, SET_ID_ON_LAUNCH,
+                SET_ID_APPLICATION_TIMEOUT, SET_ID_STARTUP_CMD, SET_ID_QUIT_CMD };
+            for (int i = 0; i < LENGTH(ids); i++) {
+                SettingsRow row = global_row(state, ids[i]);
+                if (ids[i] == SET_ID_FPS_LIMIT)
+                    row = greyed(row, is_on(state, SET_ID_VSYNC), WHY_VSYNC);
+                n = add_row(rows, n, max, row);
+            }
             break;
         }
         case SETTINGS_PAGE_BACKGROUND: {
@@ -1143,8 +1265,14 @@ int settings_rows(SettingsState *state, SettingsRow *rows, int max)
                 n = add_row(rows, n, max, setting_row(state, settings_slot(state, SET_ID_SLIDESHOW_DURATION, -1)));
                 n = add_row(rows, n, max, setting_row(state, settings_slot(state, SET_ID_SLIDESHOW_FADE, -1)));
             }
-            else
+            else {
                 n = add_row(rows, n, max, note_row(TRANSPARENT_NOTE));
+                n = add_row(rows, n, max, global_row(state, SET_ID_CHROMA_KEY_COLOR));
+            }
+            bool overlay = is_on(state, SET_ID_OVERLAY);
+            n = add_row(rows, n, max, global_row(state, SET_ID_OVERLAY));
+            n = add_row(rows, n, max, greyed(global_row(state, SET_ID_OVERLAY_COLOR), !overlay, WHY_OVERLAY));
+            n = add_row(rows, n, max, greyed(global_row(state, SET_ID_OVERLAY_OPACITY), !overlay, WHY_OVERLAY));
             break;
         }
         case SETTINGS_PAGE_MENUS: {
@@ -1173,11 +1301,99 @@ int settings_rows(SettingsState *state, SettingsRow *rows, int max)
             n = add_row(rows, n, max, setting_row(state, settings_slot(state, m < 0 ? SET_ID_LAYOUT_ICON_SIZE : SET_ID_MENU_ICON_SIZE, m)));
             if (m >= 0)
                 n = add_row(rows, n, max, note_row(MENU_NOTE));
+            else {
+                n = add_row(rows, n, max, global_row(state, SET_ID_ICON_SPACING));
+                n = add_row(rows, n, max, global_row(state, SET_ID_VCENTER));
+            }
             break;
         }
-        case SETTINGS_PAGE_TITLES:
-            n = add_row(rows, n, max, setting_row(state, settings_slot(state, SET_ID_TITLE_SIZE, -1)));
+        case SETTINGS_PAGE_TITLES: {
+            bool off = !is_on(state, SET_ID_TITLES_ENABLED);
+            static const SettingId ids[] = { SET_ID_TITLE_SIZE, SET_ID_TITLES_ENABLED, SET_ID_TITLE_FONT,
+                SET_ID_TITLE_COLOR, SET_ID_TITLE_OPACITY, SET_ID_TITLE_SHADOWS, SET_ID_TITLE_SHADOW_COLOR,
+                SET_ID_TITLE_OVERSIZE, SET_ID_TITLE_PADDING };
+            for (int i = 0; i < LENGTH(ids); i++) {
+                SettingsRow row = global_row(state, ids[i]);
+                if (ids[i] == SET_ID_TITLE_SHADOW_COLOR)
+                    row = greyed(row, !is_on(state, SET_ID_TITLE_SHADOWS), WHY_SHADOWS);
+                if (ids[i] != SET_ID_TITLES_ENABLED)
+                    row = greyed(row, off, WHY_TITLES);
+                n = add_row(rows, n, max, row);
+            }
             break;
+        }
+        case SETTINGS_PAGE_HIGHLIGHT: {
+            bool off = !is_on(state, SET_ID_HIGHLIGHT_ENABLED);
+            bool outline = settings_slot(state, SET_ID_HIGHLIGHT_OUTLINE_SIZE, -1)->value.number > 0;
+            static const SettingId ids[] = { SET_ID_HIGHLIGHT_ENABLED, SET_ID_HIGHLIGHT_FILL_COLOR,
+                SET_ID_HIGHLIGHT_FILL_OPACITY, SET_ID_HIGHLIGHT_OUTLINE_SIZE, SET_ID_HIGHLIGHT_OUTLINE_COLOR,
+                SET_ID_HIGHLIGHT_OUTLINE_OPACITY, SET_ID_HIGHLIGHT_CORNER_RADIUS, SET_ID_HIGHLIGHT_VPADDING,
+                SET_ID_HIGHLIGHT_HPADDING };
+            for (int i = 0; i < LENGTH(ids); i++) {
+                SettingsRow row = global_row(state, ids[i]);
+                if (ids[i] == SET_ID_HIGHLIGHT_OUTLINE_COLOR || ids[i] == SET_ID_HIGHLIGHT_OUTLINE_OPACITY)
+                    row = greyed(row, !outline, WHY_NO_OUTLINE);
+                if (ids[i] == SET_ID_HIGHLIGHT_CORNER_RADIUS)
+                    row = greyed(row, outline, WHY_ROUNDED);
+                if (ids[i] != SET_ID_HIGHLIGHT_ENABLED)
+                    row = greyed(row, off, WHY_HIGHLIGHT);
+                n = add_row(rows, n, max, row);
+            }
+            break;
+        }
+        case SETTINGS_PAGE_SCROLL: {
+            bool off = !is_on(state, SET_ID_SCROLL_ENABLED);
+            bool outline = settings_slot(state, SET_ID_SCROLL_OUTLINE_SIZE, -1)->value.number > 0;
+            static const SettingId ids[] = { SET_ID_SCROLL_ENABLED, SET_ID_SCROLL_FILL_COLOR,
+                SET_ID_SCROLL_OUTLINE_SIZE, SET_ID_SCROLL_OUTLINE_COLOR, SET_ID_SCROLL_OPACITY };
+            for (int i = 0; i < LENGTH(ids); i++) {
+                SettingsRow row = global_row(state, ids[i]);
+                if (ids[i] == SET_ID_SCROLL_OUTLINE_COLOR)
+                    row = greyed(row, !outline, WHY_NO_OUTLINE);
+                if (ids[i] != SET_ID_SCROLL_ENABLED)
+                    row = greyed(row, off, WHY_SCROLL);
+                n = add_row(rows, n, max, row);
+            }
+            break;
+        }
+        case SETTINGS_PAGE_CLOCK: {
+            bool off = !is_on(state, SET_ID_CLOCK_ENABLED);
+            bool date = is_on(state, SET_ID_CLOCK_SHOW_DATE);
+            static const SettingId ids[] = { SET_ID_CLOCK_ENABLED, SET_ID_CLOCK_SHOW_DATE, SET_ID_CLOCK_WEEKDAY,
+                SET_ID_CLOCK_ALIGNMENT, SET_ID_CLOCK_FONT, SET_ID_CLOCK_FONT_SIZE, SET_ID_CLOCK_COLOR,
+                SET_ID_CLOCK_OPACITY, SET_ID_CLOCK_SHADOWS, SET_ID_CLOCK_SHADOW_COLOR, SET_ID_CLOCK_MARGIN,
+                SET_ID_CLOCK_TIME_FORMAT, SET_ID_CLOCK_DATE_FORMAT };
+            for (int i = 0; i < LENGTH(ids); i++) {
+                SettingsRow row = global_row(state, ids[i]);
+                if (ids[i] == SET_ID_CLOCK_WEEKDAY || ids[i] == SET_ID_CLOCK_DATE_FORMAT)
+                    row = greyed(row, !date, WHY_DATE);
+                if (ids[i] == SET_ID_CLOCK_SHADOW_COLOR)
+                    row = greyed(row, !is_on(state, SET_ID_CLOCK_SHADOWS), WHY_SHADOWS);
+                if (ids[i] != SET_ID_CLOCK_ENABLED)
+                    row = greyed(row, off, WHY_CLOCK);
+                n = add_row(rows, n, max, row);
+            }
+            break;
+        }
+        case SETTINGS_PAGE_SCREENSAVER: {
+            bool off = !is_on(state, SET_ID_SCREENSAVER_ENABLED);
+            static const SettingId ids[] = { SET_ID_SCREENSAVER_ENABLED, SET_ID_SCREENSAVER_IDLE_TIME,
+                SET_ID_SCREENSAVER_INTENSITY, SET_ID_SCREENSAVER_PAUSE };
+            for (int i = 0; i < LENGTH(ids); i++)
+                n = add_row(rows, n, max, greyed(global_row(state, ids[i]), off && i > 0, WHY_SCREENSAVER));
+            break;
+        }
+        case SETTINGS_PAGE_CONTROLS:
+            n = add_row(rows, n, max, link_row("Gamepad", on_off(state, SET_ID_GAMEPAD_ENABLED), SETTINGS_PAGE_GAMEPAD, -1));
+            break;
+        case SETTINGS_PAGE_GAMEPAD: {
+            bool off = !is_on(state, SET_ID_GAMEPAD_ENABLED);
+            n = add_row(rows, n, max, global_row(state, SET_ID_GAMEPAD_ENABLED));
+            n = add_row(rows, n, max, greyed(global_row(state, SET_ID_GAMEPAD_DEVICE), off, WHY_GAMEPAD));
+            n = add_row(rows, n, max, greyed(global_row(state, SET_ID_GAMEPAD_MAPPINGS), off, WHY_GAMEPAD));
+            n = add_row(rows, n, max, note_row(MAPPINGS_NOTE));
+            break;
+        }
         case SETTINGS_PAGE_SAVE_FAILED:
             n = add_row(rows, n, max, note_row(state->failure));
             n = add_row(rows, n, max, action_row("Try again", SETTINGS_ACTION_RETRY, true));
@@ -1187,10 +1403,11 @@ int settings_rows(SettingsState *state, SettingsRow *rows, int max)
     return n < max ? n : max;
 }
 
-// A function to tell whether the cursor may rest on a row
+// A function to tell whether the cursor may rest on a row: any row but a divider or a note, unless
+// it is greyed with no reason to give (Discard with nothing to discard)
 static bool selectable(const SettingsRow *row)
 {
-    return row->enabled && row->kind != SETTINGS_ROW_DIVIDER && row->kind != SETTINGS_ROW_NOTE;
+    return row->kind != SETTINGS_ROW_DIVIDER && row->kind != SETTINGS_ROW_NOTE && (row->enabled || row->why != NULL);
 }
 
 // A function to keep the cursor on a row it may rest on, since the rows under it can change
@@ -1258,6 +1475,60 @@ static SettingsEvent leave_background(SettingsState *state)
     return event;
 }
 
+// A function to step the default menu through the menus, in file order; false at either end
+static bool step_menu(SettingsState *state, const SettingSlot *slot, int direction, SettingValue *next)
+{
+    int index = -1;
+    for (int i = 0; i < state->menu_count && index < 0; i++) {
+        if (strcmp(state->names[i], slot->value.text) == 0)
+            index = i;
+    }
+    int to = index < 0 ? (direction > 0 ? 0 : -1) : index + (direction > 0 ? 1 : -1);
+    if (to < 0 || to >= state->menu_count)
+        return false;
+    *next = slot->value;
+    snprintf(next->text, sizeof(next->text), "%s", state->names[to]);
+    return true;
+}
+
+// A function to step the device through Any and the pads present, in order; a device index the file
+// names that is not present stays reachable in its place. False at either end.
+static bool step_device(SettingsState *state, const SettingSlot *slot, int direction, SettingValue *next)
+{
+    int list[SETTINGS_MAX_PADS + 3];
+    int count = 0;
+    int wanted[SETTINGS_MAX_PADS + 3];
+    int wanted_count = 0;
+    wanted[wanted_count++] = -1;
+    for (int i = 0; i < state->pad_count; i++)
+        wanted[wanted_count++] = i;
+    wanted[wanted_count++] = slot->entry.number;
+    wanted[wanted_count++] = slot->value.number;
+    for (int i = 0; i < wanted_count; i++) {
+        int at = count;
+        bool seen = false;
+        for (int k = 0; k < count && !seen; k++)
+            seen = list[k] == wanted[i];
+        if (seen)
+            continue;
+        while (at > 0 && list[at - 1] > wanted[i]) {
+            list[at] = list[at - 1];
+            at--;
+        }
+        list[at] = wanted[i];
+        count++;
+    }
+    int index = 0;
+    while (index < count && list[index] != slot->value.number)
+        index++;
+    int to = index + (direction > 0 ? 1 : -1);
+    if (to < 0 || to >= count)
+        return false;
+    *next = slot->value;
+    next->number = list[to];
+    return true;
+}
+
 // A function to act on one key of the remote
 SettingsEvent settings_command(SettingsState *state, SettingsCommand command)
 {
@@ -1286,10 +1557,18 @@ SettingsEvent settings_command(SettingsState *state, SettingsCommand command)
         }
         case SETTINGS_LEFT:
         case SETTINGS_RIGHT:
-            if (row != NULL && row->kind == SETTINGS_ROW_SETTING) {
+            if (row != NULL && row->enabled && (row->kind == SETTINGS_ROW_SETTING || row->kind == SETTINGS_ROW_PICK)) {
                 SettingSlot *slot = row->slot;
-                SettingValue next = setting_step(slot->def, &slot->value, &slot->entry, command == SETTINGS_RIGHT ? 1 : -1);
-                if (!setting_equal(slot->def, &next, &slot->value)) {
+                int direction = command == SETTINGS_RIGHT ? 1 : -1;
+                SettingValue next = slot->value;
+                bool moved = true;
+                if (slot->def->type == SET_TYPE_MENU)
+                    moved = step_menu(state, slot, direction, &next);
+                else if (slot->def->type == SET_TYPE_DEVICE)
+                    moved = step_device(state, slot, direction, &next);
+                else
+                    next = setting_step(slot->def, &slot->value, &slot->entry, direction);
+                if (moved && !setting_equal(slot->def, &next, &slot->value)) {
                     event.before = slot->value;
                     slot->value = next;
                     event.kind = SETTINGS_EVENT_CHANGED;
@@ -1300,12 +1579,18 @@ SettingsEvent settings_command(SettingsState *state, SettingsCommand command)
         case SETTINGS_OK:
             if (row == NULL || !selectable(row))
                 break;
+            if (!row->enabled && row->kind != SETTINGS_ROW_ACTION)
+                break;
             if (row->kind == SETTINGS_ROW_LINK) {
                 push_page(state, row->target, row->menu);
                 event.kind = SETTINGS_EVENT_MOVED;
             }
             else if (row->kind == SETTINGS_ROW_BROWSE) {
                 event.kind = SETTINGS_EVENT_BROWSE;
+                event.slot = row->slot;
+            }
+            else if (row->kind == SETTINGS_ROW_PICK) {
+                event.kind = SETTINGS_EVENT_PICK;
                 event.slot = row->slot;
             }
             else if (row->kind == SETTINGS_ROW_ACTION && row->action == SETTINGS_ACTION_DISCARD) {
@@ -1358,6 +1643,22 @@ SettingsEvent settings_choose(SettingsState *state, SettingSlot *slot, const cha
     return event;
 }
 
+// A function to set a value chosen in a picker (a colour, a font, a command, a menu, a device)
+SettingsEvent settings_choose_value(SettingsState *state, SettingSlot *slot, const SettingValue *value)
+{
+    SettingsEvent event;
+    memset(&event, 0, sizeof(event));
+    event.kind = SETTINGS_EVENT_NONE;
+    state->notice[0] = '\0';
+    if (setting_equal(slot->def, &slot->value, value))
+        return event;
+    event.before = slot->value;
+    slot->value = *value;
+    event.kind = SETTINGS_EVENT_CHANGED;
+    event.slot = slot;
+    return event;
+}
+
 // A function to show why a save failed, with Try again and Leave without saving
 void settings_show_save_failed(SettingsState *state, const char *message)
 {
@@ -1392,6 +1693,13 @@ void settings_path(const SettingsState *state, char *out, size_t size)
             case SETTINGS_PAGE_MENUS: name = "Menus"; break;
             case SETTINGS_PAGE_MENU: name = page->menu < 0 ? "All menus" : state->names[page->menu]; break;
             case SETTINGS_PAGE_TITLES: name = "Titles"; break;
+            case SETTINGS_PAGE_GENERAL: name = "General"; break;
+            case SETTINGS_PAGE_HIGHLIGHT: name = "Highlight"; break;
+            case SETTINGS_PAGE_SCROLL: name = "Scroll indicators"; break;
+            case SETTINGS_PAGE_CLOCK: name = "Clock"; break;
+            case SETTINGS_PAGE_SCREENSAVER: name = "Screensaver"; break;
+            case SETTINGS_PAGE_CONTROLS: name = "Controls"; break;
+            case SETTINGS_PAGE_GAMEPAD: name = "Gamepad"; break;
             case SETTINGS_PAGE_SAVE_FAILED: name = "Couldn't save"; break;
             case SETTINGS_PAGE_TOP: break;
         }
