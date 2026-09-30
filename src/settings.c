@@ -918,7 +918,8 @@ struct SettingsState {
     char notice[256];
     char failure[1400];
     char more_menus[128];  // The Menus page's note for the menus it has no room to list
-    char *pads[SETTINGS_MAX_PADS]; // The gamepads present, by device index, for the Device row
+    char *pads[SETTINGS_MAX_PADS]; // The gamepads present, by device index, for the Device row; NULL: no name
+    char pad_fallback[SETTINGS_MAX_PADS][16];  // "Pad N", for a pad with no name
     int pad_count;
 };
 
@@ -975,15 +976,20 @@ void settings_free(SettingsState *state)
     alloc_free(state);
 }
 
-// A function to name the gamepads present, by device index, for the Device row; names past
-// SETTINGS_MAX_PADS are left out. Out of memory, a pad keeps no name and shows as "Pad N".
+// A function to name the gamepads present, by device index, for the Device row. A negative count
+// (a failed count) names none, and pads past SETTINGS_MAX_PADS are left out. A pad whose name is
+// NULL, or whose copy ran out of memory, is named "Pad N" (N its device index), as the row shows it.
 void settings_set_pads(SettingsState *state, const char *const *names, int count)
 {
-    for (int i = 0; i < state->pad_count; i++)
+    for (int i = 0; i < state->pad_count; i++) {
         alloc_free(state->pads[i]);
-    state->pad_count = count < SETTINGS_MAX_PADS ? count : SETTINGS_MAX_PADS;
-    for (int i = 0; i < state->pad_count; i++)
-        state->pads[i] = alloc_strdup(names[i]);
+        state->pads[i] = NULL;
+    }
+    state->pad_count = count > SETTINGS_MAX_PADS ? SETTINGS_MAX_PADS : (count > 0 ? count : 0);
+    for (int i = 0; i < state->pad_count; i++) {
+        snprintf(state->pad_fallback[i], sizeof(state->pad_fallback[i]), "Pad %d", i);
+        state->pads[i] = names[i] != NULL ? alloc_strdup(names[i]) : NULL;
+    }
 }
 
 // A function to count the pads named
@@ -992,12 +998,13 @@ int settings_pad_count(const SettingsState *state)
     return state->pad_count;
 }
 
-// A function to get a pad's name by device index, for the Device list; NULL past the pads named
+// A function to get a pad's name by device index, for the Device row and list: its own name, or
+// "Pad N" when it has none; NULL only past the pads named (index < 0 or >= the count)
 const char *settings_pad_name(const SettingsState *state, int index)
 {
     if (index < 0 || index >= state->pad_count)
         return NULL;
-    return state->pads[index] != NULL ? state->pads[index] : "Pad";
+    return state->pads[index] != NULL ? state->pads[index] : state->pad_fallback[index];
 }
 
 // A function to find a setting's slot; `menu` matters only for the per-menu settings
@@ -1114,9 +1121,9 @@ static SettingsRow setting_row(SettingsState *state, SettingSlot *slot)
     setting_describe(slot->def, &slot->value, inherited_value(state, slot), row.value, sizeof(row.value));
     int pad = slot->value.number;
     if (slot->def->type == SET_TYPE_DEVICE && pad >= 0) {
-        if (pad < state->pad_count && state->pads[pad] != NULL)
-            snprintf(row.value, sizeof(row.value), "%s", state->pads[pad]);
-        else if (pad >= state->pad_count)
+        if (pad < state->pad_count)
+            snprintf(row.value, sizeof(row.value), "%s", settings_pad_name(state, pad));
+        else
             snprintf(row.value, sizeof(row.value), "Pad %d (not connected)", pad);
     }
     return row;
@@ -1379,8 +1386,12 @@ int settings_rows(SettingsState *state, SettingsRow *rows, int max)
             bool off = !is_on(state, SET_ID_SCREENSAVER_ENABLED);
             static const SettingId ids[] = { SET_ID_SCREENSAVER_ENABLED, SET_ID_SCREENSAVER_IDLE_TIME,
                 SET_ID_SCREENSAVER_INTENSITY, SET_ID_SCREENSAVER_PAUSE };
-            for (int i = 0; i < LENGTH(ids); i++)
-                n = add_row(rows, n, max, greyed(global_row(state, ids[i]), off && i > 0, WHY_SCREENSAVER));
+            for (int i = 0; i < LENGTH(ids); i++) {
+                SettingsRow row = global_row(state, ids[i]);
+                if (ids[i] != SET_ID_SCREENSAVER_ENABLED)
+                    row = greyed(row, off, WHY_SCREENSAVER);
+                n = add_row(rows, n, max, row);
+            }
             break;
         }
         case SETTINGS_PAGE_CONTROLS:
@@ -1475,7 +1486,8 @@ static SettingsEvent leave_background(SettingsState *state)
     return event;
 }
 
-// A function to step the default menu through the menus, in file order; false at either end
+// A function to step the default menu through the menus, in file order; false at either end. The
+// launcher refuses to start with a missing or unknown DefaultMenu, so the model never opens with one.
 static bool step_menu(SettingsState *state, const SettingSlot *slot, int direction, SettingValue *next)
 {
     int index = -1;

@@ -11,7 +11,7 @@
 #define SETTING_TEXT_MAX 1024  // Longest path a setting holds
 #define SETTINGS_MAX_ROWS 64   // Most rows one page shows; Menus counts the rest in a note
 #define SETTINGS_MAX_DEPTH 8   // Deepest the pages go
-#define SETTINGS_MAX_PADS 16      // Most gamepads the Device row names
+#define SETTINGS_MAX_PADS 16   // Most gamepads the Device row names
 
 typedef enum {
     SET_TYPE_COUNT,       // A whole number: Rows, Columns
@@ -228,7 +228,7 @@ typedef struct {
     char label[128];
     char value[256];             // What the row shows on the right
     const char *note;            // NOTE rows: the text, owned by the model
-    SettingSlot *slot;           // SETTING and BROWSE rows
+    SettingSlot *slot;           // SETTING, BROWSE and PICK rows
     SettingsPage target;         // LINK rows
     int menu;                    // LINK rows to a menu's page: its index; -1 for All menus
     SettingsAction action;       // ACTION rows
@@ -294,6 +294,9 @@ const char *settings_notice(const SettingsState *state);
 SettingsEvent settings_command(SettingsState *state, SettingsCommand command);
 SettingsEvent settings_choose(SettingsState *state, SettingSlot *slot, const char *path);
 SettingsEvent settings_choose_value(SettingsState *state, SettingSlot *slot, const SettingValue *value);
+// The gamepads present, by device index. A negative count names none. A NULL name, or one whose
+// copy ran out of memory, is named "Pad N" as the Device row shows it; settings_pad_name() gives
+// NULL only past the pads named (index < 0 or >= the count).
 void settings_set_pads(SettingsState *state, const char *const *names, int count);
 int settings_pad_count(const SettingsState *state);
 const char *settings_pad_name(const SettingsState *state, int index);

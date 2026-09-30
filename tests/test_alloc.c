@@ -617,6 +617,14 @@ static void prove_pads(void)
         arm(n);
         settings_set_pads(state, pads, 2);
         disarm();
+        CHECK_RUN(settings_pad_count(state) == 2, n);
+        for (int i = 0; i < 2; i++) {
+            // Allocation n copies pads[n - 1]: that pad, when it failed, falls back to "Pad N"
+            char fallback[16];
+            snprintf(fallback, sizeof(fallback), "Pad %d", i);
+            const char *name = settings_pad_name(state, i);
+            CHECK_RUN(name != NULL && strcmp(name, failed && i == n - 1 ? fallback : pads[i]) == 0, n);
+        }
         settings_free(state);
         runs = n;
         if (!no_leak(__LINE__, n) || !failed)

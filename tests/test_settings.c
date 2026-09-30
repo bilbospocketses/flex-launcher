@@ -446,7 +446,7 @@ static void test_background_page(void)
     CHECK_STR(rows[2].value, "30 s");
     CHECK_STR(rows[3].value, "1.5 s");
 
-    // Transparent: a note in place of rows
+    // Transparent: a note in place of the mode's rows, then the see-through colour and the overlay's three rows
     settings_command(state, SETTINGS_RIGHT);
     count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
     CHECK_INT(count, 6);
@@ -916,19 +916,30 @@ static void test_find(void)
     }
 }
 
-// A function to find a row on the page on show by its label
+// A function to fail a check for a row the page on show does not have
+static void no_such_row(const char *helper, const char *label)
+{
+    check_count++;
+    check_failures++;
+    fprintf(stderr, "%s: no row labelled \"%s\" on this page\n", helper, label);
+}
+
+// A function to find a row on the page on show by its label. A label the page does not have fails
+// a check and gives an empty row (no label, no value, greyed, no reason), never NULL.
 static const SettingsRow *row_labelled(SettingsState *state, SettingsRow *rows, const char *label)
 {
+    static SettingsRow missing;
     int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
     for (int i = 0; i < count; i++) {
         if (strcmp(rows[i].label, label) == 0)
             return &rows[i];
     }
-    return NULL;
+    no_such_row("row_labelled", label);
+    return &missing;
 }
 
 // A function to move the cursor onto a row by its label: up to the first row it may rest on, then
-// down until it is there
+// down until it is there. A label it never reaches fails a check.
 static void cursor_to(SettingsState *state, const char *label)
 {
     SettingsRow rows[SETTINGS_MAX_ROWS];
@@ -940,6 +951,7 @@ static void cursor_to(SettingsState *state, const char *label)
             return;
         settings_command(state, SETTINGS_DOWN);
     }
+    no_such_row("cursor_to", label);
 }
 
 // A function to open a top-level page by its label
@@ -991,6 +1003,9 @@ static void test_general_page(void)
     CHECK_STR(event.slot->value.text, "Games");
     CHECK_STR(event.before.text, "Main");
     CHECK_INT(settings_command(state, SETTINGS_RIGHT).kind, SETTINGS_EVENT_NONE);   // Games is the last
+    event = settings_command(state, SETTINGS_LEFT);                                  // And back to Main
+    CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
+    CHECK(event.slot != NULL && strcmp(event.slot->value.text, "Main") == 0);
     event = settings_command(state, SETTINGS_OK);
     CHECK_INT(event.kind, SETTINGS_EVENT_PICK);
     CHECK(event.slot == settings_slot(state, SET_ID_DEFAULT_MENU, -1));
@@ -1016,7 +1031,8 @@ static void test_greyed_rows(void)
     static const char *const labels[] = { "Size", "Show titles", "Font", "Colour", "Opacity", "Shadows",
                                           "Shadow colour", "Too long", "Padding" };
     int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
-    for (int i = 0; i < count; i++)
+    CHECK_INT(count, 9);
+    for (int i = 0; i < count && i < (int) (sizeof(labels) / sizeof(labels[0])); i++)
         CHECK_STR(rows[i].label, labels[i]);
     CHECK_STR(row_labelled(state, rows, "Shadow colour")->why, "Turn Shadows on to change this");
     CHECK_INT(row_labelled(state, rows, "Font")->kind, SETTINGS_ROW_PICK);
@@ -1065,7 +1081,12 @@ static void test_other_pages(void)
     CHECK_INT(settings_page(state), SETTINGS_PAGE_SCREENSAVER);
     CHECK_STR(row_labelled(state, rows, "Idle time")->why, "The screensaver is off");
     CHECK_STR(row_labelled(state, rows, "Idle time")->value, "5 min");
+    cursor_to(state, "On");                                  // On: the top page says after how long
+    settings_command(state, SETTINGS_RIGHT);
     settings_command(state, SETTINGS_BACK);
+    settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_STR(rows[7].label, "Screensaver");
+    CHECK_STR(rows[7].value, "After 5 min");
 
     open_page(state, "Scroll indicators");
     CHECK_INT(settings_page(state), SETTINGS_PAGE_SCROLL);
@@ -1090,6 +1111,10 @@ static void test_other_pages(void)
     // Device steps through the pads present, by name; one the file names that is gone stays reachable
     static const char *const pads[] = { "Xbox Controller", "8BitDo Pro 2" };
     settings_set_pads(state, pads, 2);
+    CHECK_INT(settings_pad_count(state), 2);
+    CHECK_STR(settings_pad_name(state, 0), "Xbox Controller");
+    CHECK(settings_pad_name(state, 2) == NULL);
+    CHECK(settings_pad_name(state, -1) == NULL);
     cursor_to(state, "Device");
     SettingsEvent event = settings_command(state, SETTINGS_RIGHT);
     CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
@@ -1103,12 +1128,36 @@ static void test_other_pages(void)
     CHECK_STR(row_labelled(state, rows, "Device")->value, "Pad 5 (not connected)");
     settings_command(state, SETTINGS_LEFT);
     CHECK_INT(settings_slot(state, SET_ID_GAMEPAD_DEVICE, -1)->value.number, 1);
+    event = settings_command(state, SETTINGS_RIGHT);                 // And back to it
+    CHECK_INT(event.kind, SETTINGS_EVENT_CHANGED);
+    CHECK(event.slot != NULL && event.slot->value.number == 5);
+    settings_command(state, SETTINGS_LEFT);
     CHECK_INT(settings_command(state, SETTINGS_OK).kind, SETTINGS_EVENT_PICK);
 
-    // The gamepad off greys the rest
+    // A failed count (SDL_NumJoysticks() is negative on error) names no pads
+    settings_set_pads(state, NULL, -1);
+    CHECK_INT(settings_pad_count(state), 0);
+
+    // A pad with no name (SDL_JoystickNameForIndex() gives NULL) is "Pad N", in the row and in the list
+    static const char *const nameless[] = { NULL, "8BitDo Pro 2" };
+    settings_set_pads(state, nameless, 2);
+    settings_command(state, SETTINGS_LEFT);
+    CHECK_INT(settings_slot(state, SET_ID_GAMEPAD_DEVICE, -1)->value.number, 0);
+    CHECK_STR(row_labelled(state, rows, "Device")->value, "Pad 0");
+    CHECK_STR(settings_pad_name(state, 0), "Pad 0");
+    CHECK_STR(settings_pad_name(state, 1), "8BitDo Pro 2");
+
+    // The gamepad off greys the rest, and the pages above say so
     cursor_to(state, "On");
     settings_command(state, SETTINGS_LEFT);
     CHECK_STR(row_labelled(state, rows, "Device")->why, "The gamepad is off");
+    settings_command(state, SETTINGS_BACK);
+    settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_STR(rows[0].value, "Off");
+    settings_command(state, SETTINGS_BACK);
+    settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_STR(rows[8].label, "Controls");
+    CHECK_STR(rows[8].value, "Gamepad off");
     settings_free(state);
 }
 
