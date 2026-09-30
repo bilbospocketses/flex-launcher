@@ -1174,6 +1174,55 @@ static void test_other_pages(void)
     settings_free(state);
 }
 
+// A function to test what the model tells the screen about a row: whether Left and Right step it (a
+// setting, or a picker for a colour, the default menu or the device) and whether the cursor may rest
+// on it (not a divider or a note, and a greyed row only when it says why)
+static void test_row_steps_and_selectable(void)
+{
+    SettingsState *state = open_model();
+    SettingsRow rows[SETTINGS_MAX_ROWS];
+    open_page(state, "General");
+    const SettingsRow *row = row_labelled(state, rows, "Default menu");
+    CHECK(row->kind == SETTINGS_ROW_PICK && row->steps && settings_row_selectable(row));   // A picker that steps
+    row = row_labelled(state, rows, "Startup command");
+    CHECK(row->kind == SETTINGS_ROW_PICK && !row->steps && settings_row_selectable(row));  // One that does not
+    row = row_labelled(state, rows, "Wrap around");
+    CHECK(row->kind == SETTINGS_ROW_SETTING && row->steps);                               // A setting
+    row = row_labelled(state, rows, "FPS limit");                                          // Greyed, with a reason
+    CHECK(!row->enabled && row->why != NULL && row->steps && settings_row_selectable(row));
+    settings_command(state, SETTINGS_BACK);
+
+    open_page(state, "Background");
+    row = row_labelled(state, rows, "Colour");
+    CHECK(row->kind == SETTINGS_ROW_PICK && row->steps);                                  // A colour steps
+    settings_command(state, SETTINGS_BACK);
+
+    open_page(state, "Titles");
+    row = row_labelled(state, rows, "Font");
+    CHECK(row->kind == SETTINGS_ROW_PICK && !row->steps);                                 // A font does not
+    settings_command(state, SETTINGS_BACK);
+
+    open_page(state, "Controls");
+    row = row_labelled(state, rows, "Gamepad");
+    CHECK(row->kind == SETTINGS_ROW_LINK && !row->steps && settings_row_selectable(row));  // A link
+    open_page(state, "Gamepad");
+    int count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 4);
+    CHECK(rows[1].kind == SETTINGS_ROW_PICK && rows[1].steps);                            // The device steps
+    CHECK(rows[2].kind == SETTINGS_ROW_BROWSE && !rows[2].steps);
+    CHECK(rows[3].kind == SETTINGS_ROW_NOTE && !settings_row_selectable(&rows[3]));       // A note
+    settings_command(state, SETTINGS_BACK);
+    settings_command(state, SETTINGS_BACK);
+
+    // The top page: a divider, and Discard greyed with nothing to discard and no reason to give
+    count = settings_rows(state, rows, SETTINGS_MAX_ROWS);
+    CHECK_INT(count, 11);
+    CHECK(rows[9].kind == SETTINGS_ROW_DIVIDER && !settings_row_selectable(&rows[9]));
+    CHECK(rows[10].kind == SETTINGS_ROW_ACTION && !rows[10].enabled && rows[10].why == NULL);
+    CHECK(!settings_row_selectable(&rows[10]) && !rows[10].steps);
+    settings_free(state);
+}
+
 int main(void)
 {
     test_round_trips();
@@ -1197,6 +1246,7 @@ int main(void)
     test_new_descriptions();
     test_find();
     test_fallbacks();
+    test_row_steps_and_selectable();
     return check_report();
 }
 

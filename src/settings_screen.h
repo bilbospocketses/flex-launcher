@@ -9,5 +9,6 @@ void settings_open(void);
 void settings_handle_command(const char *command);
 void settings_draw(void);
 void settings_close_now(void);
+void settings_pads_changed(void);
 
 #endif

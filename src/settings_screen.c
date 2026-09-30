@@ -248,13 +248,31 @@ static SettingValue read_value(SettingId id, int menu_index)
     return config_read(id, menu_index >= 0 ? menus[menu_index] : NULL);
 }
 
+// A check made when this file compiles: CONDITION false makes an array of size -1, which does not
+// compile. MSVC's default C mode has no _Static_assert, so this stands in for it everywhere.
+#define COMPILE_CHECK(name, condition) typedef char name[(condition) ? 1 : -1]
+
+// Each refresh group's name for the log, in the enum's order
+static const char *const REFRESH_NAMES[] = { "nothing", "the layout", "the titles", "the background",
+    "the title font", "the highlight", "the scroll indicators", "the clock", "the screensaver",
+    "the gamepad", "the frame timing" };
+
+// The order Discard runs the groups in (every group but SET_REFRESH_NONE): the title font first, as
+// it renders the titles and lays the menu out, and the layout last
+static const SettingRefresh REFRESH_ORDER[] = { SET_REFRESH_TITLE_FONT, SET_REFRESH_TITLES, SET_REFRESH_BACKGROUND,
+    SET_REFRESH_HIGHLIGHT, SET_REFRESH_SCROLL, SET_REFRESH_CLOCK, SET_REFRESH_SCREENSAVER,
+    SET_REFRESH_GAMEPAD, SET_REFRESH_FRAME, SET_REFRESH_LAYOUT };
+
+// The groups end with SET_REFRESH_FRAME, and both lists know every one of them: a new group fails
+// these until it is named and ordered
+COMPILE_CHECK(refresh_frame_is_the_last_group, SET_REFRESH_FRAME + 1 == SET_REFRESH_COUNT);
+COMPILE_CHECK(refresh_names_name_every_group, sizeof(REFRESH_NAMES) / sizeof(REFRESH_NAMES[0]) == SET_REFRESH_COUNT);
+COMPILE_CHECK(refresh_order_runs_every_group, sizeof(REFRESH_ORDER) / sizeof(REFRESH_ORDER[0]) == SET_REFRESH_COUNT - 1);
+
 // A function to name a refresh group for the log
 static const char *refresh_name(SettingRefresh refresh)
 {
-    static const char *const names[] = { "nothing", "the layout", "the titles", "the background",
-        "the title font", "the highlight", "the scroll indicators", "the clock", "the screensaver",
-        "the gamepad", "the frame timing" };
-    return names[refresh];
+    return REFRESH_NAMES[refresh];
 }
 
 // A function to name the gamepads present for the Device row, by their device index now (the
@@ -270,6 +288,13 @@ static void list_pads(void)
     for (int i = 0; i < count; i++)
         names[i] = SDL_JoystickNameForIndex(i);
     settings_set_pads(model, names, count);
+}
+
+// A function to name the pads again after one was plugged in or pulled out, while settings are open
+void settings_pads_changed(void)
+{
+    if (model != NULL)
+        list_pads();
 }
 
 // A function to refresh what a group of settings affects in the running launcher
@@ -309,13 +334,17 @@ static void run_refresh(SettingRefresh refresh)
         case SET_REFRESH_FRAME:
             apply_frame_timing();
             break;
+        case SET_REFRESH_COUNT:   // Not a group
+            return;
     }
     log_debug("Settings: refreshed %s", refresh_name(refresh));
 }
 
 // A function to put a setting's value into the running launcher, then refresh what it affects.
-// The clock is stopped before one of its settings is written, so no render is in flight while it
-// changes. Two settings act beyond any group: the OS screensaver block, and the menu :home goes to.
+// The clock is stopped before one of its settings is written. That is defence in depth, not a need:
+// the clock's thread reads only its own snapshot (clk), never config, so a render in flight could
+// not see the write; reload_clock() would stop it anyway. Two settings act beyond any group: the OS
+// screensaver block, and the menu :home goes to.
 static void apply_slot(const SettingSlot *slot, bool refresh)
 {
     if (slot->def->refresh == SET_REFRESH_CLOCK)
@@ -333,10 +362,10 @@ static void apply_slot(const SettingSlot *slot, bool refresh)
 }
 
 // A function to put every value back into the launcher after Discard, refreshing once each group
-// whose settings changed back, the title font first (it renders the titles and lays the menu out)
+// whose settings changed back, in REFRESH_ORDER
 static void apply_all(void)
 {
-    bool due[SET_REFRESH_FRAME + 1];
+    bool due[SET_REFRESH_COUNT];
     memset(due, 0, sizeof(due));
     for (int i = 0; i < settings_slot_count(model); i++) {
         SettingSlot *slot = settings_slot_at(model, i);
@@ -346,12 +375,9 @@ static void apply_all(void)
         apply_slot(slot, false);
         due[slot->def->refresh] = true;
     }
-    static const SettingRefresh order[] = { SET_REFRESH_TITLE_FONT, SET_REFRESH_TITLES, SET_REFRESH_BACKGROUND,
-        SET_REFRESH_HIGHLIGHT, SET_REFRESH_SCROLL, SET_REFRESH_CLOCK, SET_REFRESH_SCREENSAVER,
-        SET_REFRESH_GAMEPAD, SET_REFRESH_FRAME, SET_REFRESH_LAYOUT };
-    for (size_t i = 0; i < sizeof(order) / sizeof(order[0]); i++) {
-        if (due[order[i]])
-            run_refresh(order[i]);
+    for (size_t i = 0; i < sizeof(REFRESH_ORDER) / sizeof(REFRESH_ORDER[0]); i++) {
+        if (due[REFRESH_ORDER[i]])
+            run_refresh(REFRESH_ORDER[i]);
     }
 }
 
@@ -1078,14 +1104,11 @@ static int row_drawn_height(const SettingsRow *row, int note_room)
 }
 
 // A function to write what a row shows on its right: under the cursor, Left and Right arrows round
-// the value of a row they step (a setting, or a picker for a colour, the default menu or the
-// device) while it is not greyed; the › marker after any row OK opens (a page, the browser, a
-// picker); else the value alone
+// the value of a row they step (the model says which) while it is not greyed; the › marker after
+// any row OK opens (a page, the browser, a picker); else the value alone
 static void row_value_text(const SettingsRow *row, bool highlighted, char *out, size_t size)
 {
-    bool steps = row->slot != NULL && (row->slot->def->type == SET_TYPE_COLOR ||
-                 row->slot->def->type == SET_TYPE_MENU || row->slot->def->type == SET_TYPE_DEVICE);
-    if (row->enabled && highlighted && (row->kind == SETTINGS_ROW_SETTING || (row->kind == SETTINGS_ROW_PICK && steps)))
+    if (row->enabled && highlighted && row->steps)
         snprintf(out, size, LEFT_ARROW " %s " RIGHT_ARROW, row->value);
     else if (row->kind == SETTINGS_ROW_LINK || row->kind == SETTINGS_ROW_BROWSE || row->kind == SETTINGS_ROW_PICK)
         snprintf(out, size, "%s " RIGHT_ARROW, row->value);
@@ -1125,11 +1148,10 @@ static int draw_row(const SettingsRow *row, bool highlighted, int x, int y, int 
     return row_height;
 }
 
-// A function to draw the model's rows between two heights, scrolled to keep the cursor in view
-static void draw_model_rows(int x, int top, int bottom)
+// A function to draw the page's rows (built once for the frame) between two heights, scrolled to
+// keep the cursor in view
+static void draw_model_rows(SettingsRow *rows, int count, int x, int top, int bottom)
 {
-    SettingsRow rows[SETTINGS_MAX_ROWS];
-    int count = settings_rows(model, rows, SETTINGS_MAX_ROWS);
     int cursor = settings_cursor(model);
     int visible = max_int(1, (bottom - top) / row_height);
     if (cursor < first_row)
@@ -1153,11 +1175,11 @@ static void draw_model_rows(int x, int top, int bottom)
     }
 
     // With the cursor on the last row it can rest on, what follows it (the Menus page's note on
-    // the menus it has no room for, say) comes on show too: the page scrolls to its end. A greyed
-    // row that says why is one the cursor can rest on, as the model has it.
+    // the menus it has no room for, say) comes on show too: the page scrolls to its end. Which rows
+    // the cursor can rest on is the model's to say (a greyed row that says why is one).
     bool rest_after = false;
     for (int i = cursor + 1; i < count; i++) {
-        if ((rows[i].enabled || rows[i].why != NULL) && rows[i].kind != SETTINGS_ROW_DIVIDER && rows[i].kind != SETTINGS_ROW_NOTE)
+        if (settings_row_selectable(&rows[i]))
             rest_after = true;
     }
     if (!rest_after) {
@@ -1225,8 +1247,8 @@ static void draw_browser_rows(int x, int top, int bottom)
 }
 
 // A function to draw the column: the title, the page path (or the folder being browsed), the rows
-// and the key hint
-static void draw_column(void)
+// (the page's, built once for the frame, or the browser's) and the key hint
+static void draw_column(SettingsRow *rows, int count)
 {
     char path[512];
     int x = margin;
@@ -1241,7 +1263,7 @@ static void draw_column(void)
     if (browser != NULL)
         draw_browser_rows(x, top, hint_y - margin);
     else
-        draw_model_rows(x, top, hint_y - margin);
+        draw_model_rows(rows, count, x, top, hint_y - margin);
     const char *hint = browser != NULL ? "Left and right page \xC2\xB7 OK opens or chooses \xC2\xB7 Back goes up"
                      : settings_page(model) == SETTINGS_PAGE_TOP
                        ? "Left and right change \xC2\xB7 OK opens \xC2\xB7 Back saves and closes"
@@ -1250,10 +1272,8 @@ static void draw_column(void)
 }
 
 // A function to say why the row under the cursor is greyed, or "" when it is not
-static const char *cursor_why(void)
+static const char *cursor_why(const SettingsRow *rows, int count)
 {
-    SettingsRow rows[SETTINGS_MAX_ROWS];
-    int count = settings_rows(model, rows, SETTINGS_MAX_ROWS);
     int cursor = settings_cursor(model);
     if (cursor < 0 || cursor >= count || rows[cursor].enabled || rows[cursor].why == NULL)
         return "";
@@ -1261,8 +1281,8 @@ static const char *cursor_why(void)
 }
 
 // A function to draw the caption, two lines from (x, y) at most `width` wide: which menu, its grid
-// and titles, and any note: the last key's, else why the row under the cursor is greyed
-static void draw_caption(int x, int y, int width)
+// and titles, and any note: the last key's, else why the row under the cursor is greyed (greyed_why)
+static void draw_caption(const char *greyed_why, int x, int y, int width)
 {
     char caption[512];
     char titles[32];
@@ -1274,7 +1294,7 @@ static void draw_caption(int x, int y, int width)
         layout.columns, layout.rows, layout.button, titles, reduced ? " (reduced to fit the screen)" : "");
     draw_text(font_small, caption, x, y, width, ALPHA_VALUE, false);
     const char *note = browser != NULL ? browser_caption()
-                     : settings_notice(model)[0] != '\0' ? settings_notice(model) : cursor_why();
+                     : settings_notice(model)[0] != '\0' ? settings_notice(model) : greyed_why;
     draw_text(font_small, note, x, y + TTF_FontHeight(font_small), width, 255, false);
     if (strcmp(note, drawn_note) != 0) {
         copy_string(drawn_note, note, sizeof(drawn_note));
@@ -1305,6 +1325,12 @@ void settings_draw(void)
         preview_wanted = NULL;
         show_preview(menu);
     }
+
+    // The page's rows, built once for the frame: the column draws them, and the caption says why the
+    // one under the cursor is greyed. The browser has rows of its own.
+    SettingsRow rows[SETTINGS_MAX_ROWS];
+    int count = browser == NULL ? settings_rows(model, rows, SETTINGS_MAX_ROWS) : 0;
+    const char *greyed_why = cursor_why(rows, count);
     if (preview != NULL) {
         SDL_SetRenderTarget(renderer, preview);
         draw_scene(true);
@@ -1315,7 +1341,7 @@ void settings_draw(void)
         SDL_RenderCopy(renderer, preview, NULL, &preview_rect);
         SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, ALPHA_FRAME);
         SDL_RenderDrawRect(renderer, &preview_rect);
-        draw_caption(preview_rect.x, preview_rect.y + preview_rect.h + margin / 2, preview_rect.w);
+        draw_caption(greyed_why, preview_rect.x, preview_rect.y + preview_rect.h + margin / 2, preview_rect.w);
     }
     else {
         // No render targets: the scene fills the screen, the column sits on a dark backing, and
@@ -1328,9 +1354,9 @@ void settings_draw(void)
         int caption_h = 2 * TTF_FontHeight(font_small) + margin;
         SDL_Rect strip = { backing.w, geo.screen_height - caption_h, geo.screen_width - backing.w, caption_h };
         SDL_RenderFillRect(renderer, &strip);
-        draw_caption(strip.x + margin, strip.y + margin / 2, strip.w - 2 * margin);
+        draw_caption(greyed_why, strip.x + margin, strip.y + margin / 2, strip.w - 2 * margin);
     }
-    draw_column();
+    draw_column(rows, count);
     present_frame();
 }
 

@@ -1695,6 +1695,7 @@ static void disconnect_gamepad(int id, bool disconnect, bool remove)
 static SDL_Joystick *test_pad = NULL;   // The harness's virtual gamepad, while attached
 static int test_pad_index = -1;
 static SDL_JoystickID test_swap[3] = { -1, -1, -1 };   // STREAMFLEX_TEST_PAD_SWAP's pads A, B and C
+static SDL_JoystickID test_plug = -1;   // STREAMFLEX_TEST_PAD_PLUG's pad, while it is plugged in
 static int test_swap_step = 0;
 
 // A function only the headless harness builds: with STREAMFLEX_TEST_PAD set, it attaches the
@@ -1761,12 +1762,41 @@ static void test_pad_swap()
     log_debug("Test hook: pad %s attached at device index %i, instance id %i", names[slot], index, (int) test_swap[slot]);
 }
 
+// A function only the headless harness builds: with STREAMFLEX_TEST_PAD_PLUG set, a virtual pad is
+// plugged in while the gamepad runs and the file it names exists, and pulled out when the file goes,
+// as a pad is plugged in or pulled out by hand at any moment (while settings are open, say)
+static void test_pad_plug()
+{
+    const char *plug = getenv("STREAMFLEX_TEST_PAD_PLUG");
+    if (plug == NULL || !gamepad_on)
+        return;
+    bool wanted = file_exists(plug);
+    if (wanted && test_plug < 0) {
+        int index = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER,
+                        SDL_CONTROLLER_AXIS_MAX, SDL_CONTROLLER_BUTTON_MAX, 0);
+        if (index < 0) {
+            log_error("Test hook: no virtual gamepad to plug in\n%s", SDL_GetError());
+            return;
+        }
+        test_plug = SDL_JoystickGetDeviceInstanceID(index);
+        log_debug("Test hook: pad plugged in at device index %i", index);
+    }
+    else if (!wanted && test_plug >= 0) {
+        int index = test_pad_device(test_plug);
+        if (index >= 0)
+            SDL_JoystickDetachVirtual(index);
+        test_plug = -1;
+        log_debug("Test hook: pad unplugged");
+    }
+}
+
 // A function only the headless harness builds, since it has no gamepad: with STREAMFLEX_TEST_PAD
 // set, it attaches a virtual one while the gamepad runs, and holds its Start button while the file
 // that names exists
 static void test_pad_update()
 {
     test_pad_swap();
+    test_pad_plug();
     const char *held = getenv("STREAMFLEX_TEST_PAD");
     if (held == NULL || !gamepad_on)
         return;
@@ -1784,6 +1814,11 @@ static void test_pad_stop()
         SDL_JoystickDetachVirtual(test_pad_index);
     test_pad = NULL;
     test_pad_index = -1;
+    // The plugged pad goes with the subsystem; test_pad_plug() plugs it in again once it restarts
+    int plugged = test_plug >= 0 ? test_pad_device(test_plug) : -1;
+    if (plugged >= 0)
+        SDL_JoystickDetachVirtual(plugged);
+    test_plug = -1;
     for (int i = 0; i < 3; i++) {
         int index = test_swap[i] >= 0 ? test_pad_device(test_swap[i]) : -1;
         if (index >= 0)
@@ -2268,12 +2303,14 @@ int main(int argc, char *argv[])
                     if (gamepad_on && SDL_IsGameController(event.jdevice.which) == SDL_TRUE &&
                         (config.gamepad_device < 0 || config.gamepad_device == event.jdevice.which))
                         connect_gamepad(event.jdevice.which, !state.application_running, true);
+                    settings_pads_changed();   // The Device row names every pad present, while settings are open
                     break;
 
                 case SDL_JOYDEVICEREMOVED:
                     // `which` is the instance id here: only a pad in the list is removed, whatever Device says
                     log_debug("Gamepad disconnected");
                     disconnect_gamepad(event.jdevice.which, true, true);
+                    settings_pads_changed();
                     break;
 
                 case SDL_WINDOWEVENT:

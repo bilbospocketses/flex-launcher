@@ -1113,11 +1113,23 @@ static SettingsRowKind row_kind(const SettingDef *def)
     }
 }
 
+// A function to tell whether Left and Right step a row of a kind and type: every setting row, and a
+// picker whose value has an order to step through (a colour's presets, the menus, the pads). A font's
+// or a command's picker only opens with OK.
+static bool row_steps(SettingsRowKind kind, const SettingDef *def)
+{
+    if (kind == SETTINGS_ROW_SETTING)
+        return true;
+    return kind == SETTINGS_ROW_PICK &&
+           (def->type == SET_TYPE_COLOR || def->type == SET_TYPE_MENU || def->type == SET_TYPE_DEVICE);
+}
+
 // A function to make a setting's row. A device shows the pad's name when it is present.
 static SettingsRow setting_row(SettingsState *state, SettingSlot *slot)
 {
     SettingsRow row = new_row(row_kind(slot->def), slot->def->label);
     row.slot = slot;
+    row.steps = row_steps(row.kind, slot->def);
     setting_describe(slot->def, &slot->value, inherited_value(state, slot), row.value, sizeof(row.value));
     int pad = slot->value.number;
     if (slot->def->type == SET_TYPE_DEVICE && pad >= 0) {
@@ -1415,10 +1427,16 @@ int settings_rows(SettingsState *state, SettingsRow *rows, int max)
 }
 
 // A function to tell whether the cursor may rest on a row: any row but a divider or a note, unless
-// it is greyed with no reason to give (Discard with nothing to discard)
-static bool selectable(const SettingsRow *row)
+// it is greyed with no reason to give (Discard with nothing to discard). The screen asks it too.
+bool settings_row_selectable(const SettingsRow *row)
 {
     return row->kind != SETTINGS_ROW_DIVIDER && row->kind != SETTINGS_ROW_NOTE && (row->enabled || row->why != NULL);
+}
+
+// A function to tell whether the cursor may rest on a row
+static bool selectable(const SettingsRow *row)
+{
+    return settings_row_selectable(row);
 }
 
 // A function to keep the cursor on a row it may rest on, since the rows under it can change
@@ -1569,7 +1587,7 @@ SettingsEvent settings_command(SettingsState *state, SettingsCommand command)
         }
         case SETTINGS_LEFT:
         case SETTINGS_RIGHT:
-            if (row != NULL && row->enabled && (row->kind == SETTINGS_ROW_SETTING || row->kind == SETTINGS_ROW_PICK)) {
+            if (row != NULL && row->enabled && row->steps) {
                 SettingSlot *slot = row->slot;
                 int direction = command == SETTINGS_RIGHT ? 1 : -1;
                 SettingValue next = slot->value;

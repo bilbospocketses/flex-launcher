@@ -33,7 +33,7 @@ for page in General Background Menus "Menus${ARROW}All menus" Titles Highlight "
 done
 [ "$ok" = 1 ] && [ "$(grep -c 'Settings: \[' "$log")" -ge 40 ] && grep -q 'Settings: discarded the changes' "$log" \
     && grep -q 'Settings: nothing changed' "$log" && cmp -s "$FX/f55-tour.ini" "$cfg" && ran_clean f55-tour && ok=0
-result "settings: every page opens and every row steps, and Discard leaves the file untouched (exit $(cat "$out/f55-tour.code"))" $ok
+result "settings: every page opens, 40+ rows change, Discard restores, the file is untouched (exit $(cat "$out/f55-tour.code"))" $ok
 echo "      $(grep -c 'Settings: \[' "$log") changes"
 
 # The same run switched every feature off and on: each stopped and started again at least once
@@ -44,6 +44,14 @@ for feature in Overlay Highlight 'Scroll indicators' Clock Screensaver Gamepad; 
     [ "$stops" -ge 1 ] && [ "$starts" -ge 1 ] || { echo "      $feature: $stops stops, $starts starts"; ok=1; }
 done
 result "settings: every feature stops and starts again live" $ok
+
+# The same run stepped Show titles (the title font's group) off and on: the title font opened again
+# each time, live
+opened=$(sed -n '/Settings opened/,/Settings closed/p' "$log" | grep -c '^Titles: opened')
+ok=1
+[ "$opened" -ge 2 ] && ok=0
+result "settings: Show titles off and on opens the title font again, live" $ok
+echo "      the title font opened $opened times"
 
 # A greyed row's reason shows under the preview: the FPS limit while VSync is on
 ok=1
@@ -96,6 +104,17 @@ ok=1
 grep -qx 'dim yes' "$out/f55-dim.seen" && ran_clean f55-dim && ok=0
 result "settings: the Screensaver page's preview shows the dim level (exit $(cat "$out/f55-dim.code"))" $ok
 
+# The same without render targets, where the scene fills the screen behind the column: a point of the
+# screen right of the column, above the menu, shows the dim too
+shows_dim_behind() { look "$1" "$2" dim "Settings: page Settings${ARROW}Screensaver" @1500,100=128,128,128; }
+STREAMFLEX_TEST_NO_RENDER_TARGETS=1 CFG=$FX/f55-dim.ini \
+    run_keys f55-dimflat Menu Down Down Down Down Down Down Down Return +shows_dim_behind Menu
+ok=1
+grep -q 'Settings: the renderer has no render targets' "$out/f55-dimflat.log" \
+    && grep -qx 'dim yes' "$out/f55-dimflat.seen" && ran_clean f55-dimflat && ok=0
+result "settings: without render targets the Screensaver page still shows the dim level (exit $(cat "$out/f55-dimflat.code"))" $ok
+
+# A regression pin for Tasks 1-3's saving (it passes without Task 6's screen code).
 # Values in forms the table never read before, or past its steps, survive a save of something else
 # byte for byte: Wrap around is changed, and that is the only line that changes. Icon spacing is
 # stepped away from its 40 px and back, which changes nothing.
@@ -107,6 +126,8 @@ ok=1
 result "settings: values in new forms are saved untouched when something else changes (exit $(cat "$out/f55-odd.code"))" $ok
 diff "$FX/f55-odd.ini" "$cfg" | sed 's/^/      /'
 
+# A regression pin for the layout group (it passes without Task 6's screen code); its teeth come from
+# the mutant that drops refresh_layout() from run_refresh(), which leaves the box where it was.
 # A new vertical centre moves the grid on screen, not only in the log: the box the highlight's
 # colour (#FF00FF, which nothing else on screen has) spans in the preview is lower once Vertical
 # centre steps from 50% to 55%, and 55% is saved
@@ -165,3 +186,24 @@ ok=1
     && grep -q 'Settings: nothing changed' "$log" && ran_clean f55-pads && ok=0
 result "settings: the Device row names the pad present (exit $(cat "$out/f55-pads.code"))" $ok
 echo "      ${device:-the Device row never named a pad}"
+
+# A pad plugged in while settings are open joins the Device row's list at once, and one pulled out
+# leaves it (the harness build's STREAMFLEX_TEST_PAD_PLUG attaches a virtual pad while the file it
+# names exists): Right then steps to the new pad and the row names it; pulled out, the row says it is
+# not connected. Left puts Any back, so nothing is saved.
+plug_in() { : > /tmp/pad-plug; wait_line 'Test hook: pad plugged in' "$2"; sleep 1; }
+pull_out() { rm -f /tmp/pad-plug; wait_line 'Test hook: pad unplugged' "$2"; sleep 1; }
+rm -f /tmp/pad-plug
+STREAMFLEX_TEST_PAD_PLUG=/tmp/pad-plug CFG=$FX/f55-frame.ini \
+    run_keys f55-plug Menu Down Down Down Down Down Down Down Down Return Return Down +plug_in Right +pull_out Left Menu
+log=$out/f55-plug.log
+named=$(sed -n '/Test hook: pad plugged in/,/Test hook: pad unplugged/p' "$log" \
+        | grep -F "Settings: the cursor's row reads Device: $LEFT_MARK" | grep -vF "$LEFT_MARK Any $RIGHT_MARK" \
+        | grep -v 'not connected' | head -1)
+ok=1
+[ -n "$named" ] && sed -n '/Test hook: pad unplugged/,$p' "$log" \
+        | grep -qF "Settings: the cursor's row reads Device: $LEFT_MARK Pad 0 (not connected) $RIGHT_MARK" \
+    && grep -q 'Settings: nothing changed' "$log" && ran_clean f55-plug && ok=0
+result "settings: a pad plugged in or pulled out while they are open joins or leaves the Device row (exit $(cat "$out/f55-plug.code"))" $ok
+grep -E "Test hook: pad|Settings: the cursor's row reads Device" "$log" | sed 's/^/      /'
+rm -f /tmp/pad-plug

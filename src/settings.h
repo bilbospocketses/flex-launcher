@@ -47,7 +47,8 @@ typedef enum {
     SET_REFRESH_CLOCK,       // Restart the clock, then lay the menu out again around it
     SET_REFRESH_SCREENSAVER, // Restart the screensaver
     SET_REFRESH_GAMEPAD,     // Restart the gamepad
-    SET_REFRESH_FRAME        // Work the frame timing out again: VSync and FPSLimit
+    SET_REFRESH_FRAME,       // Work the frame timing out again: VSync and FPSLimit
+    SET_REFRESH_COUNT        // Not a group: how many there are. A new group goes before it.
 } SettingRefresh;
 
 typedef enum {
@@ -234,6 +235,8 @@ typedef struct {
     SettingsAction action;       // ACTION rows
     bool enabled;                // False: shown greyed, and the cursor skips it unless `why` gives a reason
     const char *why;             // A greyed row's reason (the cursor may rest on it); NULL for none
+    bool steps;                  // Left and Right step its value while it is enabled: a setting, or a
+                                 // picker for a colour, the default menu or the device
 } SettingsRow;
 
 typedef enum {
@@ -286,6 +289,7 @@ void settings_set_entry(SettingsState *state, SettingId id, int menu, const Sett
 bool settings_changed(const SettingSlot *slot);
 bool settings_any_changed(const SettingsState *state);
 int settings_rows(SettingsState *state, SettingsRow *rows, int max);
+bool settings_row_selectable(const SettingsRow *row);
 int settings_cursor(const SettingsState *state);
 SettingsPage settings_page(const SettingsState *state);
 void settings_path(const SettingsState *state, char *out, size_t size);
