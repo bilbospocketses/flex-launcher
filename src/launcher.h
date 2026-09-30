@@ -155,8 +155,7 @@ typedef struct menu {
 
 typedef struct gamepad {
     SDL_GameController *controller;
-    int device_index;
-    int id;
+    int id;                          // The instance id; its device index is looked up when it opens
     struct gamepad *previous;
     struct gamepad *next;
 } Gamepad;

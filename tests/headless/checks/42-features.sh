@@ -52,7 +52,7 @@ result "a pad present when the gamepad starts is connected and opened once (conn
 # A pad whose device index is not its instance id: attach A, attach B, detach A, attach C, so C
 # arrives at B's old device index with an instance id of its own. It is added, not taken for B.
 settle() { sleep 1; }
-STREAMFLEX_TEST_PAD_SWAP=1 run_after_line f42-padswap 'Test hook: pad C attached' +settle
+STREAMFLEX_TEST_PAD_SWAP=1 run_after_line f42-padswap 'Test hook: return' +settle
 log=$out/f42-padswap.log
 c=$(grep -o 'Test hook: pad C attached at device index [0-9]*, instance id [0-9]*' "$log" | head -1)
 c_index=$(sed 's/.*device index \([0-9]*\),.*/\1/' <<< "$c")
@@ -63,6 +63,19 @@ ok=1
     && ran_clean f42-padswap && ok=0
 result "a pad at another pad's old device index is added by its instance id (exit $(cat "$out/f42-padswap.code"))" $ok
 grep -E 'Test hook: pad|Gamepad (connected|disconnected)' "$log" | sed 's/^/      /'
+
+# The same run then launches and returns (pre_launch(), then post_launch()): every pad is closed and
+# opened again, each by its instance id at its current device index, although B has moved from
+# index 1 to index 0 since it was added
+b=$(grep -o 'Test hook: pad B attached at device index [0-9]*, instance id [0-9]*' "$log" | head -1)
+b_id=${b##* }
+reopened=$(sed -n '/Test hook: return/,$p' "$log")
+b_opens=$(grep -c "^Gamepad opened at device index [0-9]*, instance id $b_id\$" <<< "$reopened")
+c_opens=$(grep -c "^Gamepad opened at device index [0-9]*, instance id $c_id\$" <<< "$reopened")
+ok=1
+[ -n "$b" ] && [ -n "$c" ] && [ "$b_opens" = 1 ] && [ "$c_opens" = 1 ] && ran_clean f42-padswap && ok=0
+result "after a launch and return, each pad opens again as itself (B opened $b_opens times, C $c_opens times)" $ok
+grep -E 'Test hook: (launch|return)|Gamepad (opened|with instance)' "$log" | sed 's/^/      /'
 
 # The clock's render thread fails to start (a test hook; the delay hook makes it render every
 # second): each render falls back to the main thread, so the clock keeps rendering

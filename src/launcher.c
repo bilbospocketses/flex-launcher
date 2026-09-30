@@ -53,6 +53,8 @@ static void test_pad_update(void);
 static void test_pad_stop(void);
 #endif
 static SDL_Thread *start_clock_thread(void);
+static inline void pre_launch(void);
+static inline void post_launch(void);
 static bool renderer_vsync(void);
 static void check_vsync(void);
 static void calculate_layout_area(void);
@@ -71,6 +73,7 @@ static void poll_gamepad(void);
 static void init_gamepad(Gamepad **gamepad, int device_index);
 static void connect_gamepad(int device_index, bool open, bool raise_error);
 static void disconnect_gamepad(int id, bool disconnect, bool remove);
+static int gamepad_device_index(const Gamepad *gamepad);
 static void open_controller(Gamepad *gamepad, bool raise_error);
 static void cleanup(void);
 
@@ -1539,12 +1542,12 @@ static void execute_command(const char *command)
     free(cmd);
 }
 
-// A function to initialize the gamepad struct
+// A function to initialize the gamepad struct. Only the instance id is kept: a device index moves
+// whenever a pad before it goes, so it is looked up again each time the pad is opened.
 static void init_gamepad(Gamepad **gamepad, int device_index)
 {
     *gamepad = malloc(sizeof(Gamepad));
     **gamepad = (Gamepad) {
-        .device_index = device_index,
         .id = (int) SDL_JoystickGetDeviceInstanceID(device_index),
         .controller = NULL,
         .next = NULL,
@@ -1552,15 +1555,33 @@ static void init_gamepad(Gamepad **gamepad, int device_index)
     };
 }
 
-// A function to open the SDL controller
+// A function to find a pad's device index now, from its instance id; -1 when it is gone
+static int gamepad_device_index(const Gamepad *gamepad)
+{
+    int count = SDL_NumJoysticks();
+    for (int i = 0; i < count; i++) {
+        if ((int) SDL_JoystickGetDeviceInstanceID(i) == gamepad->id)
+            return i;
+    }
+    return -1;
+}
+
+// A function to open the SDL controller, at the pad's device index as it is now
 static void open_controller(Gamepad *gamepad, bool raise_error)
 {
-    gamepad->controller = SDL_GameControllerOpen(gamepad->device_index);
-    if (gamepad->controller == NULL) {
-        if (raise_error)
-            log_error("Could not open gamepad at device index %i", gamepad->device_index);
+    int device_index = gamepad_device_index(gamepad);
+    if (device_index < 0) {
+        log_debug("Gamepad with instance id %i is no longer present, so it is not opened", gamepad->id);
         return;
     }
+    gamepad->controller = SDL_GameControllerOpen(device_index);
+    if (gamepad->controller == NULL) {
+        if (raise_error)
+            log_error("Could not open gamepad at device index %i", device_index);
+        return;
+    }
+    log_debug("Gamepad opened at device index %i, instance id %i", device_index,
+        (int) SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(gamepad->controller)));
     if (config.debug && raise_error) {
         char *mapping = SDL_GameControllerMapping(gamepad->controller);
         log_debug("Gamepad Mapping:\n%s", mapping);
@@ -1669,13 +1690,24 @@ static int test_pad_device(SDL_JoystickID id)
 
 // A function only the headless harness builds: with STREAMFLEX_TEST_PAD_SWAP set, it takes one step
 // a frame through attach A, attach B, detach A, attach C, so C arrives at B's old device index with
-// an instance id of its own
+// an instance id of its own; then a launch and a return (pre_launch(), then post_launch()), which
+// close every pad and open each again, now that B's device index has moved
 static void test_pad_swap()
 {
     static const char *const names[] = { "A", "B", "C" };
-    if (getenv("STREAMFLEX_TEST_PAD_SWAP") == NULL || !gamepad_on || test_swap_step > 3)
+    if (getenv("STREAMFLEX_TEST_PAD_SWAP") == NULL || !gamepad_on || test_swap_step > 5)
         return;
     int step = test_swap_step++;
+    if (step == 4) {
+        log_debug("Test hook: launch");
+        pre_launch();
+        return;
+    }
+    if (step == 5) {
+        log_debug("Test hook: return");
+        post_launch();
+        return;
+    }
     if (step == 2) {
         int index = test_pad_device(test_swap[0]);
         if (index >= 0)

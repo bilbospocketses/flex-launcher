@@ -309,6 +309,7 @@ int render_clock_async(void *data)
     if (delay != NULL)
         SDL_Delay((Uint32) atoi(delay));
 #endif
+    // Safe: this thread never opens or closes a font, and FreeType renders separate faces in parallel
     render_clock(clk);
     return 0;
 } 
