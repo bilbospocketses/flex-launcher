@@ -6,8 +6,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define LAYOUT_MIN_BUTTON 32          // Same as MIN_ICON_SIZE in launcher.h
-#define LAYOUT_MAX_BUTTON 1024        // Same as MAX_ICON_SIZE in launcher.h
+#define LAYOUT_MIN_BUTTON 32          // Smallest button, and smallest IconSize
+#define LAYOUT_MAX_BUTTON 1024        // Largest button, and largest IconSize
 #define LAYOUT_MAX_TITLE_POINTS 512   // Largest fixed FontSize
 #define LAYOUT_MAX_TITLE_PERCENT 100  // Largest FontSize percentage
 #define LAYOUT_MAX_PADDING_PERCENT 50 // Largest title Padding percentage

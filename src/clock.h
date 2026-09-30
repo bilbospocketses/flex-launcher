@@ -10,6 +10,8 @@ typedef struct {
     SDL_Rect time_rect;
     SDL_Rect date_rect;
     TextInfo text_info;
+    SDL_Color color;        // eff's clock colours, copied in init_clock(): text_info points at these,
+    SDL_Color shadow_color; // and the clock thread reads them, so nothing else may write them while it runs
     time_t current_time;
     struct tm *time_info; // Points at local_time, or NULL when the time could not be converted
     struct tm local_time;

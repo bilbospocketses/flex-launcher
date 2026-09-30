@@ -29,10 +29,7 @@ struct gamepad_info {
 };
 
 int config_handler(void *user, const char *section, const char *name, const char *value);
-int convert_percent(const char *string, int max_value);
 const char *get_mode_setting(int type, int value);
-bool hex_to_color(const char *string, SDL_Color *color);
-bool convert_bool(const char *string, bool *setting);
 char *selected_path(const char *path);
 char *join_paths(char *buffer, size_t bytes, int num_paths, ...);
 char *find_file(const char *file, int num_prefixes, const char **prefixes);

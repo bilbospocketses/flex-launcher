@@ -367,40 +367,6 @@ char *selected_path(const char *path)
     return out;
 }
 
-// A function to convert a hex-formatted string into a color struct
-bool hex_to_color(const char *string, SDL_Color *color)
-{
-    if (*string != '#')
-        return false;
-    char *p = (char*) string + 1;
-
-    // If strtoul returned 0, and the hex string wasn't 000..., then there was an error
-    size_t length = strlen(p);
-    Uint32 hex = (Uint32) strtoul(p, NULL, 16);
-    if ((!hex && strcmp(p,"000000")) || (length != 6))
-        return false;
-
-    // Convert int to SDL_Color struct via bitwise logic
-    color->r = (Uint8) (hex >> 16);
-    color->g = (Uint8) ((hex & 0x0000ff00) >> 8);
-    color->b = (Uint8) (hex & 0x000000ff);
-    return true;
-}
-
-// A function to convert a string into a bool
-bool convert_bool(const char *string, bool *setting)
-{
-    if (MATCH(string, "true") || MATCH(string, "True")) {
-        *setting = true;
-        return true;
-    }
-    else if (MATCH(string, "false") || MATCH(string, "False")) {
-        *setting = false;
-        return true;
-    }
-    return false;
-}
-
 // A function to copy a string into an existing buffer
 void copy_string(char *dest, const char *string, size_t size)
 {

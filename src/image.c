@@ -578,9 +578,13 @@ char *find_default_font(const char *font)
 
 // A function to open a text's font: the configured file and face (a relative path is also tried
 // beside the executable), else the bundled font. The configured path is never changed: what was
-// opened is kept in info->font_path, and a failure says so in the log.
+// opened is kept in info->font_path, and a failure says so in the log. A font the TextInfo still
+// holds is closed first, so a reload leaks nothing: the caller must drop any other pointer to it
+// (launcher.c's fixed_title_font), and info->font must not be one of title_font()'s cached fonts.
 int load_font(TextInfo *info, const char *configured, int face, const char *default_font)
 {
+    if (info->font != NULL)
+        TTF_CloseFont(info->font);
     free(info->font_path);
     info->font_path = NULL;
     info->font = NULL;

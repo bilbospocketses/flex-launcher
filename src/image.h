@@ -2,7 +2,6 @@
 #define HIGHLIGHT_OUTLINE_FORMAT " stroke-width=\"%i\" stroke=\"#%02X%02X%02X\" stroke-opacity=\"%.2f\""
 #define HIGHLIGHT_FORMAT "<svg viewBox=\"0 0 %i %i\"><rect x=\"0\" width=\"%i\" height=\"%i\" rx=\"%i\" fill=\"#%02X%02X%02X\" fill-opacity=\"%.2f\"%s/></svg>"
 #define SCROLL_INDICATOR_FORMAT "<svg width=\"195\" height=\"300\" viewBox=\"0 0 195 300\" version=\"1.1\" id=\"SVGRoot\" > <defs id=\"defs889\"/> <g id=\"layer1\" transform=\"translate(-105)\"> <path style=\"fill:#%02X%02X%02X;fill-opacity:%.2f;stroke:#%02X%02X%02X;stroke-width:%i;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:%.2f\" d=\"M 280,150 150,280 125,255 C 170,210 230.69212,149.36112 230,150 L 125,45 150,20 Z\" id=\"path3884\"/> </g></svg>"
-#define SHADOW_OPACITY_MULTIPLIER 0.75F
 
 // Macro functions
 #define format_highlight_outline(buffer, outline_size, outline_color, outline_opacity) sprintf_alloc(buffer, HIGHLIGHT_OUTLINE_FORMAT, outline_size, outline_color.r, outline_color.g, outline_color.b, outline_opacity)

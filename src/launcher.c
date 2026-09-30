@@ -192,10 +192,8 @@ Uint32 refresh_period;
 Uint32 delay_period;
 Uint32 repeat_period;
 Effective eff;                        // The values drawn with, derived from config (derive.h)
-SDL_Color title_color;                // eff's colours as SDL colours, for the text they draw
+SDL_Color title_color;                // eff's title colours as SDL colours, for the titles (the clock keeps its own)
 SDL_Color title_shadow_color;
-SDL_Color clock_color;
-SDL_Color clock_shadow_color;
 
 
 // A function to initialize SDL
@@ -319,9 +317,6 @@ void refresh_effective()
     title_color = (SDL_Color) { eff.title_color.r, eff.title_color.g, eff.title_color.b, eff.title_color.a };
     title_shadow_color = (SDL_Color) { eff.title_shadow_color.r, eff.title_shadow_color.g,
                                        eff.title_shadow_color.b, eff.title_shadow_color.a };
-    clock_color = (SDL_Color) { eff.clock_color.r, eff.clock_color.g, eff.clock_color.b, eff.clock_color.a };
-    clock_shadow_color = (SDL_Color) { eff.clock_shadow_color.r, eff.clock_shadow_color.g,
-                                       eff.clock_shadow_color.b, eff.clock_shadow_color.a };
 }
 
 // A function to initialize SDL's TTF subsystem and open the title font
@@ -342,6 +337,16 @@ static void init_sdl_ttf()
     };
     if (load_font(&title_info, config.title_font_path, config.title_font_face, FILENAME_DEFAULT_FONT))
         log_fatal("Could not load title font");
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: STREAMFLEX_TEST_RELOAD_FONTS opens the font again, as a
+    // reload will, so the leak pass shows whether the one it replaces is closed
+    if (getenv("STREAMFLEX_TEST_RELOAD_FONTS") != NULL) {
+        log_debug("Test hook: the title font opens again");
+        if (load_font(&title_info, config.title_font_path, config.title_font_face, FILENAME_DEFAULT_FONT))
+            log_fatal("Could not load title font");
+    }
+#endif
+    log_debug("Title font: %s (face %i)", title_info.font_path, title_info.font_face);
     fixed_title_font = title_info.font;
     geo.font_height = config.titles_enabled ? TTF_FontHeight(title_info.font) : 0;
 
@@ -827,6 +832,7 @@ static void calculate_layout_area()
         .h = geo.screen_height - geo.screen_margin - top,
         .vcenter = geo.vcenter
     };
+    log_debug("Layout area: from y %i, %i px tall, centred at %i px", layout_area.y, layout_area.h, layout_area.vcenter);
 }
 
 // A function to work out a menu's grid on this screen without drawing anything, so the debug
@@ -1031,9 +1037,11 @@ void trim_title_fonts()
     free(sizes);
 }
 
-// A function to lay the menu on show out again after its grid changed
+// A function to lay the menu on show out again after its grid, or the area it goes in, changed: the
+// area is worked out again first, so a new vertical centre or a clock that moved reaches it
 void refresh_layout()
 {
+    calculate_layout_area();
     apply_layout(current_menu);
 }
 

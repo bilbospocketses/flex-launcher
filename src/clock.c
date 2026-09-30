@@ -24,8 +24,6 @@ extern Config config;
 extern State state;
 extern Geometry geo;
 extern Effective eff;
-extern SDL_Color clock_color;
-extern SDL_Color clock_shadow_color;
 
 // A function to calculate height and x offset of text
 static void calculate_text_metrics(TTF_Font *font, const char *text, int *h, int *x_offset)
@@ -201,14 +199,18 @@ static void calculate_clock_positioning(Clock *clk)
 // A function to initialize the clock
 void init_clock(Clock *clk)
 {
-    // Initialize clock structure
+    // Initialize clock structure. Its colours are its own copies of eff's, which the clock thread
+    // reads while the main thread may derive eff again
+    clk->color = (SDL_Color) { eff.clock_color.r, eff.clock_color.g, eff.clock_color.b, eff.clock_color.a };
+    clk->shadow_color = (SDL_Color) { eff.clock_shadow_color.r, eff.clock_shadow_color.g,
+                                      eff.clock_shadow_color.b, eff.clock_shadow_color.a };
     clk->text_info = (TextInfo) {
         .font = NULL,
         .font_size = (int) config.clock_font_size,
         .font_path = NULL,
-        .color = &clock_color,
+        .color = &clk->color,
         .shadow = config.clock_shadows,
-        .shadow_color = config.clock_shadows ? &clock_shadow_color : NULL,
+        .shadow_color = config.clock_shadows ? &clk->shadow_color : NULL,
         .oversize_mode = OVERSIZE_NONE
     };
     clk->time_format = config.clock_time_format;
@@ -217,6 +219,14 @@ void init_clock(Clock *clk)
 
     // Load the font
     int error = load_font(&clk->text_info, config.clock_font_path, config.clock_font_face, FILENAME_DEFAULT_CLOCK_FONT);
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: STREAMFLEX_TEST_RELOAD_FONTS opens the font again, as a
+    // reload will, so the leak pass shows whether the one it replaces is closed
+    if (!error && getenv("STREAMFLEX_TEST_RELOAD_FONTS") != NULL) {
+        log_debug("Test hook: the clock font opens again");
+        error = load_font(&clk->text_info, config.clock_font_path, config.clock_font_face, FILENAME_DEFAULT_CLOCK_FONT);
+    }
+#endif
     if (error) {
         config.clock_enabled = false;
         return;

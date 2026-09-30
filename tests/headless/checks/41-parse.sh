@@ -21,6 +21,7 @@ ok=1
 grep -q 'Could not open the font /work/build/assets/fonts/DejaVuSans.ttf (face 9), using the default font' "$out/f41-fontface.log" \
     && grep -A14 'Titles ===' "$out/f41-fontface.log" | grep -qE '^FontFace:\s+9$' \
     && grep -A14 'Titles ===' "$out/f41-fontface.log" | grep -qE '^Font:\s+/work/build/assets/fonts/DejaVuSans.ttf$' \
+    && grep -qxF 'Title font: /work/build/assets/fonts/OpenSans-Regular.ttf (face 0)' "$out/f41-fontface.log" \
     && ran_clean f41-fontface && ok=0
 result "a FontFace the font does not have falls back and stays as written (exit $(cat "$out/f41-fontface.code"))" $ok
 
@@ -34,7 +35,29 @@ log=$out/f41-values.log
     && grep -A6 'General ===' "$log" | grep -qE '^FPSLimit:\s+10$' \
     && grep -A6 'Layout ===' "$log" | grep -qE '^IconSpacing:\s+40$' \
     && grep -A6 'Layout ===' "$log" | grep -qE '^VCenter:\s+12.5%$' \
+    && grep -A10 'Background ===' "$log" | grep -qE '^OverlayOpacity:\s+12.5%$' \
+    && grep -A9 'Highlight ===' "$log" | grep -qE '^FillOpacity:\s+33.33%$' \
     && grep -q 'Effective: IconSpacing 40 px, VCenter 270 px, HPadding 20 px' "$log" \
     && ran_clean f41-values && ok=0
 result "values in new forms are kept as written, and the drawn ones worked out from them (exit $(cat "$out/f41-values.code"))" $ok
-grep -E '^(FPSLimit|IconSpacing|VCenter|Effective):' "$log" | sed 's/^/      /'
+grep -E '^(FPSLimit|IconSpacing|VCenter|OverlayOpacity|FillOpacity|Effective):' "$log" | sed 's/^/      /'
+
+# A font opened again, as a reload will, closes the one it replaces: the leak pass finds one left
+# open. The test hook opens both the title font and the clock's twice at startup.
+STREAMFLEX_TEST_RELOAD_FONTS=1 run_quick f41-reload
+ok=1
+[ "$(grep -c 'Test hook: the .* font opens again' "$out/f41-reload.log")" = 2 ] && ran_clean f41-reload && ok=0
+result "a font opened again closes the one it replaces (exit $(cat "$out/f41-reload.code"))" $ok
+
+# A grid change in settings works the layout area out again, so a new vertical centre (or a clock
+# that moved) reaches the layout. No settings page lists VCenter yet, so this pins the step on the
+# change that is reachable, a Columns change; the area is logged once at startup, and again on it.
+cfg=$(writable_config f50-grid)
+CFG=$cfg run_keys f41-area Menu Down Return Return Down Right BackSpace BackSpace BackSpace
+ok=1
+grep -q 'Layout area: ' "$out/f41-area.log" \
+    && grep -q 'Settings: \[Layout\] Columns 4 -> 5' "$out/f41-area.log" \
+    && in_range "$out/f41-area.log" 'Settings opened' 'Settings closed' 'Layout area: ' \
+    && ran_clean f41-area && ok=0
+result "a grid change in settings works the layout area out again (exit $(cat "$out/f41-area.code"))" $ok
+grep -E 'Layout area: |Settings (opened|closed)' "$out/f41-area.log" | sed 's/^/      /'
