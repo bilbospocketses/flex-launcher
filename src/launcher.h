@@ -108,8 +108,8 @@ typedef struct {
     bool slideshow_paused;
     bool screensaver_active;
     bool screensaver_transition;
-    bool clock_rendering;
-    bool clock_ready;
+    SDL_atomic_t clock_rendering;   // Both also written by the clock's render thread
+    SDL_atomic_t clock_ready;
 } State;
 
 // Timing information
@@ -334,3 +334,13 @@ int show_menu(Menu *menu);
 int show_home(void);
 extern Effective eff;
 void refresh_effective(void);
+void reload_highlight(void);
+void reload_scroll(void);
+void reload_clock(void);        // Also lays the menu out again: the clock's size moves the buttons
+void reload_screensaver(void);
+void reload_gamepad(void);      // Also the Device setting: closes the pads and opens the chosen one
+void reload_title_font(void);   // Closes the size cache and the fixed font, opens the font again, then reload_titles()
+void apply_frame_timing(void);  // VSync and FPSLimit, live
+void apply_os_screensaver(void);
+void apply_default_menu(void);  // Points :home at config.default_menu
+bool gamepad_running(void);

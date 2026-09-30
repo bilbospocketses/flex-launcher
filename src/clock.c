@@ -196,8 +196,8 @@ static void calculate_clock_positioning(Clock *clk)
         clk->date_rect.y = clk->time_rect.y + clk->y_advance;
 }
 
-// A function to initialize the clock
-void init_clock(Clock *clk)
+// A function to initialize the clock; non-zero when no font opens
+int init_clock(Clock *clk)
 {
     // Initialize clock structure. Its colours are its own copies of eff's, which the clock thread
     // reads while the main thread may derive eff again
@@ -227,10 +227,8 @@ void init_clock(Clock *clk)
         error = load_font(&clk->text_info, config.clock_font_path, config.clock_font_face, FILENAME_DEFAULT_CLOCK_FONT);
     }
 #endif
-    if (error) {
-        config.clock_enabled = false;
-        return;
-    }
+    if (error)
+        return 1;
 
     // Get time and format it into a string
     get_time(clk);
@@ -265,6 +263,7 @@ void init_clock(Clock *clk)
     calculate_clock_positioning(clk);
     clk->render_time = false;
     clk->render_date = false;
+    return 0;
 }
 
 // A function to render the time to image
@@ -286,13 +285,19 @@ void render_clock(Clock *clk)
         calculate_clock_geometry(clk);
     }
     calculate_clock_positioning(clk);
-    state.clock_ready = true;
+    SDL_AtomicSet(&state.clock_ready, 1);
 }
 
 // A functio nto render the time to image in a separate thread
 int render_clock_async(void *data)
 {
     Clock *clk = (Clock*) data;
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: each render waits, so a key can land during one
+    const char *delay = getenv("STREAMFLEX_TEST_CLOCK_DELAY_MS");
+    if (delay != NULL)
+        SDL_Delay((Uint32) atoi(delay));
+#endif
     render_clock(clk);
     return 0;
 } 

@@ -27,7 +27,7 @@ typedef struct {
     bool render_date;
 } Clock;
 
-void init_clock(Clock *clk);
+int init_clock(Clock *clk);
 void get_time(Clock *clk);
 void render_clock(Clock *clk);
 int render_clock_async(void *data);
