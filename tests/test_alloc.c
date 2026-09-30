@@ -12,6 +12,7 @@
 #include "config_save.h"
 #include "browser.h"
 #include "settings.h"
+#include "listpick.h"
 
 #define DIR "alloc-fixture"
 #define CONFIG DIR "/config.ini"
@@ -633,6 +634,28 @@ static void prove_pads(void)
     report("naming the pads");
 }
 
+// A function to prove that the list picker fails cleanly: a row that could not be added is not
+// there, a Custom row that could not be pinned is not either, and nothing is left allocated
+static void prove_listpick(void)
+{
+    for (int n = 1;; n++) {
+        arm(n);
+        ListPick *pick = listpick_create();
+        bool added = pick != NULL && listpick_add(pick, "Left", ":left", true, NULL) &&
+                     listpick_add(pick, "Right", ":right", true, NULL);
+        bool pinned = added && listpick_select(pick, "custom command", "Custom: custom command");
+        disarm();
+        CHECK_RUN(failed || (added && pinned), n);
+        if (!failed)
+            CHECK_RUN(listpick_count(pick) == 3 && listpick_row(pick, 0)->custom, n);
+        listpick_free(pick);
+        runs = n;
+        if (!no_leak(__LINE__, n) || !failed)
+            break;
+    }
+    report("the list picker");
+}
+
 int main(void)
 {
     AllocHooks hooks = { test_reallocate, test_release };
@@ -662,6 +685,7 @@ int main(void)
     prove_remove();
     prove_settings();
     prove_pads();
+    prove_listpick();
     alloc_set_hooks(NULL);
     return check_report();
 }

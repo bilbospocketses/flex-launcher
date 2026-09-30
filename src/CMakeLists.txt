@@ -32,6 +32,8 @@ set(SOURCES
   derive.h
   config_fields.c
   config_fields.h
+  listpick.c
+  listpick.h
   browser.c
   browser.h
   settings_screen.c

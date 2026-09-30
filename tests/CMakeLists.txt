@@ -58,6 +58,11 @@ add_executable(test_derive test_derive.c "${PROJECT_SOURCE_DIR}/src/derive.c")
 target_include_directories(test_derive PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME derive COMMAND test_derive)
 
+# Unit tests for the shared list picker's model (pure)
+add_executable(test_listpick test_listpick.c "${PROJECT_SOURCE_DIR}/src/listpick.c" "${PROJECT_SOURCE_DIR}/src/alloc.c")
+target_include_directories(test_listpick PRIVATE "${PROJECT_SOURCE_DIR}/src")
+add_test(NAME listpick COMMAND test_listpick)
+
 # Unit tests for the folder browser's model, over a pretend file system
 add_executable(test_browser test_browser.c "${PROJECT_SOURCE_DIR}/src/browser.c" "${PROJECT_SOURCE_DIR}/src/fileio.c"
   "${PROJECT_SOURCE_DIR}/src/alloc.c")
@@ -68,7 +73,7 @@ add_test(NAME browser COMMAND test_browser)
 # The allocation-failure proof: every allocation in the pure modules made to fail in turn
 add_executable(test_alloc test_alloc.c "${PROJECT_SOURCE_DIR}/src/alloc.c" "${PROJECT_SOURCE_DIR}/src/fileio.c"
   "${PROJECT_SOURCE_DIR}/src/inidoc.c" "${PROJECT_SOURCE_DIR}/src/config_save.c" "${PROJECT_SOURCE_DIR}/src/browser.c"
-  "${PROJECT_SOURCE_DIR}/src/settings.c" "${PROJECT_SOURCE_DIR}/src/layout.c")
+  "${PROJECT_SOURCE_DIR}/src/settings.c" "${PROJECT_SOURCE_DIR}/src/layout.c" "${PROJECT_SOURCE_DIR}/src/listpick.c")
 target_include_directories(test_alloc PRIVATE "${PROJECT_SOURCE_DIR}/src")
 link_fileio(test_alloc)
 add_test(NAME alloc COMMAND test_alloc)
