@@ -20,12 +20,32 @@ grep -q 'Frame timing: VSync wanted on, the renderer gives off' "$out/f42-vsync.
 result "a renderer that refuses VSync is logged once, and VSync counts as off (exit $(cat "$out/f42-vsync.code"))" $ok
 grep 'VSync' "$out/f42-vsync.log" | sed 's/^/      /'
 
+# A renderer that will not turn VSync off (the same hook, "off") keeps presenting at the display's
+# rate, so FPSLimit=10 holds only if present_frame() still paces each frame to 100 ms: every frame
+# counted is paced, and there are no more of them than 10 a second allows
+STREAMFLEX_TEST_VSYNC_REFUSED=off STREAMFLEX_TEST_FRAME_REPORT_MS=3000 UNTIL='Test hook: ' run_keys f42-fpsstuck
+report=$(grep -o 'Test hook: [0-9]* frames in [0-9]* ms, [0-9]* of them paced' "$out/f42-fpsstuck.log" | head -1)
+read -r frames span paced <<< "$(sed 's/Test hook: \([0-9]*\) frames in \([0-9]*\) ms, \([0-9]*\) of them paced/\1 \2 \3/' <<< "$report")"
+ok=1
+grep -q 'Frame timing: VSync wanted off, the renderer gives on' "$out/f42-fpsstuck.log" \
+    && grep -q 'The renderer would not turn VSync off' "$out/f42-fpsstuck.log" \
+    && [ -n "$report" ] && [ "$paced" = "$frames" ] && [ "$frames" -le $((span / 100 + 2)) ] \
+    && ran_clean f42-fpsstuck && ok=0
+result "a renderer that keeps VSync on is still paced to FPSLimit=10 (${report:-no frame report}; exit $(cat "$out/f42-fpsstuck.code"))" $ok
+
 # Every feature running at once, the screensaver on and off again, the virtual pad attached, and a
 # clean quit: every feature's stop runs at quit
 wake() { xdotool key Right; sleep 1; }
 rm -f /tmp/pad-none
-STREAMFLEX_TEST_PAD=/tmp/pad-none UNTIL='Screensaver off' run_after_line f42-all 'Screensaver on' +wake
+STREAMFLEX_TEST_PAD=/tmp/pad-none STREAMFLEX_TEST_FRAME_REPORT_MS=2000 UNTIL='Screensaver off' \
+    run_after_line f42-all 'Screensaver on' +wake
 log=$out/f42-all.log
+
+# VSync wanted and given: present_frame() leaves the pacing to the renderer, as before
+report=$(grep -o 'Test hook: [0-9]* frames in [0-9]* ms, [0-9]* of them paced' "$log" | head -1)
+ok=1
+[ -n "$report" ] && [ "${report##*ms, }" = "0 of them paced" ] && ok=0
+result "with VSync wanted and given, no frame is paced by the delay (${report:-no frame report})" $ok
 stops=$(sed -n '/Quitting program/,$p' "$log")
 all_stopped=0
 for feature in Clock Screensaver 'Scroll indicators' Highlight Overlay Gamepad; do

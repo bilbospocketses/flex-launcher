@@ -201,7 +201,6 @@ Gamepad *gamepads                     = NULL;
 GamepadControl *gamepad_controls      = NULL;
 Hotkey *hotkeys                       = NULL;
 Clock *clk                            = NULL;
-TTF_Font *clock_font                  = NULL;
 SDL_Thread *Slideshowhread            = NULL;
 SDL_Thread *clock_thread              = NULL;
 SDL_Event event;
@@ -221,7 +220,7 @@ SDL_Color title_color;                // eff's title colours as SDL colours, for
 SDL_Color title_shadow_color;
 static bool gamepad_on = false;   // The game controller subsystem is running
 static bool vsync_wanted = true; // VSync and FPSLimit ask the renderer for VSync
-static bool vsync_on = false;    // The renderer really gives it; without it present_frame() paces each frame
+static bool vsync_on = false;    // The renderer really gives it; unless both are true present_frame() paces each frame
 
 
 // A function to initialize SDL
@@ -259,14 +258,16 @@ static void init_sdl()
 // renderer reports VSync it does not give.
 static bool renderer_vsync()
 {
+#ifdef STREAMFLEX_TEST_HOOKS
+    // Only the headless harness builds this: its SDL simulates VSync, so a refusal is made up here.
+    // "off" is a renderer that keeps VSync on when it is not wanted; any other value never gives it.
+    const char *refused = getenv("STREAMFLEX_TEST_VSYNC_REFUSED");
+    if (refused != NULL)
+        return strcmp(refused, "off") == 0;
+#endif
     SDL_RendererInfo info;
     if (renderer == NULL || SDL_GetRendererInfo(renderer, &info) != 0 || !(info.flags & SDL_RENDERER_PRESENTVSYNC))
         return false;
-#ifdef STREAMFLEX_TEST_HOOKS
-    // Only the headless harness builds this: its SDL simulates VSync, so a refusal is made up here
-    if (getenv("STREAMFLEX_TEST_VSYNC_REFUSED") != NULL)
-        return false;
-#endif
     SDL_version version;
     SDL_GetVersion(&version);
     if (version.major == 2 && version.minor < 26 && strcmp(info.name, "software") == 0)
@@ -282,6 +283,8 @@ static void check_vsync()
     log_debug("Frame timing: VSync wanted %s, the renderer gives %s", vsync_wanted ? "on" : "off", vsync_on ? "on" : "off");
     if (vsync_wanted && !vsync_on)
         log_error("The renderer refused VSync: each frame is paced to %u ms instead", refresh_period);
+    else if (!vsync_wanted && vsync_on)
+        log_error("The renderer would not turn VSync off: each frame is still paced to %u ms", refresh_period);
 }
 
 // A function to work out the frame timing from VSync and FPSLimit, live: VSync, or the FPS limit's
@@ -1439,15 +1442,47 @@ void draw_scene(bool preview)
     }
 }
 
+#ifdef STREAMFLEX_TEST_HOOKS
+// A function only the headless harness builds: with STREAMFLEX_TEST_FRAME_REPORT_MS set, it counts
+// the frames shown, and those present_frame() paced, and logs both once that long has passed
+static void test_frame_report(bool paced)
+{
+    static Uint32 start = 0;
+    static Uint32 frames = 0;
+    static Uint32 paced_frames = 0;
+    static bool reported = false;
+    const char *span = getenv("STREAMFLEX_TEST_FRAME_REPORT_MS");
+    if (span == NULL || reported)
+        return;
+    Uint32 now = SDL_GetTicks();
+    if (frames == 0)
+        start = now;
+    frames++;
+    if (paced)
+        paced_frames++;
+    if (now - start >= (Uint32) atoi(span)) {
+        reported = true;
+        log_debug("Test hook: %u frames in %u ms, %u of them paced", frames, now - start, paced_frames);
+    }
+}
+#endif
+
 // A function to show the frame, and without VSync wait out the rest of its time
 void present_frame()
 {
     SDL_RenderPresent(renderer);
-    if (!vsync_on) {
+
+    // Paced unless the renderer gives the VSync wanted. A renderer that keeps VSync on when it is not
+    // wanted still gets the delay, which holds the FPS limit: the present waits at most one refresh more.
+    bool paced = !vsync_wanted || !vsync_on;
+    if (paced) {
         Uint32 elapsed = SDL_GetTicks() - ticks.main;
         if (elapsed < refresh_period)
             SDL_Delay(refresh_period - elapsed);
     }
+#ifdef STREAMFLEX_TEST_HOOKS
+    test_frame_report(paced);
+#endif
 }
 
 // A function to update the screen: the scene and the screensaver's dimming, or a blank screen
