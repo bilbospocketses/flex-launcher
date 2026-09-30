@@ -11,6 +11,7 @@
 #include "launcher.h"
 #include <launcher_config.h>
 #include "settings.h"
+#include "config_fields.h"
 #include "settings_screen.h"
 #include "config_save.h"
 #include "browser.h"
@@ -30,6 +31,7 @@ extern Geometry geo;
 extern SDL_Renderer *renderer;
 extern Menu *current_menu;
 extern LayoutGeometry layout;
+extern TextInfo title_info;
 
 #define MARGIN_RATIO 0.03F         // Of the screen height
 #define HEADER_FONT_RATIO 0.045F
@@ -241,125 +243,16 @@ static const char *section_of(const SettingSlot *slot)
 // A function to read a setting's value from the running launcher
 static SettingValue read_value(SettingId id, int menu_index)
 {
-    SettingValue value;
-    memset(&value, 0, sizeof(value));
-    Menu *menu = menu_index >= 0 ? menus[menu_index] : NULL;
-    switch (id) {
-        case SET_ID_BACKGROUND_MODE:
-            value.number = (int) config.background_mode;
-            break;
-        case SET_ID_BACKGROUND_COLOR:
-            value.color.r = config.background_color.r;
-            value.color.g = config.background_color.g;
-            value.color.b = config.background_color.b;
-            break;
-        case SET_ID_BACKGROUND_IMAGE:
-            copy_string(value.text, config.background_image != NULL ? config.background_image : "", sizeof(value.text));
-            break;
-        case SET_ID_SLIDESHOW_DIRECTORY:
-            copy_string(value.text, config.slideshow_directory != NULL ? config.slideshow_directory : "", sizeof(value.text));
-            break;
-        case SET_ID_SLIDESHOW_DURATION:
-            value.number = (int) (config.slideshow_image_duration / 1000);
-            break;
-        case SET_ID_SLIDESHOW_FADE:
-            value.number = (int) config.slideshow_transition_time;
-            break;
-        case SET_ID_LAYOUT_ROWS:
-            value.number = (int) config.rows;
-            break;
-        case SET_ID_LAYOUT_COLUMNS:
-            value.number = (int) config.max_buttons;
-            break;
-        case SET_ID_LAYOUT_ICON_SIZE:
-            value.inherit = config.icon_size == 0;
-            value.number = config.icon_size;
-            break;
-        case SET_ID_TITLE_SIZE:
-            value.percent = config.title_font_size_pct > 0;
-            value.number = value.percent ? config.title_font_size_pct : (int) config.title_font_size;
-            break;
-        case SET_ID_MENU_ROWS:
-            value.inherit = menu->overrides.rows == 0;
-            value.number = menu->overrides.rows;
-            break;
-        case SET_ID_MENU_COLUMNS:
-            value.inherit = menu->overrides.columns == 0;
-            value.number = menu->overrides.columns;
-            break;
-        case SET_ID_MENU_ICON_SIZE:
-            value.inherit = menu->overrides.icon_cap == 0;
-            value.number = menu->overrides.icon_cap;
-            break;
-        default:   // Task 3 moves every setting through config_fields.c
-            break;
-    }
-    return value;
-}
-
-// A function to replace a config path with a copy of a new one; "" leaves it unset
-static void replace_path(char **path, const char *text)
-{
-    free(*path);
-    *path = text[0] != '\0' ? strdup(text) : NULL;
+    return config_read(id, menu_index >= 0 ? menus[menu_index] : NULL);
 }
 
 // A function to put a setting's value into the running launcher, then refresh what it affects
 static void apply_slot(const SettingSlot *slot, bool refresh)
 {
-    const SettingValue *value = &slot->value;
-    Menu *menu = slot->menu >= 0 ? menus[slot->menu] : NULL;
-    switch (slot->def->id) {
-        case SET_ID_BACKGROUND_MODE:
-            config.background_mode = (ModeBackground) value->number;
-            break;
-        case SET_ID_BACKGROUND_COLOR:
-            config.background_color.r = value->color.r;
-            config.background_color.g = value->color.g;
-            config.background_color.b = value->color.b;
-            break;
-        case SET_ID_BACKGROUND_IMAGE:
-            replace_path(&config.background_image, value->text);
-            break;
-        case SET_ID_SLIDESHOW_DIRECTORY:
-            replace_path(&config.slideshow_directory, value->text);
-            break;
-        case SET_ID_SLIDESHOW_DURATION:
-            config.slideshow_image_duration = (Uint32) value->number * 1000;
-            break;
-        case SET_ID_SLIDESHOW_FADE:
-            config.slideshow_transition_time = (Uint32) value->number;
-            update_slideshow_timing();
-            break;
-        case SET_ID_LAYOUT_ROWS:
-            config.rows = (unsigned int) value->number;
-            break;
-        case SET_ID_LAYOUT_COLUMNS:
-            config.max_buttons = (unsigned int) value->number;
-            break;
-        case SET_ID_LAYOUT_ICON_SIZE:
-            config.icon_size = value->inherit ? 0 : (Uint16) value->number;
-            break;
-        case SET_ID_TITLE_SIZE:
-            if (value->percent)
-                config.title_font_size_pct = value->number;
-            else {
-                config.title_font_size_pct = 0;
-                config.title_font_size = (unsigned int) value->number;
-            }
-            break;
-        case SET_ID_MENU_ROWS:
-            menu->overrides.rows = value->inherit ? 0 : value->number;
-            break;
-        case SET_ID_MENU_COLUMNS:
-            menu->overrides.columns = value->inherit ? 0 : value->number;
-            break;
-        case SET_ID_MENU_ICON_SIZE:
-            menu->overrides.icon_cap = value->inherit ? 0 : value->number;
-            break;
-        default:   // Task 3 moves every setting through config_fields.c
-            break;
-    }
+    config_store(slot->def->id, slot->menu >= 0 ? menus[slot->menu] : NULL, &slot->value);
+    if (slot->def->id == SET_ID_SLIDESHOW_FADE)
+        update_slideshow_timing();
+    refresh_effective();
     if (!refresh)
         return;
     switch (slot->def->refresh) {
@@ -414,13 +307,13 @@ static void log_change(const SettingSlot *slot, const SettingValue *before)
 
 // A function to open the screen's own fonts: the bundled default, sized from the screen height.
 // An install without it still opens settings, in a font the launcher has already opened: the
-// title font, else the clock's.
+// file the titles opened.
 static bool open_fonts(void)
 {
     char *bundled = find_default_font(FILENAME_DEFAULT_FONT);
     const char *path = bundled;
     if (path == NULL) {
-        path = config.title_font_path != NULL ? config.title_font_path : config.clock_font_path;
+        path = title_info.font_path;
         if (path == NULL) {
             log_error("Settings cannot open: the font %s is missing, and there is no other font", FILENAME_DEFAULT_FONT);
             return false;

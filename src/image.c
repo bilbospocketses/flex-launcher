@@ -30,6 +30,8 @@
 extern Config config;
 extern State state;
 extern SDL_Renderer *renderer;
+extern TextInfo title_info;
+extern Effective eff;
 NSVGrasterizer *rasterizer = NULL;
 
 // A function to initalize SVG rasterization
@@ -67,7 +69,7 @@ TTF_Font *title_font(int size)
         if (title_fonts[i].size == size)
             return title_fonts[i].font;
     }
-    TTF_Font *font = TTF_OpenFont(config.title_font_path, size);
+    TTF_Font *font = TTF_OpenFontIndex(title_info.font_path, size, title_info.font_face);
 #ifdef STREAMFLEX_TEST_HOOKS
     // Only the headless harness builds this: STREAMFLEX_TEST_FAIL_TITLE_SIZE names a size that fails
     const char *fail = getenv("STREAMFLEX_TEST_FAIL_TITLE_SIZE");
@@ -348,24 +350,24 @@ SDL_Texture *render_highlight(int width, int height, SDL_Rect *rect)
     // Insert user config variables into SVG-formatted text buffer
     char *buffer = NULL;
     char *outline_buffer = NULL;
-    if (config.highlight_outline_size) {
-        float stroke_opacity = ((float) config.highlight_outline_color.a) / 255.0f;
-        format_highlight_outline(&outline_buffer, 
-            config.highlight_outline_size, 
-            config.highlight_outline_color, 
+    if (eff.highlight_outline_size) {
+        float stroke_opacity = ((float) eff.highlight_outline.a) / 255.0f;
+        format_highlight_outline(&outline_buffer,
+            eff.highlight_outline_size,
+            eff.highlight_outline,
             stroke_opacity
         );
     }
     else
         outline_buffer = "";
 
-    float fill_opacity = ((float) config.highlight_fill_color.a) / 255.0f;
-    format_highlight(&buffer, 
-        width, 
-        height, 
-        config.highlight_rx, 
-        config.highlight_fill_color, 
-        fill_opacity, 
+    float fill_opacity = ((float) eff.highlight_fill.a) / 255.0f;
+    format_highlight(&buffer,
+        width,
+        height,
+        eff.highlight_rx,
+        eff.highlight_fill,
+        fill_opacity,
         outline_buffer
     );
 
@@ -374,7 +376,7 @@ SDL_Texture *render_highlight(int width, int height, SDL_Rect *rect)
     
     // Cleanup
     free(buffer);
-    if (config.highlight_outline_size)
+    if (eff.highlight_outline_size)
         free(outline_buffer);
 
     return texture;
@@ -386,11 +388,11 @@ int render_scroll_indicators(Scroll *scroll, int height, Geometry *geo)
 {
     // Format the SVG
     char *buffer = NULL;
-    float opacity = (float) config.scroll_indicator_fill_color.a / 255.0f;
-    format_scroll_indicator(&buffer, 
-        config.scroll_indicator_fill_color, 
-        config.scroll_indicator_outline_size, 
-        config.scroll_indicator_outline_color, 
+    float opacity = (float) eff.scroll_fill.a / 255.0f;
+    format_scroll_indicator(&buffer,
+        eff.scroll_fill,
+        eff.scroll_outline_size,
+        eff.scroll_outline,
         opacity
     );
 
@@ -468,7 +470,7 @@ SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *
             if (size < info->min_size)
                 size = info->min_size;
             if (size > 0 && size < info->font_size) {
-                reduced_font = TTF_OpenFont(*info->font_path, size);
+                reduced_font = TTF_OpenFontIndex(info->font_path, size, info->font_face);
 
                 // The font's own rounding can leave it a pixel or two too wide: step down to the minimum
                 while (reduced_font != NULL) {
@@ -476,7 +478,7 @@ SDL_Surface *render_text(const char *text, TextInfo *info, SDL_Rect *rect, int *
                     if (w <= info->max_width || size <= info->min_size)
                         break;
                     TTF_CloseFont(reduced_font);
-                    reduced_font = TTF_OpenFont(*info->font_path, --size);
+                    reduced_font = TTF_OpenFontIndex(info->font_path, --size, info->font_face);
 #ifdef STREAMFLEX_TEST_HOOKS
                     // Only the headless harness builds this: every step down fails to open
                     if (getenv("STREAMFLEX_TEST_FAIL_SHRINK_STEP") != NULL && reduced_font != NULL) {
@@ -574,42 +576,44 @@ char *find_default_font(const char *font)
     return find_file(font, 2, prefixes);
 }
 
-// A function to load a font from a file
-int load_font(TextInfo *info, const char *default_font)
+// A function to open a text's font: the configured file and face (a relative path is also tried
+// beside the executable), else the bundled font. The configured path is never changed: what was
+// opened is kept in info->font_path, and a failure says so in the log.
+int load_font(TextInfo *info, const char *configured, int face, const char *default_font)
 {
-    char *font_path = *info->font_path;
-    // Load user specified font
-    if (font_path != NULL)
-        info->font = TTF_OpenFont(font_path, info->font_size);
+    free(info->font_path);
+    info->font_path = NULL;
+    info->font = NULL;
+    info->font_face = 0;
+    if (configured != NULL) {
+        info->font = TTF_OpenFontIndex(configured, info->font_size, face);
+        if (info->font != NULL)
+            info->font_path = strdup(configured);
 
-    // A relative path in the config means the folder StreamFlex is in, not the one it was started from
-    // (the Windows config names .\assets\fonts\...; a shortcut's "Start in" folder can be anywhere)
-    if (info->font == NULL && font_path != NULL && config.exe_path != NULL && is_relative_path(font_path)) {
-        char exe_font_path[MAX_PATH_CHARS + 1];
-        join_paths(exe_font_path, sizeof(exe_font_path), 2, config.exe_path, font_path);
-        info->font = TTF_OpenFont(exe_font_path, info->font_size);
-        if (info->font != NULL) {
-            free(font_path);
-            *(info->font_path) = strdup(exe_font_path);
+        // A relative path in the config means the folder StreamFlex is in, not the one it was started
+        // from (the Windows config names .\assets\fonts\...; a shortcut's "Start in" folder can be anywhere)
+        else if (config.exe_path != NULL && is_relative_path(configured)) {
+            char exe_font_path[MAX_PATH_CHARS + 1];
+            join_paths(exe_font_path, sizeof(exe_font_path), 2, config.exe_path, configured);
+            info->font = TTF_OpenFontIndex(exe_font_path, info->font_size, face);
+            if (info->font != NULL)
+                info->font_path = strdup(exe_font_path);
         }
+        if (info->font != NULL)
+            info->font_face = face;
+        else
+            log_error("Could not open the font %s (face %i), using the default font\n%s", configured, face, TTF_GetError());
     }
-
-    // Try to load default font if we failed loading from config file
     if (info->font == NULL) {
-        log_error("Could not initialize font from config file");
         char *default_font_path = find_default_font(default_font);
-
-        // Replace user font with default in config
-        if (default_font_path != NULL) {
+        if (default_font_path != NULL)
             info->font = TTF_OpenFont(default_font_path, info->font_size);
-            free(font_path);
-            *(info->font_path) = strdup(default_font_path);
-            free(default_font_path);
-        }
         if (info->font == NULL) {
+            free(default_font_path);
             log_fatal("Could not load default font");
             return 1;
         }
+        info->font_path = default_font_path;
     }
     return 0;
 }

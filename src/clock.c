@@ -23,6 +23,9 @@ static void calculate_clock_positioning(Clock *clk);
 extern Config config;
 extern State state;
 extern Geometry geo;
+extern Effective eff;
+extern SDL_Color clock_color;
+extern SDL_Color clock_shadow_color;
 
 // A function to calculate height and x offset of text
 static void calculate_text_metrics(TTF_Font *font, const char *text, int *h, int *x_offset)
@@ -181,16 +184,16 @@ static void format_date(Clock *clk)
 static void calculate_clock_positioning(Clock *clk)
 {
     if (config.clock_alignment == ALIGNMENT_LEFT) {
-        clk->time_rect.x = config.clock_margin - clk->x_offset_time;
+        clk->time_rect.x = eff.clock_margin - clk->x_offset_time;
         if (config.clock_show_date)
-            clk->date_rect.x = config.clock_margin - clk->x_offset_date;
+            clk->date_rect.x = eff.clock_margin - clk->x_offset_date;
     }
     else {
-        clk->time_rect.x = geo.screen_width - config.clock_margin - clk->time_rect.w + clk->x_offset_time;
+        clk->time_rect.x = geo.screen_width - eff.clock_margin - clk->time_rect.w + clk->x_offset_time;
         if (config.clock_show_date)
-            clk->date_rect.x = geo.screen_width - config.clock_margin - clk->date_rect.w + clk->x_offset_date;
+            clk->date_rect.x = geo.screen_width - eff.clock_margin - clk->date_rect.w + clk->x_offset_date;
     }
-    clk->time_rect.y = config.clock_margin - clk->y_offset;
+    clk->time_rect.y = eff.clock_margin - clk->y_offset;
     if (config.clock_show_date)
         clk->date_rect.y = clk->time_rect.y + clk->y_advance;
 }
@@ -202,23 +205,18 @@ void init_clock(Clock *clk)
     clk->text_info = (TextInfo) {
         .font = NULL,
         .font_size = (int) config.clock_font_size,
-        .font_path = &config.clock_font_path,
-        .color = &config.clock_font_color,
+        .font_path = NULL,
+        .color = &clock_color,
         .shadow = config.clock_shadows,
+        .shadow_color = config.clock_shadows ? &clock_shadow_color : NULL,
         .oversize_mode = OVERSIZE_NONE
     };
     clk->time_format = config.clock_time_format;
     clk->date_format = config.clock_date_format;
     clk->time_info = NULL;
-    if (config.clock_shadows) {
-        clk->text_info.shadow_color = &config.clock_shadow_color;
-        calculate_shadow_alpha(clk->text_info);
-    }
-    else
-        clk->text_info.shadow_color = NULL;
-    
+
     // Load the font
-    int error = load_font(&clk->text_info, FILENAME_DEFAULT_CLOCK_FONT);
+    int error = load_font(&clk->text_info, config.clock_font_path, config.clock_font_face, FILENAME_DEFAULT_CLOCK_FONT);
     if (error) {
         config.clock_enabled = false;
         return;

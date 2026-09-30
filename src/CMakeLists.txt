@@ -28,6 +28,10 @@ set(SOURCES
   config_save.h
   settings.c
   settings.h
+  derive.c
+  derive.h
+  config_fields.c
+  config_fields.h
   browser.c
   browser.h
   settings_screen.c

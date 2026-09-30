@@ -15,6 +15,7 @@
 #include "library.h"
 #include "debug.h"
 #include "clock.h"
+#include "config_fields.h"
 #include "settings_screen.h"
 #include "platform/platform.h"
 
@@ -86,7 +87,6 @@ Config config = {
     .background_overlay_color.g       = DEFAULT_BACKGROUND_OVERLAY_COLOR_G,
     .background_overlay_color.b       = DEFAULT_BACKGROUND_OVERLAY_COLOR_B,
     .background_overlay_color.a       = DEFAULT_BACKGROUND_OVERLAY_COLOR_A,
-    .background_overlay_opacity[0]    = '\0',
     .highlight                        = true,
     .icon_size                        = 0, // IconSize is an optional cap on button size; 0 = none
     .highlight_fill_color.r           = DEFAULT_HIGHLIGHT_FILL_COLOR_R,
@@ -103,14 +103,8 @@ Config config = {
     .title_padding_pct                = DEFAULT_TITLE_PADDING_PERCENT,
     .max_buttons                      = DEFAULT_MAX_BUTTONS,
     .rows                             = DEFAULT_ROWS,
-    .icon_spacing                     = -1,
     .highlight_vpadding               = DEFAULT_HIGHLIGHT_VPADDING,
     .highlight_hpadding               = DEFAULT_HIGHLIGHT_HPADDING,
-    .title_opacity[0]                 = '\0',
-    .highlight_fill_opacity[0]        = '\0',
-    .highlight_outline_opacity[0]     = '\0',
-    .vcenter[0]             = '\0',
-    .icon_spacing_str[0]              = '\0',
     .scroll_indicators                = DEFAULT_SCROLL_INDICATORS,
     .scroll_indicator_fill_color.r    = DEFAULT_SCROLL_INDICATOR_FILL_COLOR_R,
     .scroll_indicator_fill_color.g    = DEFAULT_SCROLL_INDICATOR_FILL_COLOR_G,
@@ -121,7 +115,6 @@ Config config = {
     .scroll_indicator_outline_color.g = DEFAULT_SCROLL_INDICATOR_OUTLINE_COLOR_G,
     .scroll_indicator_outline_color.b = DEFAULT_SCROLL_INDICATOR_OUTLINE_COLOR_B,
     .scroll_indicator_outline_color.a = DEFAULT_SCROLL_INDICATOR_OUTLINE_COLOR_A,
-    .scroll_indicator_opacity[0]      = '\0',
     .title_oversize_mode              = OVERSIZE_TRUNCATE,
     .wrap_entries                     = DEFAULT_WRAP_ENTRIES,
     .reset_on_back                    = DEFAULT_RESET_ON_BACK,
@@ -131,7 +124,6 @@ Config config = {
     .quit_cmd                         = NULL,
     .screensaver_enabled              = false,
     .screensaver_idle_time            = DEFAULT_SCREENSAVER_IDLE_TIME*1000,
-    .screensaver_intensity_str[0]     = '\0',
     .screensaver_pause_slideshow      = DEFAULT_SCREENSAVER_PAUSE_SLIDESHOW,
     .gamepad_enabled                  = DEFAULT_GAMEPAD_ENABLED,
     .gamepad_device                   = DEFAULT_GAMEPAD_DEVICE,
@@ -145,8 +137,6 @@ Config config = {
     .clock_show_date                  = DEFAULT_CLOCK_SHOW_DATE,
     .clock_alignment                  = DEFAULT_CLOCK_ALIGNMENT,
     .clock_font_path                  = NULL,
-    .clock_margin_str[0]              = '\0',
-    .clock_margin                     = -1,
     .clock_font_color.r               = DEFAULT_CLOCK_FONT_COLOR_R,
     .clock_font_color.g               = DEFAULT_CLOCK_FONT_COLOR_G,
     .clock_font_color.b               = DEFAULT_CLOCK_FONT_COLOR_B,
@@ -156,7 +146,6 @@ Config config = {
     .clock_shadow_color.g             = DEFAULT_CLOCK_SHADOW_COLOR_G,
     .clock_shadow_color.b             = DEFAULT_CLOCK_SHADOW_COLOR_B,
     .clock_shadow_color.a             = DEFAULT_CLOCK_SHADOW_COLOR_A,
-    .clock_opacity[0]                 = '\0',
     .clock_font_size                  = DEFAULT_CLOCK_FONT_SIZE,
     .clock_time_format                = DEFAULT_CLOCK_TIME_FORMAT,
     .clock_date_format                = DEFAULT_CLOCK_DATE_FORMAT,
@@ -202,6 +191,11 @@ LayoutArea layout_area;                    // The part of the screen the buttons
 Uint32 refresh_period;
 Uint32 delay_period;
 Uint32 repeat_period;
+Effective eff;                        // The values drawn with, derived from config (derive.h)
+SDL_Color title_color;                // eff's colours as SDL colours, for the text they draw
+SDL_Color title_shadow_color;
+SDL_Color clock_color;
+SDL_Color clock_shadow_color;
 
 
 // A function to initialize SDL
@@ -315,37 +309,45 @@ void set_draw_color()
         );
 }
 
-// A function to initialize SDL's TTF subsystem
+// A function to derive the values the launcher draws with from config, after the parse and after
+// every change the settings screen makes
+void refresh_effective()
+{
+    DeriveInput in = derive_input();
+    derive_settings(&in, &eff);
+    geo.vcenter = eff.vcenter;
+    title_color = (SDL_Color) { eff.title_color.r, eff.title_color.g, eff.title_color.b, eff.title_color.a };
+    title_shadow_color = (SDL_Color) { eff.title_shadow_color.r, eff.title_shadow_color.g,
+                                       eff.title_shadow_color.b, eff.title_shadow_color.a };
+    clock_color = (SDL_Color) { eff.clock_color.r, eff.clock_color.g, eff.clock_color.b, eff.clock_color.a };
+    clock_shadow_color = (SDL_Color) { eff.clock_shadow_color.r, eff.clock_shadow_color.g,
+                                       eff.clock_shadow_color.b, eff.clock_shadow_color.a };
+}
+
+// A function to initialize SDL's TTF subsystem and open the title font
 static void init_sdl_ttf()
 {
     if (TTF_Init() == -1)
         log_fatal("Could not initialize SDL_ttf\n%s", TTF_GetError());
-    
-    title_info = (TextInfo) { 
+
+    title_info = (TextInfo) {
         .font_size = (int) config.title_font_size,
         .shadow = config.title_shadows,
-        .font_path = &config.title_font_path,
+        .font_path = NULL,
         .max_width = 0, // Set per menu in render_buttons: its button size, less room for a shadow
         .min_size = geo.title_min_size,
         .oversize_mode = config.title_oversize_mode,
-        .color = &config.title_font_color
+        .color = &title_color,
+        .shadow_color = config.title_shadows ? &title_shadow_color : NULL
     };
-    if (config.title_shadows) {
-        title_info.shadow_color = &config.title_shadow_color;
-        calculate_shadow_alpha(title_info);
-    }
-    else
-        title_info.shadow_color = NULL;
-
-    int error = load_font(&title_info, FILENAME_DEFAULT_FONT);
-    if (error)
+    if (load_font(&title_info, config.title_font_path, config.title_font_face, FILENAME_DEFAULT_FONT))
         log_fatal("Could not load title font");
     fixed_title_font = title_info.font;
     geo.font_height = config.titles_enabled ? TTF_FontHeight(title_info.font) : 0;
 
     // A percentage FontSize sizes each menu's titles from its buttons, so measure the font's line
     // height per point once, at a large size, for the layout to reserve room for any size
-    TTF_Font *probe = TTF_OpenFont(config.title_font_path, TITLE_MEASURE_SIZE);
+    TTF_Font *probe = TTF_OpenFontIndex(title_info.font_path, TITLE_MEASURE_SIZE, title_info.font_face);
     geo.title_line_pm = probe != NULL ? TTF_FontHeight(probe) * 1000 / TITLE_MEASURE_SIZE : 1500;
     if (probe != NULL)
         TTF_CloseFont(probe);
@@ -382,8 +384,12 @@ static void cleanup()
         TTF_CloseFont(fixed_title_font);
     fixed_title_font = NULL;
     title_info.font = NULL;
+    free(title_info.font_path);
+    title_info.font_path = NULL;
     if (clk != NULL && clk->text_info.font != NULL)
         TTF_CloseFont(clk->text_info.font);
+    if (clk != NULL)
+        free(clk->text_info.font_path);
     TTF_Quit();
     quit_svg();
 
@@ -658,27 +664,14 @@ static void init_screensaver()
     // Allocate memory for structure
     screensaver = malloc(sizeof(Screensaver));
     
-    // Convert intensity string to float
-    char intensity[PERCENT_MAX_CHARS];
-    if (config.screensaver_intensity_str[0] != '\0')
-        copy_string(intensity, config.screensaver_intensity_str, sizeof(intensity));
-    else
-        copy_string(intensity, DEFAULT_SCREENSAVER_INTENSITY, sizeof(intensity));
-    size_t length = strlen(intensity);
-    intensity[length - 1] = '\0';
-    float percent = (float) atof(intensity);
-
-    // Calculate alpha end value
-    screensaver->alpha_end_value = 255.0f * percent / 100.0f;
-    if (screensaver->alpha_end_value < 1.0f) {
+    // Full dim is the Intensity setting's alpha; one that dims nothing cannot run
+    screensaver->alpha_end_value = (float) eff.screensaver_alpha;
+    if (eff.screensaver_alpha < 1) {
         log_error("Invalid screensaver intensity value, disabling feature");
-        config.screensaver_enabled = false;
         free(screensaver);
         screensaver = NULL;
         return;
     }
-    else if (screensaver->alpha_end_value >= 255.0f)
-        screensaver->alpha_end_value = 255.0f;
 
     screensaver->transition_change_rate = screensaver->alpha_end_value / ((float) SCREENSAVER_TRANSITION_TIME / (float) refresh_period);
     
@@ -849,12 +842,12 @@ int compute_menu_layout(const Menu *menu, LayoutGeometry *geometry, char *why, s
         .rows              = effective.rows,
         .columns           = effective.columns,
         .icon_cap          = effective.icon_cap,
-        .spacing           = config.icon_spacing,
+        .spacing           = eff.icon_spacing,
         .title_block       = titles && !scaled ? geo.font_height : 0,
-        .hpad              = config.highlight_hpadding,
-        .vpad              = config.highlight_vpadding,
-        .title_padding     = titles ? config.title_padding : 0,
-        .title_padding_pct = titles ? config.title_padding_pct : 0,
+        .hpad              = eff.highlight_hpadding,
+        .vpad              = eff.highlight_vpadding,
+        .title_padding     = eff.title_padding,
+        .title_padding_pct = eff.title_padding_pct,
         .title_size_pct    = scaled ? config.title_font_size_pct : 0,
         .title_min_size    = geo.title_min_size,
         .title_line_pm     = geo.title_line_pm
@@ -1218,6 +1211,8 @@ static void execute_command(const char *command)
             scmd_restart();
         else if (!strcmp(special_command, SCMD_SLEEP))
             scmd_sleep();
+        else if (!strcmp(special_command, SCMD_EXIT))
+            log_error("':exit' works only as a hotkey on Windows, where it closes the app on show; ignoring it");
         else if (!strcmp(special_command, SCMD_SETTINGS)) {
             // Settings never open over an application being launched, which is about to take the
             // screen: no application runs behind them
@@ -1628,6 +1623,7 @@ int main(int argc, char *argv[])
     int error;
     char *config_file_path = NULL;
     config.exe_path = SDL_GetBasePath();
+    config_apply_defaults();
 
     // Handle command line arguments, find config file
     handle_arguments(argc, argv, &config_file_path);
@@ -1651,7 +1647,7 @@ int main(int argc, char *argv[])
     init_sdl();
     init_sdl_image();
     init_sdl_ttf();
-    validate_settings(&geo);
+    refresh_effective();
 
     // Initialize Nanosvg, create window and renderer
     init_svg();
@@ -1719,10 +1715,10 @@ int main(int argc, char *argv[])
                               SDL_PIXELFORMAT_ARGB8888
                           );
         Uint32 overlay_color = SDL_MapRGBA(overlay_surface->format, 
-                                   config.background_overlay_color.r, 
-                                   config.background_overlay_color.g, 
-                                   config.background_overlay_color.b, 
-                                   config.background_overlay_color.a
+                                   eff.overlay_color.r,
+                                   eff.overlay_color.g,
+                                   eff.overlay_color.b,
+                                   eff.overlay_color.a
                                );
         SDL_FillRect(overlay_surface, NULL, overlay_color);
         background_overlay = load_texture(overlay_surface);
@@ -1840,7 +1836,7 @@ int main(int argc, char *argv[])
             if (background_shown == BACKGROUND_SLIDESHOW)
                 update_slideshow();
             // Settings never start the screensaver, but the key that opened them must still end it
-            if (config.screensaver_enabled && (!settings_is_open() || state.screensaver_active))
+            if (screensaver != NULL && (!settings_is_open() || state.screensaver_active))
                 update_screensaver();
             if (config.clock_enabled)
                 update_clock(false);

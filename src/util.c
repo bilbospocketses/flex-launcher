@@ -13,17 +13,16 @@
 #include "library.h"
 #include "fileio.h"
 #include "settings.h"
+#include "config_fields.h"
 #include "debug.h"
 #include "platform/platform.h"
 #include <ini.h>
 
 static void add_gamepad_control(const char *label, const char *cmd);
-static bool parse_mode_setting(ModeSettingType type, const char *value, int *setting);
 static Menu *create_menu(const char *menu_name, size_t *num_menus);
 static bool gamepad_command_mapped(const char *cmd);
 static bool gamepad_control_mapped(const char *label);
 static void add_default_controls(const char *cmd, const char *const *labels, size_t count);
-static void store_background_setting(SettingId id, const SettingValue *value);
 
 extern Config          config;
 extern GamepadControl  *gamepad_controls;
@@ -154,321 +153,27 @@ void parse_config_file(const char *config_file_path)
         log_fatal("Could not parse config file");
 }
 
-// A function to store a [Background] setting read through the settings table
-static void store_background_setting(SettingId id, const SettingValue *value)
+// A function to tell whether a section holds settings rather than a menu's entries
+static bool settings_section(const char *section)
 {
-    switch (id) {
-        case SET_ID_BACKGROUND_MODE:
-            config.background_mode = (ModeBackground) value->number;
-            break;
-        case SET_ID_BACKGROUND_COLOR:
-            config.background_color.r = value->color.r;
-            config.background_color.g = value->color.g;
-            config.background_color.b = value->color.b;
-            break;
-        case SET_ID_BACKGROUND_IMAGE:
-            free(config.background_image);
-            config.background_image = strdup(value->text);
-            break;
-        case SET_ID_SLIDESHOW_DIRECTORY:
-            free(config.slideshow_directory);
-            config.slideshow_directory = strdup(value->text);
-            break;
-        case SET_ID_SLIDESHOW_DURATION:
-            config.slideshow_image_duration = (Uint32) value->number * 1000;
-            break;
-        case SET_ID_SLIDESHOW_FADE:
-            config.slideshow_transition_time = (Uint32) value->number;
-            break;
-        default:
-            break;
+    static const char *const sections[] = {
+        "General", "Layout", "Background", "Titles", "Highlight", "Scroll Indicators", "Clock",
+        "Screensaver", "Gamepad"
+    };
+    for (size_t i = 0; i < sizeof(sections) / sizeof(sections[0]); i++) {
+        if (MATCH(section, sections[i]))
+            return true;
     }
+    return false;
 }
 
-// A function to handle config file parsing
+// A function to handle config file parsing: every setting through the settings table, the hotkeys
+// and gamepad controls into their lists, and every other section as a menu
 int config_handler(void *user, const char *section, const char *name, const char *value)
 {
     UNUSED(user);
 
-    if (MATCH(section, "General")) {
-        if (MATCH(name, SETTING_DEFAULT_MENU))
-            config.default_menu = strdup(value);
-        else if (MATCH(name, SETTING_VSYNC))
-            convert_bool(value, &config.vsync);
-        else if(MATCH(name, SETTING_FPS_LIMIT)) {
-            int fps = atoi(value);
-            if (fps > MIN_FPS_LIMIT)
-                config.fps_limit = fps;
-        }
-        else if (MATCH(name, SETTING_APPLICATION_TIMEOUT)) {
-            Uint32 application_timeout = (Uint32) atoi(value);
-            if (application_timeout >= MIN_APPLICATION_TIMEOUT
-                && application_timeout <= MAX_APPLICATION_TIMEOUT) {
-                config.application_timeout = 1000 * application_timeout;
-            }
-        }
-        else if (MATCH(name, SETTING_ON_LAUNCH))
-            parse_mode_setting(MODE_SETTING_ON_LAUNCH, value, (int*) &config.on_launch);
-        else if (MATCH(name, SETTING_WRAP_ENTRIES))
-            convert_bool(value, &config.wrap_entries);
-        else if (MATCH(name, SETTING_RESET_ON_BACK))
-            convert_bool(value, &config.reset_on_back);
-        else if (MATCH(name, SETTING_MOUSE_SELECT))
-            convert_bool(value, &config.mouse_select);
-        else if (MATCH(name, SETTING_INHIBIT_OS_SCREENSAVER))
-            convert_bool(value, &config.inhibit_os_screensaver);
-        else if (MATCH(name, SETTING_STARTUP_CMD))
-            config.startup_cmd = strdup(value);
-        else if (MATCH(name, SETTING_QUIT_CMD))
-            config.quit_cmd = strdup(value);
-    }
-
-    else if (MATCH(section, "Layout")) {
-        SettingValue parsed;
-        if (MATCH(name, SETTING_MAX_BUTTONS)) {
-            if (!setting_parse(setting_def(SET_ID_LAYOUT_COLUMNS), value, &parsed))
-                log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_MAX_BUTTONS, value);
-            else if (!columns_set)
-                config.max_buttons = (unsigned int) parsed.number;
-        }
-        else if (MATCH(name, SETTING_COLUMNS)) {
-            if (setting_parse(setting_def(SET_ID_LAYOUT_COLUMNS), value, &parsed)) {
-                config.max_buttons = (unsigned int) parsed.number;
-                columns_set = true;
-            }
-            else
-                log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_COLUMNS, value);
-        }
-        else if (MATCH(name, SETTING_ROWS)) {
-            if (setting_parse(setting_def(SET_ID_LAYOUT_ROWS), value, &parsed))
-                config.rows = (unsigned int) parsed.number;
-            else
-                log_error("Invalid %s value '%s' in [Layout], ignoring it", SETTING_ROWS, value);
-        }
-        else if (MATCH(name, SETTING_ICON_SIZE)) {
-            if (setting_parse(setting_def(SET_ID_LAYOUT_ICON_SIZE), value, &parsed))
-                config.icon_size = (Uint16) parsed.number;
-            else
-                log_error("Invalid %s value '%s' in [Layout] (use a whole number from %i to %i), ignoring it",
-                    SETTING_ICON_SIZE, value, MIN_ICON_SIZE, MAX_ICON_SIZE);
-        }
-        else if (MATCH(name, SETTING_ICON_SPACING)) {
-            if (is_percent(value))
-                copy_string(config.icon_spacing_str, value, sizeof(config.icon_spacing_str));
-            else {
-                int icon_spacing = atoi(value);
-                if (icon_spacing > 0 || MATCH(value, "0"))
-                    config.icon_spacing = icon_spacing;
-            }
-        }
-        else if (MATCH(name, SETTING_VCENTER)) {
-            if (is_percent(value))
-                copy_string(config.vcenter, value, sizeof(config.vcenter));
-        }
-    }
-
-    else if (MATCH(section, "Background")) {
-        SettingId id = SET_ID_COUNT;
-        if (MATCH(name, SETTING_BACKGROUND_MODE))
-            id = SET_ID_BACKGROUND_MODE;
-        else if (MATCH(name, SETTING_BACKGROUND_COLOR))
-            id = SET_ID_BACKGROUND_COLOR;
-        else if (MATCH(name, SETTING_BACKGROUND_IMAGE))
-            id = SET_ID_BACKGROUND_IMAGE;
-        else if (MATCH(name, SETTING_SLIDESHOW_DIRECTORY))
-            id = SET_ID_SLIDESHOW_DIRECTORY;
-        else if (MATCH(name, SETTING_SLIDESHOW_IMAGE_DURATION))
-            id = SET_ID_SLIDESHOW_DURATION;
-        else if (MATCH(name, SETTING_SLIDESHOW_TRANSITION_TIME))
-            id = SET_ID_SLIDESHOW_FADE;
-        if (id != SET_ID_COUNT) {
-            SettingValue parsed;
-            if (setting_parse(setting_def(id), value, &parsed))
-                store_background_setting(id, &parsed);
-            else
-                log_error("Invalid %s value '%s' in [Background], ignoring it", name, value);
-        }
-        else if (MATCH(name, SETTING_CHROMA_KEY_COLOR))
-            hex_to_color(value, &config.chroma_key_color);
-        else if (MATCH(name, SETTING_BACKGROUND_OVERLAY))
-            convert_bool(value, &config.background_overlay);
-        else if (MATCH(name, SETTING_BACKGROUND_OVERLAY_COLOR))
-            hex_to_color(value, &config.background_overlay_color);
-        else if (MATCH(name, SETTING_BACKGROUND_OVERLAY_OPACITY)) {
-            if (is_percent(value))
-                copy_string(config.background_overlay_opacity, value, sizeof(config.background_overlay_opacity));
-        }
-    }
-
-    else if (MATCH(section, "Titles")) {
-        if (MATCH(name, SETTING_TITLES_ENABLED))
-            convert_bool(value, &config.titles_enabled);
-        else if (MATCH(name, SETTING_TITLE_FONT)) {
-            config.title_font_path = strdup(value);
-            clean_path(config.title_font_path);
-        }
-        else if (MATCH(name, SETTING_TITLE_FONT_SIZE)) {
-            SettingValue parsed;
-            if (!setting_parse(setting_def(SET_ID_TITLE_SIZE), value, &parsed))
-                log_error("Invalid %s value '%s' in [Titles] (use a percentage of the button such as 14%%, or a size such as 36), ignoring it",
-                    SETTING_TITLE_FONT_SIZE, value);
-            else if (parsed.percent)
-                config.title_font_size_pct = parsed.number;
-            else {
-                config.title_font_size = (unsigned int) parsed.number;
-                config.title_font_size_pct = 0;
-            }
-        }
-        else if (MATCH(name, SETTING_TITLE_FONT_COLOR))
-            hex_to_color(value, &config.title_font_color);
-        else if (MATCH(name, SETTING_TITLE_OPACITY)) {
-            if (is_percent(value))
-                copy_string(config.title_opacity, value, sizeof(config.title_opacity));
-        }
-        else if (MATCH(name, SETTING_TITLE_SHADOWS))
-            convert_bool(value, &config.title_shadows);
-        else if (MATCH(name, SETTING_TITLE_SHADOW_COLOR))
-            hex_to_color(value, &config.title_shadow_color);
-        else if (MATCH(name, SETTING_TITLE_OVERSIZE_MODE)) {
-            // "Truncated" was the only spelling the parser knew; the docs have always said "Truncate"
-            if (MATCH(value, "Truncated"))
-                config.title_oversize_mode = OVERSIZE_TRUNCATE;
-            else
-                parse_mode_setting(MODE_SETTING_OVERSIZE, value, (int*) &config.title_oversize_mode);
-        }
-        else if (MATCH(name, SETTING_TITLE_PADDING)) {
-            int padding;
-            bool percent;
-            if (!layout_parse_title_padding(value, &padding, &percent))
-                log_error("Invalid %s value '%s' in [Titles] (use a percentage of the button such as 8%%, or px such as 20), ignoring it",
-                    SETTING_TITLE_PADDING, value);
-            else if (percent) {
-                config.title_padding_pct = padding;
-                config.title_padding = 0;
-            }
-            else {
-                config.title_padding = padding;
-                config.title_padding_pct = 0;
-            }
-        }
-    }
-
-    else if (MATCH(section, "Highlight")) {
-        if (MATCH(name, SETTING_HIGHLIGHT_ENABLED))
-            convert_bool(value, &config.highlight);
-        else if (MATCH(name, SETTING_HIGHLIGHT_FILL_COLOR))
-            hex_to_color(value, &config.highlight_fill_color);
-        else if (MATCH(name, SETTING_HIGHLIGHT_OUTLINE_COLOR))
-            hex_to_color(value, &config.highlight_outline_color);
-        else if (MATCH(name, SETTING_HIGHLIGHT_OUTLINE_SIZE)) {
-            int highlight_outline_size = atoi(value);
-            if (highlight_outline_size >= 0)
-                config.highlight_outline_size = highlight_outline_size;
-        }
-        else if (MATCH(name, SETTING_HIGHLIGHT_CORNER_RADIUS)) {
-            int rx = atoi(value);
-            if (rx >= MIN_RX_SIZE && rx <= MAX_RX_SIZE)
-                config.highlight_rx = (Uint16) rx;
-        }
-        else if (MATCH(name, SETTING_HIGHLIGHT_FILL_OPACITY)) {
-            if (is_percent(value))
-                copy_string(config.highlight_fill_opacity, value, sizeof(config.highlight_fill_opacity));
-        }
-        else if (MATCH(name, SETTING_HIGHLIGHT_OUTLINE_OPACITY)) {
-            if (is_percent(value))
-                copy_string(config.highlight_outline_opacity, value, sizeof(config.highlight_outline_opacity));
-        }
-        else if (MATCH(name, SETTING_HIGHLIGHT_VPADDING)) {
-            int highlight_vpadding = atoi(value);
-            if (highlight_vpadding > 0 || MATCH(value,"0"))
-                config.highlight_vpadding = highlight_vpadding;
-        }
-        else if (MATCH(name, SETTING_HIGHLIGHT_HPADDING)) {
-            int highlight_hpadding = atoi(value);
-            if (highlight_hpadding > 0 || MATCH(value,"0"))
-                config.highlight_hpadding = highlight_hpadding;
-        }
-    }
-
-    else if (MATCH(section, "Scroll Indicators")) {
-        if (MATCH(name,SETTING_SCROLL_INDICATORS))
-            convert_bool(value, &config.scroll_indicators);
-        else if (MATCH(name,SETTING_SCROLL_INDICATOR_FILL_COLOR))
-            hex_to_color(value, &config.scroll_indicator_fill_color);
-        else if (MATCH(name, SETTING_SCROLL_INDICATOR_OUTLINE_SIZE)) {
-            int scroll_indicator_outline_size = atoi(value);
-            if (scroll_indicator_outline_size >= 0)
-                config.scroll_indicator_outline_size = scroll_indicator_outline_size;
-        }
-        else if (MATCH(name,SETTING_SCROLL_INDICATOR_OUTLINE_COLOR))
-            hex_to_color(value, &config.scroll_indicator_outline_color);
-        else if (MATCH(name,SETTING_SCROLL_INDICATOR_OPACITY)) {
-            if (is_percent(value))
-                copy_string(config.scroll_indicator_opacity, value, sizeof(config.scroll_indicator_opacity));
-        }
-    }
-
-    else if (MATCH(section, "Clock")) {
-        if (MATCH(name, SETTING_CLOCK_ENABLED))
-            convert_bool(value, &config.clock_enabled);
-        else if (MATCH(name, SETTING_CLOCK_SHOW_DATE))
-            convert_bool(value, &config.clock_show_date);
-        else if (MATCH(name, SETTING_CLOCK_ALIGNMENT))
-            parse_mode_setting(MODE_SETTING_ALIGNMENT, value, (int*) &config.clock_alignment);
-        else if (MATCH(name, SETTING_CLOCK_FONT)) {
-            config.clock_font_path = strdup(value);
-            clean_path(config.clock_font_path);
-        }
-        else if (MATCH(name, SETTING_CLOCK_MARGIN)) {
-            if (is_percent(value))
-                copy_string(config.clock_margin_str, value, sizeof(config.clock_margin_str));
-            else {
-                int clock_margin = atoi(value);
-                if (clock_margin > 0 || MATCH(value,"0"))
-                    config.clock_margin = clock_margin;
-            }
-        }
-        else if (MATCH(name, SETTING_CLOCK_FONT_COLOR))
-            hex_to_color(value, &config.clock_font_color);
-        else if (MATCH(name, SETTING_CLOCK_SHADOW_COLOR))
-            hex_to_color(value, &config.clock_shadow_color);
-        else if (MATCH(name, SETTING_CLOCK_SHADOWS))
-            convert_bool(value, &config.clock_shadows);
-        else if (MATCH(name, SETTING_CLOCK_OPACITY)) {
-            if (is_percent(value))
-                copy_string(config.clock_opacity, value, sizeof(config.clock_opacity));
-        }
-        else if (MATCH(name, SETTING_CLOCK_FONT_SIZE)) {
-            unsigned int font_size = (unsigned int) atoi(value);
-            if (font_size)
-                config.clock_font_size = font_size;
-        }
-        else if (MATCH(name, SETTING_CLOCK_TIME_FORMAT))
-            parse_mode_setting(MODE_SETTING_TIME_FORMAT, value, (int*) &config.clock_time_format);
-        else if (MATCH(name, SETTING_CLOCK_DATE_FORMAT))
-            parse_mode_setting(MODE_SETTING_DATE_FORMAT, value, (int*) &config.clock_date_format);
-        else if (MATCH(name, SETTING_CLOCK_INCLUDE_WEEKDAY))
-            convert_bool(value, &config.clock_include_weekday);
-    }
-
-    else if (MATCH(section, "Screensaver")) {
-        if (MATCH(name, SETTING_SCREENSAVER_ENABLED))
-            convert_bool(value, &config.screensaver_enabled);
-        else if (MATCH(name, SETTING_SCREENSAVER_IDLE_TIME)) {
-            Uint32 screensaver_idle_time = (Uint32) atoi(value);
-            if (screensaver_idle_time >= MIN_SCREENSAVER_IDLE_TIME &&
-            screensaver_idle_time <= MAX_SCREENSAVER_IDLE_TIME)
-                config.screensaver_idle_time = screensaver_idle_time*1000; // Convert to ms
-        }
-        else if (MATCH(name, SETTING_SCREENSAVER_INTENSITY)) {
-            if (is_percent(value))
-                copy_string(config.screensaver_intensity_str, value, sizeof(config.screensaver_intensity_str));
-        }
-        else if (MATCH(name, SETTING_SCREENSAVER_PAUSE_SLIDESHOW))
-            convert_bool(value, &config.screensaver_pause_slideshow);
-    }
-    
-    else if (MATCH(section, "Hotkeys")) {
+    if (MATCH(section, "Hotkeys")) {
         char *rest = NULL;
         char *keycode = strtok_r((char*) value, ";", &rest);
         if (keycode != NULL) {
@@ -476,25 +181,32 @@ int config_handler(void *user, const char *section, const char *name, const char
             if (cmd != NULL)
                 add_hotkey(keycode, cmd);
         }
+        return 0;
     }
 
-    else if (MATCH(section, "Gamepad")) {
-        if (MATCH(name, SETTING_GAMEPAD_ENABLED))
-            convert_bool(value, &config.gamepad_enabled);
-        else if (MATCH(name, SETTING_GAMEPAD_DEVICE))
-            config.gamepad_device = atoi(value);
-        else if (MATCH(name, SETTING_GAMEPAD_MAPPINGS_FILE)) {
-            config.gamepad_mappings_file = strdup(value);
-            clean_path(config.gamepad_mappings_file);
+    if (settings_section(section)) {
+        const SettingDef *def = setting_find(section, name);
+        if (def == NULL) {
+            // Any other key in [Gamepad] is a control; one in any other settings section is ignored
+            if (MATCH(section, "Gamepad"))
+                add_gamepad_control(name, value);
+            return 0;
         }
-
-        // Parse gamepad controls
-        else
-            add_gamepad_control(name, value);
+        bool alias = def->alias != NULL && MATCH(name, def->alias);
+        SettingValue parsed;
+        if (!setting_parse(def, value, &parsed))
+            log_error("Invalid %s value '%s' in [%s], ignoring it", name, value, section);
+        else if (!alias || !columns_set) {
+            config_store(def->id, NULL, &parsed);
+            // Columns wins over its older name, MaxButtons, whichever comes first
+            if (def->id == SET_ID_LAYOUT_COLUMNS && !alias)
+                columns_set = true;
+        }
+        return 0;
     }
 
     // Parse menus/entries
-    else {
+    {
         Entry *previous_entry = NULL;
 
         // Point the menu and entry cursors at this section's menu, adding it to the end of the list
@@ -531,12 +243,8 @@ int config_handler(void *user, const char *section, const char *name, const char
             SettingValue parsed;
             if (!setting_parse(setting_def(id), value, &parsed))
                 log_error("Invalid %s value '%s' in menu '%s', ignoring it", name, value, section);
-            else if (id == SET_ID_MENU_ROWS)
-                menu->overrides.rows = parsed.number;
-            else if (id == SET_ID_MENU_COLUMNS)
-                menu->overrides.columns = parsed.number;
             else
-                menu->overrides.icon_cap = parsed.number;
+                config_store(id, menu, &parsed);
             return 0;
         }
         if (layout_key)
@@ -618,31 +326,9 @@ int config_handler(void *user, const char *section, const char *name, const char
     return 0;
 }
 
-static bool parse_mode_setting(ModeSettingType type, const char *value, int *setting)
-{
-    const char **arr = mode_settings[type];
-    for (int i = 0; arr[i] != NULL; i++) {
-        if (MATCH(arr[i], value)) {
-            *setting = i;
-            return true;
-        }
-    }
-    return false;
-}
-
 const char *get_mode_setting(int type, int value)
 {
     return mode_settings[type][value];
-}
-
-// A function to determine if a string is a percent value
-bool is_percent(const char *string)
-{
-    size_t length = strlen(string);
-    if (length > 0 && length < PERCENT_MAX_CHARS && strchr(string, '%') == string + length - 1)
-        return true;
-    else
-        return false;
 }
 
 // A function to remove quotation marks that enclose a path
@@ -969,134 +655,6 @@ void add_default_gamepad_controls()
     add_default_controls(SCMD_UP, up, sizeof(up) / sizeof(up[0]));
     add_default_controls(SCMD_DOWN, down, sizeof(down) / sizeof(down[0]));
     add_default_controls(SCMD_SETTINGS, settings, sizeof(settings) / sizeof(settings[0]));
-}
-
-// A function to convert a string percent setting to an int value
-void convert_percent_to_int(char *string, int *result, int max_value)
-{
-    size_t length = strlen(string);
-    char tmp[PERCENT_MAX_CHARS];
-    copy_string(tmp, string, sizeof(tmp));
-    tmp[length - 1] = '\0';
-    float percent = (float) atof(tmp);
-    if (percent >= 0.0F && percent <= 100.0F)
-        *result = (int) ((percent / 100.0F) * (float) max_value);
-}
-
-// A function to make sure all settings are in their correct range
-void validate_settings(Geometry *geo)
-{
-    if (!config.titles_enabled) {
-        config.title_padding = 0;
-        config.title_padding_pct = 0;
-    }
-
-    // Convert % opacity settings to 0-255
-    if (config.title_opacity[0] != '\0') {
-        int title_opacity = INVALID_PERCENT_VALUE;
-        convert_percent_to_int(config.title_opacity, &title_opacity, 255);
-        if (title_opacity != INVALID_PERCENT_VALUE)
-            config.title_font_color.a = (Uint8) title_opacity;
-    }
-    if (config.background_overlay_opacity[0] != '\0') {
-        int background_overlay_opacity = INVALID_PERCENT_VALUE;
-        convert_percent_to_int(config.background_overlay_opacity, &background_overlay_opacity, 255);
-        if (background_overlay_opacity != INVALID_PERCENT_VALUE)
-            config.background_overlay_color.a = (Uint8) background_overlay_opacity;
-    }
-
-    if (config.highlight_fill_opacity[0] != '\0') {
-        int highlight_fill_opacity = INVALID_PERCENT_VALUE;
-        convert_percent_to_int(config.highlight_fill_opacity, &highlight_fill_opacity, 255);
-        if (highlight_fill_opacity != INVALID_PERCENT_VALUE)
-            config.highlight_fill_color.a = (Uint8) highlight_fill_opacity;
-    }
-    if (config.highlight_outline_opacity[0] != '\0') {
-        int highlight_outline_opacity = INVALID_PERCENT_VALUE;
-        convert_percent_to_int(config.highlight_outline_opacity, &highlight_outline_opacity, 255);
-        if (highlight_outline_opacity != INVALID_PERCENT_VALUE)
-            config.highlight_outline_color.a = (Uint8) highlight_outline_opacity;
-    }
-    if (config.scroll_indicator_opacity[0] != '\0') {
-        int scroll_indicator_opacity = INVALID_PERCENT_VALUE;
-        convert_percent_to_int(config.scroll_indicator_opacity, &scroll_indicator_opacity, 255);
-        if (scroll_indicator_opacity != INVALID_PERCENT_VALUE) {
-            config.scroll_indicator_fill_color.a = (Uint8) scroll_indicator_opacity;
-            config.scroll_indicator_outline_color.a = config.scroll_indicator_fill_color.a;
-        }
-    }
-    if (config.clock_opacity[0] != '\0') {
-        int clock_opacity = INVALID_PERCENT_VALUE;
-        convert_percent_to_int(config.clock_opacity, &clock_opacity, 255);
-        if (clock_opacity != INVALID_PERCENT_VALUE)
-            config.clock_font_color.a = (Uint8) clock_opacity;
-    }
-
-    // Set default IconSpacing if none is in the config file
-    if (config.icon_spacing < 0) {
-        int icon_spacing = INVALID_PERCENT_VALUE;
-        if (config.icon_spacing_str[0] != '\0')
-            convert_percent_to_int(config.icon_spacing_str, &icon_spacing, geo->screen_width);
-        if (icon_spacing == INVALID_PERCENT_VALUE)
-            convert_percent_to_int(DEFAULT_ICON_SPACING, &icon_spacing, geo->screen_width);
-        config.icon_spacing = icon_spacing;
-    }
-
-    // A gap wider than the screen leaves no room for a single button
-    if (config.icon_spacing > geo->screen_width) {
-        log_error("%s %i px is wider than the screen, using %i px",
-            SETTING_ICON_SPACING, config.icon_spacing, geo->screen_width);
-        config.icon_spacing = geo->screen_width;
-    }
-
-    // Convert clock margin setting and check limits
-    if (config.clock_margin < 0) {
-        int clock_margin = INVALID_PERCENT_VALUE;
-        if (config.clock_margin_str[0] != '\0')
-            convert_percent_to_int(config.clock_margin_str, &clock_margin, geo->screen_height);
-        if (clock_margin == INVALID_PERCENT_VALUE)
-            convert_percent_to_int(DEFAULT_CLOCK_MARGIN, &clock_margin, geo->screen_height);
-        config.clock_margin = clock_margin;
-    }
-    int clock_margin_limit = (int) ((float) geo->screen_height*MAX_CLOCK_MARGIN);
-    if (config.clock_margin > clock_margin_limit)
-        config.clock_margin = clock_margin_limit;
-
-    // Reduce highlight hpadding to prevent overlaps
-    if (config.highlight_hpadding > (config.icon_spacing / 2))
-        config.highlight_hpadding = config.icon_spacing / 2;
-
-    // Convert the vertical centre setting to px and check its limits
-    int vcenter = INVALID_PERCENT_VALUE;
-    float f_screen_height = (float) geo->screen_height;
-    int lower_limit = (int) (MIN_VCENTER*f_screen_height);
-    int upper_limit = (int) (MAX_VCENTER*f_screen_height);
-    if (config.vcenter[0] != '\0')
-        convert_percent_to_int(config.vcenter, &vcenter, geo->screen_height);
-    if (vcenter == INVALID_PERCENT_VALUE)
-        convert_percent_to_int(DEFAULT_VCENTER, &vcenter, geo->screen_height);
-    if (vcenter < lower_limit)
-        vcenter = lower_limit;
-    else if (vcenter > upper_limit)
-        vcenter = upper_limit;
-    geo->vcenter = vcenter;
-
-    // Max highlight outline
-    int max_highlight_outline_size = (config.highlight_hpadding < config.highlight_vpadding)
-                                     ? config.highlight_hpadding : config.highlight_vpadding;
-    if (max_highlight_outline_size < 0)
-        max_highlight_outline_size = 0;
-    if (config.highlight_outline_size > max_highlight_outline_size)
-        config.highlight_outline_size = max_highlight_outline_size;
-
-    // Max scroll indicator outline
-    int max_scroll_indicator_outline_size = (int) ((float) geo->screen_height * MAX_SCROLL_INDICATOR_OUTLINE);
-    if (config.scroll_indicator_outline_size > max_scroll_indicator_outline_size)
-        config.scroll_indicator_outline_size = max_scroll_indicator_outline_size;
-
-    // Don't allow rounded rectangle with outline due to Nanosvg bug
-    if (config.highlight_rx && config.highlight_outline_size)
-        config.highlight_rx = 0;
 }
 
 // A function to retreive menu struct from the linked list via the menu name

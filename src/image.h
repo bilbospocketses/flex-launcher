@@ -8,12 +8,12 @@
 #define format_highlight_outline(buffer, outline_size, outline_color, outline_opacity) sprintf_alloc(buffer, HIGHLIGHT_OUTLINE_FORMAT, outline_size, outline_color.r, outline_color.g, outline_color.b, outline_opacity)
 #define format_highlight(buffer, width, height, corner_radius, fill_color, fill_opacity, outline_buffer) sprintf_alloc(buffer, HIGHLIGHT_FORMAT, width, height, width, height, corner_radius, fill_color.r, fill_color.g, fill_color.b, fill_opacity, outline_buffer)
 #define format_scroll_indicator(buffer, fill_color, outline_size, outline_color, opacity) sprintf_alloc(buffer, SCROLL_INDICATOR_FORMAT, fill_color.r, fill_color.g, fill_color.b, opacity, outline_color.r, outline_color.g, outline_color.b, outline_size, opacity)
-#define calculate_shadow_alpha(x) x.shadow_color->a = (Uint8) (SHADOW_OPACITY_MULTIPLIER * (float) x.color->a)
 
 typedef struct {
     TTF_Font *font;
     int font_size;
-    char **font_path;
+    char *font_path;       // The file the font was opened from (owned): the configured one, or the bundled fallback
+    int font_face;         // The face within it
     SDL_Color *color;
     bool shadow;
     SDL_Color *shadow_color;
@@ -24,7 +24,7 @@ typedef struct {
 
 int init_svg(void);
 char *find_default_font(const char *font);
-int load_font(TextInfo *info, const char *default_font);
+int load_font(TextInfo *info, const char *configured, int face, const char *default_font);
 void quit_svg(void);
 int render_scroll_indicators(Scroll *scroll, int height, Geometry *geo);
 SDL_Surface *load_next_slideshow_background(Slideshow *slideshow, bool transition);

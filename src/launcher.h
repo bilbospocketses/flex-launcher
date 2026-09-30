@@ -1,4 +1,5 @@
 #include "layout.h"
+#include "derive.h"
 
 // Color masking bit logic
 #if SDL_BYTEORDER == SDL_BIG_ENDIAN
@@ -241,13 +242,14 @@ typedef struct {
     SDL_Texture *texture;
 } Screensaver;
 
-// Configuration settings
+// Configuration settings: what config.ini says, or the built-in default. Nothing converts them in
+// place: the values the launcher draws with are derived from them into `eff` (derive.h).
 typedef struct {
     char *default_menu;
     unsigned int max_buttons; // The Columns setting (MaxButtons is its older name)
     unsigned int rows;
     bool vsync;
-    int fps_limit;
+    int fps_limit;            // -1 when FPSLimit is absent
     Uint32 application_timeout;
     ModeBackground background_mode; // Defines image or color background mode
     SDL_Color background_color; // Background color
@@ -255,37 +257,38 @@ typedef struct {
     char *background_image; // Path to background image
     char *slideshow_directory;
     bool background_overlay;
-    SDL_Color background_overlay_color;
-    char background_overlay_opacity[PERCENT_MAX_CHARS];
+    SDL_Color background_overlay_color; // Its alpha is eff's, from the opacity
+    int background_overlay_opacity;     // Hundredths of a percent, as every opacity below
     Uint16 icon_size;
-    int icon_spacing;
-    char icon_spacing_str[PERCENT_MAX_CHARS];
+    int icon_spacing;                   // Hundredths of a percent of the screen width, or px
+    bool icon_spacing_percent;
     bool titles_enabled;
-    char *title_font_path; // Path to title TTF font file
+    char *title_font_path;              // As configured; title_info.font_path is the file opened
+    int title_font_face;
     unsigned int title_font_size;
     int title_font_size_pct;    // FontSize as a percentage of the button; 0 = the fixed title_font_size
     SDL_Color title_font_color; // Color struct for title text
     bool title_shadows;
     SDL_Color title_shadow_color;
-    char title_opacity[PERCENT_MAX_CHARS];
-    ModeOversize title_oversize_mode; 
+    int title_opacity;
+    ModeOversize title_oversize_mode;
     int title_padding;
     int title_padding_pct;      // Padding as a percentage of the button; 0 = the fixed title_padding
     bool highlight;
     SDL_Color highlight_fill_color;
     SDL_Color highlight_outline_color;
     int highlight_outline_size;
-    char highlight_fill_opacity[PERCENT_MAX_CHARS];
-    char highlight_outline_opacity[PERCENT_MAX_CHARS];
-    unsigned int highlight_rx;
+    int highlight_fill_opacity;
+    int highlight_outline_opacity;
+    int highlight_rx;
     int highlight_vpadding;
     int highlight_hpadding;
-    char vcenter[PERCENT_MAX_CHARS];
+    int vcenter;                        // Hundredths of a percent of the screen height
     bool scroll_indicators;
     SDL_Color scroll_indicator_fill_color;
     int scroll_indicator_outline_size;
     SDL_Color scroll_indicator_outline_color;
-    char scroll_indicator_opacity[PERCENT_MAX_CHARS];
+    int scroll_indicator_opacity;
     bool wrap_entries;
     bool reset_on_back;
     bool mouse_select;
@@ -295,7 +298,7 @@ typedef struct {
     ModeOnLaunch on_launch;
     bool screensaver_enabled;
     Uint32 screensaver_idle_time;
-    char screensaver_intensity_str[PERCENT_MAX_CHARS];
+    int screensaver_intensity;
     bool screensaver_pause_slideshow;
     bool gamepad_enabled;
     int gamepad_device;
@@ -308,11 +311,12 @@ typedef struct {
     bool clock_enabled;
     bool clock_show_date;
     Alignment clock_alignment;
-    char *clock_font_path;
-    char clock_margin_str[PERCENT_MAX_CHARS];
-    int clock_margin;
+    char *clock_font_path;              // As configured; the clock's text_info.font_path is the file opened
+    int clock_font_face;
+    int clock_margin;                   // Hundredths of a percent of the screen height, or px
+    bool clock_margin_percent;
     SDL_Color clock_font_color;
-    char clock_opacity[PERCENT_MAX_CHARS];
+    int clock_opacity;
     unsigned int clock_font_size;
     bool clock_shadows;
     SDL_Color clock_shadow_color;
@@ -341,3 +345,5 @@ void trim_title_fonts(void);
 void refresh_layout(void);
 int show_menu(Menu *menu);
 int show_home(void);
+extern Effective eff;
+void refresh_effective(void);
