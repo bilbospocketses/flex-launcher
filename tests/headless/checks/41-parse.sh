@@ -50,10 +50,10 @@ ok=1
 result "a font opened again closes the one it replaces (exit $(cat "$out/f41-reload.code"))" $ok
 
 # A grid change in settings works the layout area out again, so a new vertical centre (or a clock
-# that moved) reaches the layout. No settings page lists VCenter yet, so this pins the step on the
-# change that is reachable, a Columns change; the area is logged once at startup, and again on it.
+# that moved) reaches the layout: a Columns change here; the area is logged once at startup, and
+# again on it. 55-settings-pages.sh changes VCenter itself and sees the grid move.
 cfg=$(writable_config f50-grid)
-CFG=$cfg run_keys f41-area Menu Down Return Return Down Right BackSpace BackSpace BackSpace
+CFG=$cfg run_keys f41-area Menu Down Down Return Return Down Right BackSpace BackSpace BackSpace
 ok=1
 grep -q 'Layout area: ' "$out/f41-area.log" \
     && grep -q 'Settings: \[Layout\] Columns 4 -> 5' "$out/f41-area.log" \

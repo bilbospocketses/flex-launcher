@@ -18,7 +18,7 @@ shows_checkerboard() {
 
 # Colour: step from Black to Charcoal, and the preview shows each
 cfg=$(writable_config f60-colour)
-CFG=$cfg run_keys f60-colour Menu +shows_black Return Down Right +shows_charcoal BackSpace BackSpace
+CFG=$cfg run_keys f60-colour Menu +shows_black Down Return Down Right +shows_charcoal BackSpace BackSpace
 ok=1
 [ "$(changed_lines "$FX/f60-colour.ini" "$cfg")" = 2 ] && grep -qx 'Color=#1E1E1E' "$cfg" \
     && grep -q 'Settings: \[Background\] Color #000000 -> #1E1E1E' "$out/f60-colour.log" \
@@ -28,7 +28,7 @@ result "settings: a preset colour is saved, and the preview shows it (exit $(cat
 sed 's/^/      /' "$out/f60-colour.seen"
 
 # The browser's highlighted image fills the preview once its decode is done: blue, green, red
-CFG=$FX/f60-colour.ini run_keys f60-preview Menu Return Right Down Return +shows_blue Down +shows_green Down +shows_red Menu
+CFG=$FX/f60-colour.ini run_keys f60-preview Menu Down Return Right Down Return +shows_blue Down +shows_green Down +shows_red Menu
 ok=1
 grep -qx 'blue yes' "$out/f60-preview.seen" && grep -qx 'green yes' "$out/f60-preview.seen" \
     && grep -qx 'red yes' "$out/f60-preview.seen" && grep -q 'Settings: nothing changed' "$out/f60-preview.log" \
@@ -37,7 +37,7 @@ result "settings: the preview shows the highlighted image (exit $(cat "$out/f60-
 sed 's/^/      /' "$out/f60-preview.seen"
 
 # Transparent shows the checkerboard; stepping back to Colour leaves nothing to save
-CFG=$FX/f60-colour.ini run_keys f60-transparent Menu Return Right Right Right +shows_checkerboard Left Left Left BackSpace BackSpace
+CFG=$FX/f60-colour.ini run_keys f60-transparent Menu Down Return Right Right Right +shows_checkerboard Left Left Left BackSpace BackSpace
 ok=1
 grep -qx 'checkerboard yes' "$out/f60-transparent.seen" && grep -q 'Settings: nothing changed' "$out/f60-transparent.log" \
     && ran_clean f60-transparent && ok=0
@@ -68,7 +68,7 @@ result "a config's Image or Slideshow mode with nothing chosen still errors at s
 
 # Image: Mode to Image, open the browser (it starts in Pictures), take the second image
 cfg=$(writable_config f60-colour)
-CFG=$cfg run_keys f60-image Menu Return Right Down Return Down Return BackSpace BackSpace
+CFG=$cfg run_keys f60-image Menu Down Return Right Down Return Down Return BackSpace BackSpace
 ok=1
 grep -qx 'Mode=Image' "$cfg" && grep -qx 'Image=/home/tester/Pictures/green.png' "$cfg" \
     && grep -q 'Settings saved 2 change(s)' "$out/f60-image.log" && ran_clean f60-image && ok=0
@@ -81,7 +81,7 @@ diff "$FX/f60-colour.ini" "$cfg" | sed 's/^/      /'
 # chooses green, the one highlighted, only once green's decode is done.
 cfg=$(writable_config f60-colour)
 STREAMFLEX_TEST_DECODE_DELAY_MS=4000 CFG=$cfg UNTIL='Settings saved' \
-    run_keys f60-slowdecode Menu Return Right Down Return Down Return BackSpace BackSpace
+    run_keys f60-slowdecode Menu Down Return Right Down Return Down Return BackSpace BackSpace
 ok=1
 grep -qx 'Image=/home/tester/Pictures/green.png' "$cfg" \
     && grep -q 'Settings: OK waited for the decode of /home/tester/Pictures/green.png' "$out/f60-slowdecode.log" \
@@ -94,7 +94,7 @@ grep -E 'Settings: (OK waited|chose|the preview shows)' "$out/f60-slowdecode.log
 # The same with a broken image: OK on b.png while it is still decoding waits, finds it cannot be
 # opened, and refuses it. Without the wait it would be chosen and saved.
 STREAMFLEX_TEST_DECODE_DELAY_MS=4000 CFG=$FX/f60-broken.ini UNTIL='Settings: nothing changed' \
-    run_keys f60-slowbroken Menu Return Down Return Down Return Menu
+    run_keys f60-slowbroken Menu Down Return Down Return Down Return Menu
 ok=1
 grep -q 'Settings: OK waited for the decode of /home/tester/broken/b.png' "$out/f60-slowbroken.log" \
     && grep -q 'Settings: This image cannot be opened: /home/tester/broken/b.png' "$out/f60-slowbroken.log" \
@@ -103,7 +103,7 @@ result "settings: OK on a broken image during its decode waits, then refuses it 
 
 # Image with none chosen: leaving the page puts Colour back, so nothing is saved
 cfg=$(writable_config f60-colour)
-CFG=$cfg run_keys f60-incomplete Menu Return Right BackSpace BackSpace
+CFG=$cfg run_keys f60-incomplete Menu Down Return Right BackSpace BackSpace
 ok=1
 cmp -s "$FX/f60-colour.ini" "$cfg" && grep -q 'Settings: \[Background\] Mode Image -> Color' "$out/f60-incomplete.log" \
     && grep -q 'Settings: nothing changed' "$out/f60-incomplete.log" && ran_clean f60-incomplete && ok=0
@@ -113,7 +113,7 @@ result "settings: Image with no image chosen goes back to Colour and saves nothi
 # STREAMFLEX_TEST_NO_RENDER_TARGETS): the menu is drawn behind the settings, and the caption and
 # its note are drawn all the same
 cfg=$(writable_config f60-colour)
-STREAMFLEX_TEST_NO_RENDER_TARGETS=1 CFG=$cfg run_keys f60-notargets Menu Return Right BackSpace BackSpace
+STREAMFLEX_TEST_NO_RENDER_TARGETS=1 CFG=$cfg run_keys f60-notargets Menu Down Return Right BackSpace BackSpace
 ok=1
 cmp -s "$FX/f60-colour.ini" "$cfg" && grep -q 'Settings: the renderer has no render targets' "$out/f60-notargets.log" \
     && grep -q 'Settings: the note under the preview says No image was chosen, so Mode went back to Colour' "$out/f60-notargets.log" \
@@ -122,7 +122,7 @@ result "settings: without render targets the caption and its note are still draw
 
 # Slideshow: Mode to Slideshow, open the browser on the Folder row, use Pictures
 cfg=$(writable_config f60-colour)
-CFG=$cfg run_keys f60-slideshow Menu Return Right Right Down Return Return BackSpace BackSpace
+CFG=$cfg run_keys f60-slideshow Menu Down Return Right Right Down Return Return BackSpace BackSpace
 ok=1
 grep -qx 'Mode=Slideshow' "$cfg" && grep -qx 'SlideshowDirectory=/home/tester/Pictures' "$cfg" \
     && grep -q 'Found 3 images in directory /home/tester/Pictures' "$out/f60-slideshow.log" \
@@ -131,9 +131,11 @@ result "settings: a slideshow folder chosen in the folder browser is saved (exit
 
 # Stepping the mode through a running slideshow: its first change is due at 5 s and fades for 3 s.
 # The keys start when the log says the fade has begun, so settings open inside it and the first
-# step (to Transparent) lands in it 2 s later, however slowly the launcher started: the log must
-# say the fade in progress was dropped.
-run_after_line f60-running 'Slideshow: fading in the next image' Menu Return Right Left Right Left BackSpace BackSpace
+# step (to Transparent) lands in it about 1 s later, however slowly the launcher started: the log
+# must say the fade in progress was dropped. The keys that reach the Background page come 150 ms
+# apart: a second apart, as run_keys sends them, the step came 3 s in, as the fade ended.
+open_background() { xdotool key --delay 150 Menu Down Return; sleep 0.5; }
+run_after_line f60-running 'Slideshow: fading in the next image' +open_background Right Left Right Left BackSpace BackSpace
 ok=1
 ran_clean f60-running && grep -q 'Settings: nothing changed' "$out/f60-running.log" \
     && precedes "$out/f60-running.log" 'Slideshow: fading in the next image' 'Settings: [Background] Mode Slideshow -> Transparent' \
@@ -177,7 +179,7 @@ mkfifo "$TESTER_HOME/loading/b.png"
 chown -R tester:tester "$TESTER_HOME/loading"
 hold_pipe "$TESTER_HOME/loading/b.png" /tmp/loader-held /tmp/loader-release &
 holder=$!
-UNTIL='Settings: nothing changed' run_keys f60-loading +loader_held Menu Return Right +release_loader Left BackSpace BackSpace
+UNTIL='Settings: nothing changed' run_keys f60-loading +loader_held Menu Down Return Right +release_loader Left BackSpace BackSpace
 kill "$holder"; wait "$holder" 2> /dev/null
 ok=1
 [ -e /tmp/loader-held ] && ran_clean f60-loading \
@@ -216,7 +218,7 @@ rm -rf "$TESTER_HOME/locking"
 mkdir -p "$TESTER_HOME/locking/locked"
 chown -R tester:tester "$TESTER_HOME/locking"
 chmod 000 "$TESTER_HOME/locking/locked"
-run_keys f60-locked Menu Return Down Return Down Return Menu
+run_keys f60-locked Menu Down Return Down Return Down Return Menu
 ok=1
 grep -q "Settings: Can't open locked: permission denied" "$out/f60-locked.log" \
     && grep -q 'Settings: nothing changed' "$out/f60-locked.log" && ran_clean f60-locked && ok=0
@@ -229,7 +231,7 @@ rm -rf "$TESTER_HOME/nest"
 mkdir -p "$TESTER_HOME/nest/sub"
 cp "$TESTER_HOME/Pictures/red.png" "$TESTER_HOME/nest/sub/"
 chown -R tester:tester "$TESTER_HOME/nest"
-run_keys f60-nest Menu Return Down Return Down Return BackSpace Menu
+run_keys f60-nest Menu Down Return Down Return Down Return BackSpace Menu
 want="Settings: browsing $TESTER_HOME/nest|Settings: browsing $TESTER_HOME/nest/sub|Settings: browsing $TESTER_HOME/nest|"
 ok=1
 [ "$(grep -x 'Settings: browsing .*' "$out/f60-nest.log" | tr '\n' '|')" = "$want" ] \
@@ -240,7 +242,7 @@ grep 'Settings: browsing' "$out/f60-nest.log" | sed 's/^/      /'
 # Images that only look like pictures (~/broken): the browser opens on a.png, whose failed decode
 # puts "cannot be opened" in the caption with no key pressed, and SDL_image's reason in the log;
 # Down moves to b.png, whose OK refuses
-run_keys f60-broken Menu Return Down Return Down Return Menu
+run_keys f60-broken Menu Down Return Down Return Down Return Menu
 ok=1
 grep -q 'Settings: the caption says This image cannot be opened for /home/tester/broken/a.png' "$out/f60-broken.log" \
     && grep -q 'Settings: could not open /home/tester/broken/a.png: Unsupported image format' "$out/f60-broken.log" \

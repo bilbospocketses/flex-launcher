@@ -336,6 +336,7 @@ void refresh_effective(void);
 void reload_highlight(void);
 void reload_scroll(void);
 void reload_clock(void);        // Also lays the menu out again: the clock's size moves the buttons
+void stop_clock(void);          // Waits for a render in flight; the settings screen stops it before writing a clock setting
 void reload_screensaver(void);
 void reload_gamepad(void);      // Also the Device setting: closes the pads and opens the chosen one
 void reload_title_font(void);   // Closes the size cache and the fixed font, opens the font again, then reload_titles()

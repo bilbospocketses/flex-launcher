@@ -41,7 +41,6 @@ static void stop_highlight(void);
 static void start_scroll(void);
 static void stop_scroll(void);
 static void start_clock(void);
-static void stop_clock(void);
 static void start_gamepad(void);
 static void stop_gamepad(void);
 static void connect_present_pads(void);
@@ -923,7 +922,7 @@ static void start_clock()
 }
 
 // A function to stop the clock: wait for a render in flight on its thread, then free what it made
-static void stop_clock()
+void stop_clock()
 {
     if (clk == NULL)
         return;

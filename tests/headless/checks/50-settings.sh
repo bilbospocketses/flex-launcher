@@ -3,7 +3,7 @@
 # its fixture that the test user can write (writable_config, in run.sh).
 
 # The keys that open settings, go to All menus, step Columns up once and back out, saving
-ALL_MENUS_COLUMNS_UP="Menu Down Return Return Down Right BackSpace BackSpace BackSpace"
+ALL_MENUS_COLUMNS_UP="Menu Down Down Return Return Down Right BackSpace BackSpace BackSpace"
 
 # A grid change saves exactly one line, keeps its trailing comment, and leaves the old file as .bak
 cfg=$(writable_config f50-grid)
@@ -30,7 +30,7 @@ diff "$FX/f50-alias.ini" "$cfg" | sed 's/^/      /'
 
 # Stepping a menu's Rows down to "All menus" removes its line
 cfg=$(writable_config f50-grid)
-CFG=$cfg run_keys f50-inherit Menu Down Return Down Down Return Left Left Left BackSpace BackSpace BackSpace
+CFG=$cfg run_keys f50-inherit Menu Down Down Return Down Down Return Left Left Left BackSpace BackSpace BackSpace
 ok=1
 [ "$(changed_lines "$FX/f50-grid.ini" "$cfg")" = 1 ] && ! sed -n '/^\[Games\]/,$p' "$cfg" | grep -q '^Rows=' \
     && grep -q 'Settings: \[Games\] Rows 1 -> (none)' "$out/f50-inherit.log" && ran_clean f50-inherit && ok=0
@@ -38,7 +38,7 @@ result "settings: a menu's Rows set to All menus removes the line (exit $(cat "$
 
 # Discard puts everything back, and closing with nothing changed writes nothing
 cfg=$(writable_config f50-grid)
-CFG=$cfg run_keys f50-discard Menu Down Return Return Down Right BackSpace BackSpace Down Down Return BackSpace
+CFG=$cfg run_keys f50-discard Menu Down Down Return Return Down Right BackSpace BackSpace Down Down Down Down Down Down Down Return BackSpace
 ok=1
 cmp -s "$FX/f50-grid.ini" "$cfg" && [ ! -e "$cfg.bak" ] \
     && in_range "$out/f50-discard.log" 'Settings: discarded the changes' 'Settings closed' "Menu 'Main': 4 x 1 grid" \
@@ -203,7 +203,7 @@ grep -E 'Screensaver o(n|ff)|Settings (opened|closed)' "$out/f50-screensaver.log
 
 # A menu with no entries cannot be previewed: the preview stays put, and its grid still saves
 cfg=$(writable_config f50-empty)
-CFG=$cfg run_keys f50-empty Menu Down Return Down Down Return Right BackSpace BackSpace BackSpace
+CFG=$cfg run_keys f50-empty Menu Down Down Return Down Down Return Right BackSpace BackSpace BackSpace
 ok=1
 ran_clean f50-empty && sed -n '/^\[Empty\]/,$p' "$cfg" | grep -qx 'Rows=3' \
     && grep -q 'Settings: \[Empty\] Rows 2 -> 3' "$out/f50-empty.log" \
@@ -239,7 +239,7 @@ grep 'Settings' "$out/f50-nofont.log" | sed 's/^/      /'
 # come 50 ms apart, far inside the 300 ms rest, so a loaded host cannot stretch a gap past it.
 fast_downs() { xdotool key --delay 50 Down Down Down Down Down; sleep 2; }
 revisit() { xdotool key Up; sleep 1; xdotool key Down; sleep 1; }
-CFG=$FX/f50-menus.ini run_keys f50-menus Menu Down Return +fast_downs +revisit Menu
+CFG=$FX/f50-menus.ini run_keys f50-menus Menu Down Down Return +fast_downs +revisit Menu
 log=$out/f50-menus.log
 ok=1
 in_range "$log" 'Settings opened' 'Settings closed' "Settings: the preview shows menu 'D'" \
@@ -251,7 +251,7 @@ grep -E "Loading menu|rendered its buttons|the preview shows menu|kept the scree
 # Closing settings closes the title font sizes no menu uses any more: Titles from Medium (14%, 36 pt
 # on Main's 256 px buttons) to Large (17%), then Back saves and closes. 36 pt is closed, and only it.
 cfg=$(writable_config f50-grid)
-CFG=$cfg run_keys f50-titlefonts Menu Down Down Return Right BackSpace BackSpace
+CFG=$cfg run_keys f50-titlefonts Menu Down Down Down Return Right BackSpace BackSpace
 ok=1
 grep -q 'Settings: \[Titles\] FontSize 14% -> 17%' "$out/f50-titlefonts.log" \
     && [ "$(sed -n '/Settings closed/,$p' "$out/f50-titlefonts.log" | grep -c 'Titles: closed the')" = 1 ] \
@@ -263,7 +263,7 @@ grep -E "Titles: closed|Menu 'Main': .* grid" "$out/f50-titlefonts.log" | sed 's
 # :home (a Home hotkey here) closes settings straight to the default menu. Settings open over
 # Games, and the Menus list's preview moves to Main; closing loads Main once and never Games.
 # The preview must have moved to Main before Home, or closing would load nothing else either way.
-CFG=$FX/f50-home.ini run_keys f50-home Return Menu Down Return Down Home
+CFG=$FX/f50-home.ini run_keys f50-home Return Menu Down Down Return Down Home
 ok=1
 after=$(sed -n '/Key Home (#4000004A) detected/,$p' "$out/f50-home.log")
 grep -q "Settings opened over menu 'Games'" "$out/f50-home.log" \
@@ -303,7 +303,7 @@ result "the sample config turns the gamepad on" $ok
 # the cursor on the last menu the page scrolls to its end, so the note is on show, and it keeps
 # room enough to be read whole, not cut to "..." for a page longer than the column.
 all_downs() { local keys; mapfile -t keys < <(yes Down | head -70); xdotool key --delay 30 "${keys[@]}"; sleep 2; }
-CFG=$FX/f50-manymenus.ini run_keys f50-manymenus Menu Down Return +all_downs Menu
+CFG=$FX/f50-manymenus.ini run_keys f50-manymenus Menu Down Down Return +all_downs Menu
 ok=1
 in_range "$out/f50-manymenus.log" 'Settings opened' 'Settings closed' 'of 64 on show' \
     && sed -n '/Settings opened/,/Settings closed/p' "$out/f50-manymenus.log" | grep -qE 'Settings: rows [0-9]+ to 63 of 64 on show' \

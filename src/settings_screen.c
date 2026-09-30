@@ -94,6 +94,8 @@ static int fitted_note_h = 0;                 // ...and how tall that wraps
 static int measures = 0;                      // Paragraphs measured while settings are open
 #endif
 static char drawn_note[512];                  // The note under the preview last drawn, for the log
+static char drawn_cursor[480];                // The row under the cursor as last drawn, for the log
+static char logged_path[512];                 // The page path last logged
 static Menu *preview_wanted = NULL;           // The menu the preview switches to once the cursor rests...
 static Uint32 preview_asked = 0;              // ...since when it has rested
 static int shown_first = -1;                  // The rows last on show, for the log
@@ -246,16 +248,36 @@ static SettingValue read_value(SettingId id, int menu_index)
     return config_read(id, menu_index >= 0 ? menus[menu_index] : NULL);
 }
 
-// A function to put a setting's value into the running launcher, then refresh what it affects
-static void apply_slot(const SettingSlot *slot, bool refresh)
+// A function to name a refresh group for the log
+static const char *refresh_name(SettingRefresh refresh)
 {
-    config_store(slot->def->id, slot->menu >= 0 ? menus[slot->menu] : NULL, &slot->value);
-    if (slot->def->id == SET_ID_SLIDESHOW_FADE)
-        update_slideshow_timing();
-    refresh_effective();
-    if (!refresh)
-        return;
-    switch (slot->def->refresh) {
+    static const char *const names[] = { "nothing", "the layout", "the titles", "the background",
+        "the title font", "the highlight", "the scroll indicators", "the clock", "the screensaver",
+        "the gamepad", "the frame timing" };
+    return names[refresh];
+}
+
+// A function to name the gamepads present for the Device row, by their device index now (the
+// launcher opens them by instance id, so an index is only good at the moment it is listed): every
+// joystick SDL lists while the gamepad runs, as SDL names it. A nameless one, or a failed count,
+// is the model's to describe ("Pad N", or none).
+static void list_pads(void)
+{
+    const char *names[SETTINGS_MAX_PADS] = { NULL };
+    int count = gamepad_running() ? SDL_NumJoysticks() : 0;
+    if (count > SETTINGS_MAX_PADS)
+        count = SETTINGS_MAX_PADS;
+    for (int i = 0; i < count; i++)
+        names[i] = SDL_JoystickNameForIndex(i);
+    settings_set_pads(model, names, count);
+}
+
+// A function to refresh what a group of settings affects in the running launcher
+static void run_refresh(SettingRefresh refresh)
+{
+    switch (refresh) {
+        case SET_REFRESH_NONE:
+            return;
         case SET_REFRESH_LAYOUT:
             refresh_layout();
             break;
@@ -265,33 +287,72 @@ static void apply_slot(const SettingSlot *slot, bool refresh)
         case SET_REFRESH_BACKGROUND:
             reload_background();
             break;
-        case SET_REFRESH_NONE:
-            break;
-        // The new settings' refreshes arrive with the code that applies them (Task 6)
         case SET_REFRESH_TITLE_FONT:
+            reload_title_font();
             break;
         case SET_REFRESH_HIGHLIGHT:
+            reload_highlight();
             break;
         case SET_REFRESH_SCROLL:
+            reload_scroll();
             break;
         case SET_REFRESH_CLOCK:
+            reload_clock();
             break;
         case SET_REFRESH_SCREENSAVER:
+            reload_screensaver();
             break;
         case SET_REFRESH_GAMEPAD:
+            reload_gamepad();
+            list_pads();
             break;
         case SET_REFRESH_FRAME:
+            apply_frame_timing();
             break;
     }
+    log_debug("Settings: refreshed %s", refresh_name(refresh));
 }
 
-// A function to put every value into the launcher (after Discard), refreshing everything once
+// A function to put a setting's value into the running launcher, then refresh what it affects.
+// The clock is stopped before one of its settings is written, so no render is in flight while it
+// changes. Two settings act beyond any group: the OS screensaver block, and the menu :home goes to.
+static void apply_slot(const SettingSlot *slot, bool refresh)
+{
+    if (slot->def->refresh == SET_REFRESH_CLOCK)
+        stop_clock();
+    config_store(slot->def->id, slot->menu >= 0 ? menus[slot->menu] : NULL, &slot->value);
+    if (slot->def->id == SET_ID_SLIDESHOW_FADE)
+        update_slideshow_timing();
+    refresh_effective();
+    if (slot->def->id == SET_ID_INHIBIT_OS_SCREENSAVER)
+        apply_os_screensaver();
+    else if (slot->def->id == SET_ID_DEFAULT_MENU)
+        apply_default_menu();
+    if (refresh)
+        run_refresh(slot->def->refresh);
+}
+
+// A function to put every value back into the launcher after Discard, refreshing once each group
+// whose settings changed back, the title font first (it renders the titles and lays the menu out)
 static void apply_all(void)
 {
-    for (int i = 0; i < settings_slot_count(model); i++)
-        apply_slot(settings_slot_at(model, i), false);
-    reload_background();
-    reload_titles();
+    bool due[SET_REFRESH_FRAME + 1];
+    memset(due, 0, sizeof(due));
+    for (int i = 0; i < settings_slot_count(model); i++) {
+        SettingSlot *slot = settings_slot_at(model, i);
+        SettingValue now = config_read(slot->def->id, slot->menu >= 0 ? menus[slot->menu] : NULL);
+        if (setting_equal(slot->def, &now, &slot->value))
+            continue;
+        apply_slot(slot, false);
+        due[slot->def->refresh] = true;
+    }
+    static const SettingRefresh order[] = { SET_REFRESH_TITLE_FONT, SET_REFRESH_TITLES, SET_REFRESH_BACKGROUND,
+        SET_REFRESH_HIGHLIGHT, SET_REFRESH_SCROLL, SET_REFRESH_CLOCK, SET_REFRESH_SCREENSAVER,
+        SET_REFRESH_GAMEPAD, SET_REFRESH_FRAME, SET_REFRESH_LAYOUT };
+    for (size_t i = 0; i < sizeof(order) / sizeof(order[0]); i++) {
+        if (due[order[i]])
+            run_refresh(order[i]);
+    }
 }
 
 // A function to log a change for -d: "[Section] Key old -> new"
@@ -336,14 +397,22 @@ static bool open_fonts(void)
 static void measure_layout(void)
 {
     static const char *const labels[] = {
-        "Background", "Menus", "Titles", "Discard changes", "Mode", "Colour", "Image", "Folder",
-        "Change every", "Fade", "Rows", "Columns", "Largest button", "Size", "All menus", "Try again",
-        "Leave without saving", "Use this folder"
+        "General", "Background", "Menus", "Titles", "Highlight", "Scroll indicators", "Clock", "Screensaver",
+        "Controls", "Discard changes", "Mode", "Colour", "Image", "Folder", "Change every", "Fade", "Rows",
+        "Columns", "Largest button", "Size", "All menus", "Try again", "Leave without saving", "Use this folder",
+        "Default menu", "Wrap around", "Reset on Back", "Mouse select", "Block the OS screensaver", "VSync",
+        "FPS limit", "After launching an app", "App timeout", "Startup command", "Quit command",
+        "See-through colour", "Overlay", "Overlay colour", "Overlay opacity", "Icon spacing", "Vertical centre",
+        "Show titles", "Font", "Opacity", "Shadows", "Shadow colour", "Too long", "Padding", "Show",
+        "Fill colour", "Fill opacity", "Outline size", "Outline colour", "Outline opacity", "Corner radius",
+        "Vertical padding", "Horizontal padding", "Show date", "Weekday", "Alignment", "Margin", "Time", "Date",
+        "On", "Idle time", "Dim level", "Pause slideshow", "Gamepad", "Device", "Mappings file"
     };
     static const char *const values[] = {
         LEFT_ARROW " Transparent " RIGHT_ARROW, LEFT_ARROW " Custom #000000 " RIGHT_ARROW,
         LEFT_ARROW " All menus (1024 px) " RIGHT_ARROW, LEFT_ARROW " Fixed 512 " RIGHT_ARROW,
-        "12 \xC3\x97 10 " RIGHT_ARROW
+        "12 \xC3\x97 10 " RIGHT_ARROW, LEFT_ARROW " Keep showing " RIGHT_ARROW,
+        LEFT_ARROW " Pad 15 (not connected) " RIGHT_ARROW, LEFT_ARROW " 12.5% " RIGHT_ARROW
     };
     int w = geo.screen_width;
     int h = geo.screen_height;
@@ -780,7 +849,12 @@ static void handle_event(const SettingsEvent *event)
             log_debug("Settings: leaving without saving");
             close_settings();
             return;
-        case SETTINGS_EVENT_PICK:        // Task 6 opens the picker here; nothing to do until then
+        case SETTINGS_EVENT_PICK:
+            // OK on a picker row opens its picker here: Task 9 the colour picker (a colour) and the
+            // list picker (the default menu, the device, a command), Task 10 the font picker. The
+            // mappings file (Task 15) is a browse row, which SETTINGS_EVENT_BROWSE opens. Until
+            // then OK does nothing; the rows that step still step with Left and Right.
+            break;
         case SETTINGS_EVENT_MOVED:
         case SETTINGS_EVENT_NONE:
             break;
@@ -906,8 +980,16 @@ static void handle_command(const char *command)
     SettingsPage before = settings_page(model);
     SettingsEvent event = settings_command(model, key);
     handle_event(&event);
-    if (model != NULL && before != SETTINGS_PAGE_BACKGROUND && settings_page(model) == SETTINGS_PAGE_BACKGROUND)
+    if (model == NULL)
+        return;
+    if (before != SETTINGS_PAGE_BACKGROUND && settings_page(model) == SETTINGS_PAGE_BACKGROUND)
         counted_folder[0] = '\0';   // The Background page opened: count the Folder's images again
+    char path[512];
+    settings_path(model, path, sizeof(path));
+    if (strcmp(path, logged_path) != 0) {
+        copy_string(logged_path, path, sizeof(logged_path));
+        log_debug("Settings: page %s", path);
+    }
 }
 
 // A function to act on a special command while settings are open, logging a key that kept the
@@ -995,6 +1077,22 @@ static int row_drawn_height(const SettingsRow *row, int note_room)
     return max_int(row_height, fitted_note_h + row_height / 2);
 }
 
+// A function to write what a row shows on its right: under the cursor, Left and Right arrows round
+// the value of a row they step (a setting, or a picker for a colour, the default menu or the
+// device) while it is not greyed; the › marker after any row OK opens (a page, the browser, a
+// picker); else the value alone
+static void row_value_text(const SettingsRow *row, bool highlighted, char *out, size_t size)
+{
+    bool steps = row->slot != NULL && (row->slot->def->type == SET_TYPE_COLOR ||
+                 row->slot->def->type == SET_TYPE_MENU || row->slot->def->type == SET_TYPE_DEVICE);
+    if (row->enabled && highlighted && (row->kind == SETTINGS_ROW_SETTING || (row->kind == SETTINGS_ROW_PICK && steps)))
+        snprintf(out, size, LEFT_ARROW " %s " RIGHT_ARROW, row->value);
+    else if (row->kind == SETTINGS_ROW_LINK || row->kind == SETTINGS_ROW_BROWSE || row->kind == SETTINGS_ROW_PICK)
+        snprintf(out, size, "%s " RIGHT_ARROW, row->value);
+    else
+        snprintf(out, size, "%s", row->value);
+}
+
 // A function to draw one row; returns the height it took. A note row takes at most note_room.
 static int draw_row(const SettingsRow *row, bool highlighted, int x, int y, int width, int note_room)
 {
@@ -1018,15 +1116,12 @@ static int draw_row(const SettingsRow *row, bool highlighted, int x, int y, int 
         SDL_RenderDrawRect(renderer, &box);
     }
     char value[320];
-    if (row->kind == SETTINGS_ROW_SETTING && highlighted)
-        snprintf(value, sizeof(value), LEFT_ARROW " %s " RIGHT_ARROW, row->value);
-    else if (row->kind == SETTINGS_ROW_LINK || row->kind == SETTINGS_ROW_BROWSE)
-        snprintf(value, sizeof(value), "%s " RIGHT_ARROW, row->value);
-    else
-        snprintf(value, sizeof(value), "%s", row->value);
+    row_value_text(row, highlighted, value, sizeof(value));
     int value_width = min_int(text_width(font_row, value), width / 2);
-    draw_text(font_row, row->label, x + pad, text_y, width - value_width - 3 * pad, row->enabled ? 255 : ALPHA_DIM, false);
-    draw_text(font_row, value, x + width - pad, text_y, width / 2, highlighted ? 255 : ALPHA_VALUE, true);
+    Uint8 label_alpha = row->enabled ? 255 : ALPHA_DIM;
+    Uint8 value_alpha = !row->enabled ? ALPHA_DIM : highlighted ? 255 : ALPHA_VALUE;
+    draw_text(font_row, row->label, x + pad, text_y, width - value_width - 3 * pad, label_alpha, false);
+    draw_text(font_row, value, x + width - pad, text_y, width / 2, value_alpha, true);
     return row_height;
 }
 
@@ -1058,10 +1153,11 @@ static void draw_model_rows(int x, int top, int bottom)
     }
 
     // With the cursor on the last row it can rest on, what follows it (the Menus page's note on
-    // the menus it has no room for, say) comes on show too: the page scrolls to its end
+    // the menus it has no room for, say) comes on show too: the page scrolls to its end. A greyed
+    // row that says why is one the cursor can rest on, as the model has it.
     bool rest_after = false;
     for (int i = cursor + 1; i < count; i++) {
-        if (rows[i].enabled && rows[i].kind != SETTINGS_ROW_DIVIDER && rows[i].kind != SETTINGS_ROW_NOTE)
+        if ((rows[i].enabled || rows[i].why != NULL) && rows[i].kind != SETTINGS_ROW_DIVIDER && rows[i].kind != SETTINGS_ROW_NOTE)
             rest_after = true;
     }
     if (!rest_after) {
@@ -1083,6 +1179,16 @@ static void draw_model_rows(int x, int top, int bottom)
             describe_folder_row(&rows[i]);
         y += draw_row(&rows[i], i == cursor, x, y, column_width, note_room);
         last = i;
+    }
+    if (cursor >= 0 && cursor < count && rows[cursor].kind != SETTINGS_ROW_NOTE && rows[cursor].kind != SETTINGS_ROW_DIVIDER) {
+        char value[320];
+        char drawn[sizeof(drawn_cursor)];
+        row_value_text(&rows[cursor], true, value, sizeof(value));
+        snprintf(drawn, sizeof(drawn), "%s: %s", rows[cursor].label, value);
+        if (strcmp(drawn, drawn_cursor) != 0) {
+            copy_string(drawn_cursor, drawn, sizeof(drawn_cursor));
+            log_debug("Settings: the cursor's row reads %s", drawn);
+        }
     }
     if (first_row != shown_first || last != shown_last || count != shown_count) {
         shown_first = first_row;
@@ -1143,8 +1249,19 @@ static void draw_column(void)
     draw_text(font_small, hint, x, hint_y, column_width, ALPHA_DIM, false);
 }
 
+// A function to say why the row under the cursor is greyed, or "" when it is not
+static const char *cursor_why(void)
+{
+    SettingsRow rows[SETTINGS_MAX_ROWS];
+    int count = settings_rows(model, rows, SETTINGS_MAX_ROWS);
+    int cursor = settings_cursor(model);
+    if (cursor < 0 || cursor >= count || rows[cursor].enabled || rows[cursor].why == NULL)
+        return "";
+    return rows[cursor].why;
+}
+
 // A function to draw the caption, two lines from (x, y) at most `width` wide: which menu, its grid
-// and titles, and any note
+// and titles, and any note: the last key's, else why the row under the cursor is greyed
 static void draw_caption(int x, int y, int width)
 {
     char caption[512];
@@ -1156,13 +1273,23 @@ static void draw_caption(int x, int y, int width)
     snprintf(caption, sizeof(caption), "Preview: %s \xC2\xB7 %i \xC3\x97 %i, %i px buttons, %s%s", current_menu->name,
         layout.columns, layout.rows, layout.button, titles, reduced ? " (reduced to fit the screen)" : "");
     draw_text(font_small, caption, x, y, width, ALPHA_VALUE, false);
-    const char *note = browser != NULL ? browser_caption() : settings_notice(model);
+    const char *note = browser != NULL ? browser_caption()
+                     : settings_notice(model)[0] != '\0' ? settings_notice(model) : cursor_why();
     draw_text(font_small, note, x, y + TTF_FontHeight(font_small), width, 255, false);
     if (strcmp(note, drawn_note) != 0) {
         copy_string(drawn_note, note, sizeof(drawn_note));
         if (note[0] != '\0')
             log_debug("Settings: the note under the preview says %s", note);
     }
+}
+
+// A function to dim the scene as the screensaver would, while the Screensaver page is open
+static void dim_preview(void)
+{
+    if (settings_page(model) != SETTINGS_PAGE_SCREENSAVER || eff.screensaver_alpha < 1)
+        return;
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, (Uint8) eff.screensaver_alpha);
+    SDL_RenderFillRect(renderer, NULL);
 }
 
 // A function to draw one frame of the screen and present it
@@ -1181,6 +1308,7 @@ void settings_draw(void)
     if (preview != NULL) {
         SDL_SetRenderTarget(renderer, preview);
         draw_scene(true);
+        dim_preview();
         SDL_SetRenderTarget(renderer, NULL);
         SDL_SetRenderDrawColor(renderer, BACKDROP.r, BACKDROP.g, BACKDROP.b, BACKDROP.a);
         SDL_RenderClear(renderer);
@@ -1193,6 +1321,7 @@ void settings_draw(void)
         // No render targets: the scene fills the screen, the column sits on a dark backing, and
         // the caption on another along the bottom of the rest of the screen
         draw_scene(true);
+        dim_preview();
         SDL_SetRenderDrawColor(renderer, BACKDROP.r, BACKDROP.g, BACKDROP.b, 220);
         SDL_Rect backing = { 0, 0, column_width + 2 * margin, geo.screen_height };
         SDL_RenderFillRect(renderer, &backing);
@@ -1231,6 +1360,7 @@ void settings_open(void)
         SettingValue value = read_value((SettingId) id, -1);
         settings_set_entry(model, (SettingId) id, -1, &value);
     }
+    list_pads();
     for (int m = 0; m < menu_count; m++) {
         for (int id = SET_ID_MENU_ROWS; id < SET_ID_COUNT; id++) {
             SettingValue value = read_value((SettingId) id, m);
@@ -1250,6 +1380,8 @@ void settings_open(void)
     shown_last = -1;
     shown_count = -1;
     drawn_note[0] = '\0';
+    drawn_cursor[0] = '\0';
+    logged_path[0] = '\0';
     measure_layout();
     bool targets = SDL_RenderTargetSupported(renderer);
 #ifdef STREAMFLEX_TEST_HOOKS
