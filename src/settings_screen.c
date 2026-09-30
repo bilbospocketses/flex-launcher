@@ -780,6 +780,7 @@ static void handle_event(const SettingsEvent *event)
             log_debug("Settings: leaving without saving");
             close_settings();
             return;
+        case SETTINGS_EVENT_PICK:        // Task 6 opens the picker here; nothing to do until then
         case SETTINGS_EVENT_MOVED:
         case SETTINGS_EVENT_NONE:
             break;
