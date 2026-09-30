@@ -373,7 +373,21 @@ static void apply_slot(const SettingSlot *slot, bool refresh)
             reload_background();
             break;
         case SET_REFRESH_NONE:
-        default:   // The new settings' refreshes arrive with the code that applies them
+            break;
+        // The new settings' refreshes arrive with the code that applies them (Task 6)
+        case SET_REFRESH_TITLE_FONT:
+            break;
+        case SET_REFRESH_HIGHLIGHT:
+            break;
+        case SET_REFRESH_SCROLL:
+            break;
+        case SET_REFRESH_CLOCK:
+            break;
+        case SET_REFRESH_SCREENSAVER:
+            break;
+        case SET_REFRESH_GAMEPAD:
+            break;
+        case SET_REFRESH_FRAME:
             break;
     }
 }

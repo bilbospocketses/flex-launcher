@@ -616,6 +616,7 @@ static void test_new_round_trips(void)
         { SET_ID_ICON_SPACING, "5%" },
         { SET_ID_ICON_SPACING, "40" },               // px, as the old parser read it
         { SET_ID_ICON_SPACING, "2000000000" },       // f15-limits: huge, and still read
+        { SET_ID_ICON_SPACING, "2147483647" },       // The largest int, still read
         { SET_ID_VCENTER, "50%" },
         { SET_ID_TITLE_FONT, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" },
         { SET_ID_TITLE_FONT_FACE, "2" },
@@ -694,6 +695,28 @@ static void test_new_rejects(void)
     CHECK(!setting_parse(setting_def(SET_ID_GAMEPAD_DEVICE), "16", &value));
     CHECK(!setting_parse(setting_def(SET_ID_STARTUP_CMD), "", &value));
     CHECK(!setting_parse(setting_def(SET_ID_DEFAULT_MENU), "", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_OVERLAY_OPACITY), "100000%", &value));   // Past the five-digit cap
+
+    // A command fills the text buffer less its terminator, and no more
+    char command[SETTING_TEXT_MAX + 1];
+    memset(command, 'x', (size_t) (SETTING_TEXT_MAX - 1));
+    command[SETTING_TEXT_MAX - 1] = '\0';
+    CHECK(setting_parse(setting_def(SET_ID_STARTUP_CMD), command, &value));
+    command[SETTING_TEXT_MAX - 1] = 'x';
+    command[SETTING_TEXT_MAX] = '\0';
+    CHECK(!setting_parse(setting_def(SET_ID_STARTUP_CMD), command, &value));
+}
+
+// A function to test that every built-in fallback reads as its own setting's value, so an unset
+// CMake variable (an empty string) fails here rather than at start
+static void test_fallbacks(void)
+{
+    for (int id = 0; id < SET_ID_GLOBAL_COUNT; id++) {
+        const SettingDef *def = setting_def((SettingId) id);
+        SettingValue value;
+        if (def->fallback != NULL)
+            CHECK(setting_parse(def, def->fallback, &value));
+    }
 }
 
 // A function to test the new types' steps: limits, the Off step, and a file's value in its place
@@ -725,6 +748,12 @@ static void test_new_steps(void)
     CHECK_INT(first_pct.number, 0);
     CHECK(!stepped(SET_ID_ICON_SPACING, first_pct, &px, -1, 1).percent);
     CHECK_INT(stepped(SET_ID_ICON_SPACING, px, &px, 1, 20).number, 1000);   // 10% at most
+
+    // A huge px value still sorts before every percentage
+    SettingValue huge = parsed(SET_ID_ICON_SPACING, "2000000000");
+    SettingValue after_huge = stepped(SET_ID_ICON_SPACING, huge, &huge, 1, 1);
+    CHECK(after_huge.percent);
+    CHECK_INT(after_huge.number, 0);
 
     // Vertical centre: 25-75% in fives
     SettingValue centre = parsed(SET_ID_VCENTER, "50%");
@@ -857,6 +886,7 @@ int main(void)
     test_new_steps();
     test_new_descriptions();
     test_find();
+    test_fallbacks();
     return check_report();
 }
 

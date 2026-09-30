@@ -601,16 +601,16 @@ static int preset_index(SettingColor color)
 
 // A function to give a step its place: following the default first, then a custom colour, a fixed
 // title size or a px value, then the rest in order
-static long sort_key(const SettingDef *def, const Candidate *c)
+static long long sort_key(const SettingDef *def, const Candidate *c)
 {
     if (c->inherit)
-        return LONG_MIN;
+        return LLONG_MIN;
     if (def->type == SET_TYPE_COLOR)
         return preset_index(c->color);
     if (def->type == SET_TYPE_TITLE_SIZE)
         return c->percent ? c->number : -1;
-    if (def->type == SET_TYPE_PERCENT)
-        return c->percent ? 1000000L + c->number : c->number;
+    if (def->type == SET_TYPE_PERCENT)   // Above every int, so any px value sorts first
+        return c->percent ? 0x100000000LL + c->number : c->number;
     return c->number;
 }
 
@@ -729,7 +729,7 @@ static int build_candidates(const SettingDef *def, const SettingValue *current, 
     // Put them in order: an insertion sort, since a row has a few dozen steps at most
     for (int i = 1; i < count; i++) {
         Candidate c = list[i];
-        long key = sort_key(def, &c);
+        long long key = sort_key(def, &c);
         int j = i - 1;
         while (j >= 0 && sort_key(def, &list[j]) > key) {
             list[j + 1] = list[j];
