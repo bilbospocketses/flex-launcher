@@ -12,9 +12,19 @@
 #define ELLIPSIS "\xE2\x80\xA6"  // U+2026, the ellipsis
 #define LENGTH(array) ((int) (sizeof(array) / sizeof((array)[0])))
 
-// The background modes, in ModeBackground's order (launcher.h): the file's names and the screen's
-static const char *const MODE_NAMES[] = { "Color", "Image", "Slideshow", "Transparent" };
+// The names each choice setting reads and writes, NULL-terminated, and what the screen calls them
+static const char *const MODE_NAMES[] = { "Color", "Image", "Slideshow", "Transparent", NULL };
 static const char *const MODE_LABELS[] = { "Colour", "Image", "Slideshow", "Transparent" };
+static const char *const ON_LAUNCH_NAMES[] = { "Blank", "None", "Quit", NULL };
+static const char *const ON_LAUNCH_LABELS[] = { "Blank screen", "Keep showing", "Quit" };
+static const char *const OVERSIZE_NAMES[] = { "Truncate", "Shrink", "None", NULL };
+static const char *const OVERSIZE_LABELS[] = { "Truncate", "Shrink", "Leave as is" };
+static const char *const ALIGNMENT_NAMES[] = { "Left", "Right", NULL };
+static const char *const ALIGNMENT_LABELS[] = { "Left", "Right" };
+static const char *const TIME_NAMES[] = { "24hr", "12hr", "Auto", NULL };
+static const char *const TIME_LABELS[] = { "14:05", "2:05 PM", "Auto" };
+static const char *const DATE_NAMES[] = { "Big", "Little", "Auto", NULL };
+static const char *const DATE_LABELS[] = { "Sep 28", "28 Sep", "Auto" };
 #define MODE_IMAGE 1
 #define MODE_SLIDESHOW 2
 
@@ -38,26 +48,237 @@ static const int ICON_STEPS[] = { 64, 96, 128, 160, 192, 256, 320, 384, 512, 768
 static const int SECOND_STEPS[] = { 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600 };
 static const int MILLI_STEPS[] = { 0, 500, 1000, 1500, 2000, 2500, 3000 };
 static const int TITLE_STEPS[] = { 11, 14, 17 };  // Small, Medium, Large
+static const int TIMEOUT_STEPS[] = { 3, 5, 10, 15, 20, 30 };
+static const int IDLE_STEPS[] = { 3, 5, 10, 15, 30, 60, 120, 300, 600, 900 };
+static const int FPS_STEPS[] = { 30, 60, 75, 120, 144, 165, 240 };
 
 static const char *const TRANSPARENT_NOTE =
     "The desktop shows through. On Linux this needs a compositor: see Transparent Backgrounds in the configuration docs.";
 static const char *const MENU_NOTE = "The lowest step, All menus, follows the shared grid.";
 
+// Rows marked with the same comment belong to the same page (Task 5 lays the pages out)
 static const SettingDef DEFS[SET_ID_COUNT] = {
-    { SET_ID_BACKGROUND_MODE, "Mode", "Background", SETTING_BACKGROUND_MODE, NULL, SET_TYPE_CHOICE, 0, 3, false, SET_REFRESH_BACKGROUND },
-    { SET_ID_BACKGROUND_COLOR, "Colour", "Background", SETTING_BACKGROUND_COLOR, NULL, SET_TYPE_COLOR, 0, 0, false, SET_REFRESH_BACKGROUND },
-    { SET_ID_BACKGROUND_IMAGE, "Image", "Background", SETTING_BACKGROUND_IMAGE, NULL, SET_TYPE_PATH, 0, 0, false, SET_REFRESH_BACKGROUND },
-    { SET_ID_SLIDESHOW_DIRECTORY, "Folder", "Background", SETTING_SLIDESHOW_DIRECTORY, NULL, SET_TYPE_PATH, 0, 0, false, SET_REFRESH_BACKGROUND },
-    { SET_ID_SLIDESHOW_DURATION, "Change every", "Background", SETTING_SLIDESHOW_IMAGE_DURATION, NULL, SET_TYPE_SECONDS, 5, 3600, false, SET_REFRESH_NONE },
-    { SET_ID_SLIDESHOW_FADE, "Fade", "Background", SETTING_SLIDESHOW_TRANSITION_TIME, NULL, SET_TYPE_MILLIS, 0, 3000, false, SET_REFRESH_NONE },
-    { SET_ID_LAYOUT_ROWS, "Rows", "Layout", SETTING_ROWS, NULL, SET_TYPE_COUNT, 1, 10, false, SET_REFRESH_LAYOUT },
-    { SET_ID_LAYOUT_COLUMNS, "Columns", "Layout", SETTING_COLUMNS, SETTING_MAX_BUTTONS, SET_TYPE_COUNT, 1, 12, false, SET_REFRESH_LAYOUT },
-    { SET_ID_LAYOUT_ICON_SIZE, "Largest button", "Layout", SETTING_ICON_SIZE, NULL, SET_TYPE_ICON_SIZE, 0, 0, true, SET_REFRESH_LAYOUT },
-    { SET_ID_TITLE_SIZE, "Size", "Titles", SETTING_TITLE_FONT_SIZE, NULL, SET_TYPE_TITLE_SIZE, 0, 0, false, SET_REFRESH_TITLES },
-    { SET_ID_MENU_ROWS, "Rows", NULL, SETTING_ROWS, NULL, SET_TYPE_COUNT, 1, 10, true, SET_REFRESH_LAYOUT },
-    { SET_ID_MENU_COLUMNS, "Columns", NULL, SETTING_COLUMNS, NULL, SET_TYPE_COUNT, 1, 12, true, SET_REFRESH_LAYOUT },
-    { SET_ID_MENU_ICON_SIZE, "Largest button", NULL, SETTING_ICON_SIZE, NULL, SET_TYPE_ICON_SIZE, 0, 0, true, SET_REFRESH_LAYOUT }
+    // 3a's
+    [SET_ID_BACKGROUND_MODE] = { .id = SET_ID_BACKGROUND_MODE, .label = "Mode", .section = "Background",
+        .key = SETTING_BACKGROUND_MODE, .type = SET_TYPE_CHOICE, .refresh = SET_REFRESH_BACKGROUND,
+        .lo = 0, .hi = 3, .names = MODE_NAMES, .labels = MODE_LABELS },
+    [SET_ID_BACKGROUND_COLOR] = { .id = SET_ID_BACKGROUND_COLOR, .label = "Colour", .section = "Background",
+        .key = SETTING_BACKGROUND_COLOR, .type = SET_TYPE_COLOR, .refresh = SET_REFRESH_BACKGROUND },
+    [SET_ID_BACKGROUND_IMAGE] = { .id = SET_ID_BACKGROUND_IMAGE, .label = "Image", .section = "Background",
+        .key = SETTING_BACKGROUND_IMAGE, .type = SET_TYPE_PATH, .refresh = SET_REFRESH_BACKGROUND },
+    [SET_ID_SLIDESHOW_DIRECTORY] = { .id = SET_ID_SLIDESHOW_DIRECTORY, .label = "Folder", .section = "Background",
+        .key = SETTING_SLIDESHOW_DIRECTORY, .type = SET_TYPE_PATH, .refresh = SET_REFRESH_BACKGROUND },
+    [SET_ID_SLIDESHOW_DURATION] = { .id = SET_ID_SLIDESHOW_DURATION, .label = "Change every", .section = "Background",
+        .key = SETTING_SLIDESHOW_IMAGE_DURATION, .type = SET_TYPE_SECONDS, .min = 5, .max = 3600,
+        .steps = SECOND_STEPS, .step_count = LENGTH(SECOND_STEPS) },
+    [SET_ID_SLIDESHOW_FADE] = { .id = SET_ID_SLIDESHOW_FADE, .label = "Fade", .section = "Background",
+        .key = SETTING_SLIDESHOW_TRANSITION_TIME, .type = SET_TYPE_MILLIS, .min = 0, .max = 3000 },
+    [SET_ID_LAYOUT_ROWS] = { .id = SET_ID_LAYOUT_ROWS, .label = "Rows", .section = "Layout", .key = SETTING_ROWS,
+        .type = SET_TYPE_COUNT, .min = 1, .max = 10, .refresh = SET_REFRESH_LAYOUT },
+    [SET_ID_LAYOUT_COLUMNS] = { .id = SET_ID_LAYOUT_COLUMNS, .label = "Columns", .section = "Layout",
+        .key = SETTING_COLUMNS, .alias = SETTING_MAX_BUTTONS, .type = SET_TYPE_COUNT, .min = 1, .max = 12,
+        .refresh = SET_REFRESH_LAYOUT },
+    [SET_ID_LAYOUT_ICON_SIZE] = { .id = SET_ID_LAYOUT_ICON_SIZE, .label = "Largest button", .section = "Layout",
+        .key = SETTING_ICON_SIZE, .type = SET_TYPE_ICON_SIZE, .can_inherit = true, .refresh = SET_REFRESH_LAYOUT },
+    [SET_ID_TITLE_SIZE] = { .id = SET_ID_TITLE_SIZE, .label = "Size", .section = "Titles",
+        .key = SETTING_TITLE_FONT_SIZE, .type = SET_TYPE_TITLE_SIZE, .refresh = SET_REFRESH_TITLES },
+
+    // General
+    [SET_ID_DEFAULT_MENU] = { .id = SET_ID_DEFAULT_MENU, .label = "Default menu", .section = "General",
+        .key = SETTING_DEFAULT_MENU, .type = SET_TYPE_MENU },
+    [SET_ID_WRAP_ENTRIES] = { .id = SET_ID_WRAP_ENTRIES, .label = "Wrap around", .section = "General",
+        .key = SETTING_WRAP_ENTRIES, .type = SET_TYPE_BOOL },
+    [SET_ID_RESET_ON_BACK] = { .id = SET_ID_RESET_ON_BACK, .label = "Reset on Back", .section = "General",
+        .key = SETTING_RESET_ON_BACK, .type = SET_TYPE_BOOL },
+    [SET_ID_MOUSE_SELECT] = { .id = SET_ID_MOUSE_SELECT, .label = "Mouse select", .section = "General",
+        .key = SETTING_MOUSE_SELECT, .type = SET_TYPE_BOOL },
+    [SET_ID_INHIBIT_OS_SCREENSAVER] = { .id = SET_ID_INHIBIT_OS_SCREENSAVER, .label = "Block the OS screensaver",
+        .section = "General", .key = SETTING_INHIBIT_OS_SCREENSAVER, .type = SET_TYPE_BOOL },
+    [SET_ID_VSYNC] = { .id = SET_ID_VSYNC, .label = "VSync", .section = "General", .key = SETTING_VSYNC,
+        .type = SET_TYPE_BOOL, .refresh = SET_REFRESH_FRAME },
+    [SET_ID_FPS_LIMIT] = { .id = SET_ID_FPS_LIMIT, .label = "FPS limit", .section = "General",
+        .key = SETTING_FPS_LIMIT, .type = SET_TYPE_NUMBER, .min = 10, .max = 1000, .can_inherit = true,
+        .refresh = SET_REFRESH_FRAME, .steps = FPS_STEPS, .step_count = LENGTH(FPS_STEPS), .unit = " fps",
+        .inherit_label = "Off" },
+    [SET_ID_ON_LAUNCH] = { .id = SET_ID_ON_LAUNCH, .label = "After launching an app", .section = "General",
+        .key = SETTING_ON_LAUNCH, .type = SET_TYPE_CHOICE, .lo = 0, .hi = 2, .names = ON_LAUNCH_NAMES,
+        .labels = ON_LAUNCH_LABELS },
+    [SET_ID_APPLICATION_TIMEOUT] = { .id = SET_ID_APPLICATION_TIMEOUT, .label = "App timeout", .section = "General",
+        .key = SETTING_APPLICATION_TIMEOUT, .type = SET_TYPE_SECONDS, .min = 3, .max = 30,
+        .steps = TIMEOUT_STEPS, .step_count = LENGTH(TIMEOUT_STEPS) },
+    [SET_ID_STARTUP_CMD] = { .id = SET_ID_STARTUP_CMD, .label = "Startup command", .section = "General",
+        .key = SETTING_STARTUP_CMD, .type = SET_TYPE_COMMAND, .can_inherit = true, .inherit_label = "None" },
+    [SET_ID_QUIT_CMD] = { .id = SET_ID_QUIT_CMD, .label = "Quit command", .section = "General",
+        .key = SETTING_QUIT_CMD, .type = SET_TYPE_COMMAND, .can_inherit = true, .inherit_label = "None" },
+
+    // Background, beyond 3a's
+    [SET_ID_CHROMA_KEY_COLOR] = { .id = SET_ID_CHROMA_KEY_COLOR, .label = "See-through colour", .section = "Background",
+        .key = SETTING_CHROMA_KEY_COLOR, .type = SET_TYPE_COLOR, .refresh = SET_REFRESH_BACKGROUND },
+    [SET_ID_OVERLAY] = { .id = SET_ID_OVERLAY, .label = "Overlay", .section = "Background",
+        .key = SETTING_BACKGROUND_OVERLAY, .type = SET_TYPE_BOOL, .refresh = SET_REFRESH_BACKGROUND },
+    [SET_ID_OVERLAY_COLOR] = { .id = SET_ID_OVERLAY_COLOR, .label = "Overlay colour", .section = "Background",
+        .key = SETTING_BACKGROUND_OVERLAY_COLOR, .type = SET_TYPE_COLOR, .refresh = SET_REFRESH_BACKGROUND },
+    [SET_ID_OVERLAY_OPACITY] = { .id = SET_ID_OVERLAY_OPACITY, .label = "Overlay opacity", .section = "Background",
+        .key = SETTING_BACKGROUND_OVERLAY_OPACITY, .type = SET_TYPE_PERCENT, .min = 0, .max = 10000,
+        .refresh = SET_REFRESH_BACKGROUND, .lo = 0, .hi = 10000, .step = 500,
+        .fallback = DEFAULT_BACKGROUND_OVERLAY_OPACITY },
+
+    // Layout, beyond 3a's (the All menus page)
+    [SET_ID_ICON_SPACING] = { .id = SET_ID_ICON_SPACING, .label = "Icon spacing", .section = "Layout",
+        .key = SETTING_ICON_SPACING, .type = SET_TYPE_PERCENT, .min = 0, .max = 10000, .refresh = SET_REFRESH_LAYOUT,
+        .lo = 0, .hi = 1000, .step = 100, .max_px = INT_MAX, .flags = SET_FLAG_PX, .fallback = DEFAULT_ICON_SPACING },
+    [SET_ID_VCENTER] = { .id = SET_ID_VCENTER, .label = "Vertical centre", .section = "Layout",
+        .key = SETTING_VCENTER, .type = SET_TYPE_PERCENT, .min = 0, .max = 10000, .refresh = SET_REFRESH_LAYOUT,
+        .lo = 2500, .hi = 7500, .step = 500, .fallback = DEFAULT_VCENTER },
+
+    // Titles, beyond 3a's
+    [SET_ID_TITLES_ENABLED] = { .id = SET_ID_TITLES_ENABLED, .label = "Show titles", .section = "Titles",
+        .key = SETTING_TITLES_ENABLED, .type = SET_TYPE_BOOL, .refresh = SET_REFRESH_TITLE_FONT },
+    [SET_ID_TITLE_FONT] = { .id = SET_ID_TITLE_FONT, .label = "Font", .section = "Titles",
+        .key = SETTING_TITLE_FONT, .type = SET_TYPE_FONT, .refresh = SET_REFRESH_TITLE_FONT },
+    [SET_ID_TITLE_FONT_FACE] = { .id = SET_ID_TITLE_FONT_FACE, .label = "Font face", .section = "Titles",
+        .key = SETTING_TITLE_FONT_FACE, .type = SET_TYPE_NUMBER, .min = 0, .max = 65535, .can_inherit = true,
+        .refresh = SET_REFRESH_TITLE_FONT, .flags = SET_FLAG_HIDDEN, .inherit_label = "0" },
+    [SET_ID_TITLE_COLOR] = { .id = SET_ID_TITLE_COLOR, .label = "Colour", .section = "Titles",
+        .key = SETTING_TITLE_FONT_COLOR, .type = SET_TYPE_COLOR, .refresh = SET_REFRESH_TITLES },
+    [SET_ID_TITLE_OPACITY] = { .id = SET_ID_TITLE_OPACITY, .label = "Opacity", .section = "Titles",
+        .key = SETTING_TITLE_OPACITY, .type = SET_TYPE_PERCENT, .min = 0, .max = 10000, .refresh = SET_REFRESH_TITLES,
+        .lo = 0, .hi = 10000, .step = 500, .fallback = DEFAULT_TITLE_OPACITY },
+    [SET_ID_TITLE_SHADOWS] = { .id = SET_ID_TITLE_SHADOWS, .label = "Shadows", .section = "Titles",
+        .key = SETTING_TITLE_SHADOWS, .type = SET_TYPE_BOOL, .refresh = SET_REFRESH_TITLES },
+    [SET_ID_TITLE_SHADOW_COLOR] = { .id = SET_ID_TITLE_SHADOW_COLOR, .label = "Shadow colour", .section = "Titles",
+        .key = SETTING_TITLE_SHADOW_COLOR, .type = SET_TYPE_COLOR, .refresh = SET_REFRESH_TITLES },
+    [SET_ID_TITLE_OVERSIZE] = { .id = SET_ID_TITLE_OVERSIZE, .label = "Too long", .section = "Titles",
+        .key = SETTING_TITLE_OVERSIZE_MODE, .type = SET_TYPE_CHOICE, .refresh = SET_REFRESH_TITLES,
+        .lo = 0, .hi = 1, .names = OVERSIZE_NAMES, .labels = OVERSIZE_LABELS, .legacy = "Truncated", .legacy_index = 0 },
+    [SET_ID_TITLE_PADDING] = { .id = SET_ID_TITLE_PADDING, .label = "Padding", .section = "Titles",
+        .key = SETTING_TITLE_PADDING, .type = SET_TYPE_PERCENT, .min = 0, .max = 5000, .refresh = SET_REFRESH_TITLES,
+        .lo = 0, .hi = 2000, .step = 200, .max_px = LAYOUT_MAX_BUTTON, .flags = SET_FLAG_PX | SET_FLAG_WHOLE },
+
+    // Highlight
+    [SET_ID_HIGHLIGHT_ENABLED] = { .id = SET_ID_HIGHLIGHT_ENABLED, .label = "Show", .section = "Highlight",
+        .key = SETTING_HIGHLIGHT_ENABLED, .type = SET_TYPE_BOOL, .refresh = SET_REFRESH_HIGHLIGHT },
+    [SET_ID_HIGHLIGHT_FILL_COLOR] = { .id = SET_ID_HIGHLIGHT_FILL_COLOR, .label = "Fill colour", .section = "Highlight",
+        .key = SETTING_HIGHLIGHT_FILL_COLOR, .type = SET_TYPE_COLOR, .refresh = SET_REFRESH_HIGHLIGHT },
+    [SET_ID_HIGHLIGHT_FILL_OPACITY] = { .id = SET_ID_HIGHLIGHT_FILL_OPACITY, .label = "Fill opacity",
+        .section = "Highlight", .key = SETTING_HIGHLIGHT_FILL_OPACITY, .type = SET_TYPE_PERCENT, .min = 0,
+        .max = 10000, .refresh = SET_REFRESH_HIGHLIGHT, .lo = 0, .hi = 10000, .step = 500,
+        .fallback = DEFAULT_HIGHLIGHT_FILL_OPACITY },
+    [SET_ID_HIGHLIGHT_OUTLINE_SIZE] = { .id = SET_ID_HIGHLIGHT_OUTLINE_SIZE, .label = "Outline size",
+        .section = "Highlight", .key = SETTING_HIGHLIGHT_OUTLINE_SIZE, .type = SET_TYPE_NUMBER, .min = 0,
+        .max = INT_MAX, .refresh = SET_REFRESH_HIGHLIGHT, .lo = 0, .hi = 10, .step = 1, .unit = " px" },
+    [SET_ID_HIGHLIGHT_OUTLINE_COLOR] = { .id = SET_ID_HIGHLIGHT_OUTLINE_COLOR, .label = "Outline colour",
+        .section = "Highlight", .key = SETTING_HIGHLIGHT_OUTLINE_COLOR, .type = SET_TYPE_COLOR,
+        .refresh = SET_REFRESH_HIGHLIGHT },
+    [SET_ID_HIGHLIGHT_OUTLINE_OPACITY] = { .id = SET_ID_HIGHLIGHT_OUTLINE_OPACITY, .label = "Outline opacity",
+        .section = "Highlight", .key = SETTING_HIGHLIGHT_OUTLINE_OPACITY, .type = SET_TYPE_PERCENT, .min = 0,
+        .max = 10000, .refresh = SET_REFRESH_HIGHLIGHT, .lo = 0, .hi = 10000, .step = 500,
+        .fallback = DEFAULT_HIGHLIGHT_OUTLINE_OPACITY },
+    [SET_ID_HIGHLIGHT_CORNER_RADIUS] = { .id = SET_ID_HIGHLIGHT_CORNER_RADIUS, .label = "Corner radius",
+        .section = "Highlight", .key = SETTING_HIGHLIGHT_CORNER_RADIUS, .type = SET_TYPE_NUMBER, .min = 0,
+        .max = 100, .refresh = SET_REFRESH_HIGHLIGHT, .lo = 0, .hi = 100, .step = 5 },
+    [SET_ID_HIGHLIGHT_VPADDING] = { .id = SET_ID_HIGHLIGHT_VPADDING, .label = "Vertical padding",
+        .section = "Highlight", .key = SETTING_HIGHLIGHT_VPADDING, .type = SET_TYPE_NUMBER, .min = 0,
+        .max = INT_MAX, .refresh = SET_REFRESH_LAYOUT, .lo = 0, .hi = 100, .step = 5, .unit = " px" },
+    [SET_ID_HIGHLIGHT_HPADDING] = { .id = SET_ID_HIGHLIGHT_HPADDING, .label = "Horizontal padding",
+        .section = "Highlight", .key = SETTING_HIGHLIGHT_HPADDING, .type = SET_TYPE_NUMBER, .min = 0,
+        .max = INT_MAX, .refresh = SET_REFRESH_LAYOUT, .lo = 0, .hi = 100, .step = 5, .unit = " px" },
+
+    // Scroll indicators
+    [SET_ID_SCROLL_ENABLED] = { .id = SET_ID_SCROLL_ENABLED, .label = "Show", .section = "Scroll Indicators",
+        .key = SETTING_SCROLL_INDICATORS, .type = SET_TYPE_BOOL, .refresh = SET_REFRESH_SCROLL },
+    [SET_ID_SCROLL_FILL_COLOR] = { .id = SET_ID_SCROLL_FILL_COLOR, .label = "Fill colour",
+        .section = "Scroll Indicators", .key = SETTING_SCROLL_INDICATOR_FILL_COLOR, .type = SET_TYPE_COLOR,
+        .refresh = SET_REFRESH_SCROLL },
+    [SET_ID_SCROLL_OUTLINE_SIZE] = { .id = SET_ID_SCROLL_OUTLINE_SIZE, .label = "Outline size",
+        .section = "Scroll Indicators", .key = SETTING_SCROLL_INDICATOR_OUTLINE_SIZE, .type = SET_TYPE_NUMBER,
+        .min = 0, .max = INT_MAX, .refresh = SET_REFRESH_SCROLL, .lo = 0, .hi = 10, .step = 1, .unit = " px" },
+    [SET_ID_SCROLL_OUTLINE_COLOR] = { .id = SET_ID_SCROLL_OUTLINE_COLOR, .label = "Outline colour",
+        .section = "Scroll Indicators", .key = SETTING_SCROLL_INDICATOR_OUTLINE_COLOR, .type = SET_TYPE_COLOR,
+        .refresh = SET_REFRESH_SCROLL },
+    [SET_ID_SCROLL_OPACITY] = { .id = SET_ID_SCROLL_OPACITY, .label = "Opacity", .section = "Scroll Indicators",
+        .key = SETTING_SCROLL_INDICATOR_OPACITY, .type = SET_TYPE_PERCENT, .min = 0, .max = 10000,
+        .refresh = SET_REFRESH_SCROLL, .lo = 0, .hi = 10000, .step = 500, .fallback = DEFAULT_SCROLL_INDICATOR_OPACITY },
+
+    // Clock
+    [SET_ID_CLOCK_ENABLED] = { .id = SET_ID_CLOCK_ENABLED, .label = "Show", .section = "Clock",
+        .key = SETTING_CLOCK_ENABLED, .type = SET_TYPE_BOOL, .refresh = SET_REFRESH_CLOCK },
+    [SET_ID_CLOCK_SHOW_DATE] = { .id = SET_ID_CLOCK_SHOW_DATE, .label = "Show date", .section = "Clock",
+        .key = SETTING_CLOCK_SHOW_DATE, .type = SET_TYPE_BOOL, .refresh = SET_REFRESH_CLOCK },
+    [SET_ID_CLOCK_ALIGNMENT] = { .id = SET_ID_CLOCK_ALIGNMENT, .label = "Alignment", .section = "Clock",
+        .key = SETTING_CLOCK_ALIGNMENT, .type = SET_TYPE_CHOICE, .refresh = SET_REFRESH_CLOCK, .lo = 0, .hi = 1,
+        .names = ALIGNMENT_NAMES, .labels = ALIGNMENT_LABELS },
+    [SET_ID_CLOCK_FONT] = { .id = SET_ID_CLOCK_FONT, .label = "Font", .section = "Clock", .key = SETTING_CLOCK_FONT,
+        .type = SET_TYPE_FONT, .refresh = SET_REFRESH_CLOCK },
+    [SET_ID_CLOCK_FONT_FACE] = { .id = SET_ID_CLOCK_FONT_FACE, .label = "Font face", .section = "Clock",
+        .key = SETTING_CLOCK_FONT_FACE, .type = SET_TYPE_NUMBER, .min = 0, .max = 65535, .can_inherit = true,
+        .refresh = SET_REFRESH_CLOCK, .flags = SET_FLAG_HIDDEN, .inherit_label = "0" },
+    [SET_ID_CLOCK_COLOR] = { .id = SET_ID_CLOCK_COLOR, .label = "Colour", .section = "Clock",
+        .key = SETTING_CLOCK_FONT_COLOR, .type = SET_TYPE_COLOR, .refresh = SET_REFRESH_CLOCK },
+    [SET_ID_CLOCK_SHADOWS] = { .id = SET_ID_CLOCK_SHADOWS, .label = "Shadows", .section = "Clock",
+        .key = SETTING_CLOCK_SHADOWS, .type = SET_TYPE_BOOL, .refresh = SET_REFRESH_CLOCK },
+    [SET_ID_CLOCK_SHADOW_COLOR] = { .id = SET_ID_CLOCK_SHADOW_COLOR, .label = "Shadow colour", .section = "Clock",
+        .key = SETTING_CLOCK_SHADOW_COLOR, .type = SET_TYPE_COLOR, .refresh = SET_REFRESH_CLOCK },
+    [SET_ID_CLOCK_OPACITY] = { .id = SET_ID_CLOCK_OPACITY, .label = "Opacity", .section = "Clock",
+        .key = SETTING_CLOCK_OPACITY, .type = SET_TYPE_PERCENT, .min = 0, .max = 10000, .refresh = SET_REFRESH_CLOCK,
+        .lo = 0, .hi = 10000, .step = 500, .fallback = DEFAULT_CLOCK_OPACITY },
+    [SET_ID_CLOCK_FONT_SIZE] = { .id = SET_ID_CLOCK_FONT_SIZE, .label = "Size", .section = "Clock",
+        .key = SETTING_CLOCK_FONT_SIZE, .type = SET_TYPE_NUMBER, .min = 1, .max = INT_MAX,
+        .refresh = SET_REFRESH_CLOCK, .lo = 20, .hi = 120, .step = 5 },
+    [SET_ID_CLOCK_MARGIN] = { .id = SET_ID_CLOCK_MARGIN, .label = "Margin", .section = "Clock",
+        .key = SETTING_CLOCK_MARGIN, .type = SET_TYPE_PERCENT, .min = 0, .max = 10000, .refresh = SET_REFRESH_CLOCK,
+        .lo = 0, .hi = 1000, .step = 100, .max_px = INT_MAX, .flags = SET_FLAG_PX, .fallback = DEFAULT_CLOCK_MARGIN },
+    [SET_ID_CLOCK_TIME_FORMAT] = { .id = SET_ID_CLOCK_TIME_FORMAT, .label = "Time", .section = "Clock",
+        .key = SETTING_CLOCK_TIME_FORMAT, .type = SET_TYPE_CHOICE, .refresh = SET_REFRESH_CLOCK, .lo = 0, .hi = 2,
+        .names = TIME_NAMES, .labels = TIME_LABELS },
+    [SET_ID_CLOCK_DATE_FORMAT] = { .id = SET_ID_CLOCK_DATE_FORMAT, .label = "Date", .section = "Clock",
+        .key = SETTING_CLOCK_DATE_FORMAT, .type = SET_TYPE_CHOICE, .refresh = SET_REFRESH_CLOCK, .lo = 0, .hi = 2,
+        .names = DATE_NAMES, .labels = DATE_LABELS },
+    [SET_ID_CLOCK_WEEKDAY] = { .id = SET_ID_CLOCK_WEEKDAY, .label = "Weekday", .section = "Clock",
+        .key = SETTING_CLOCK_INCLUDE_WEEKDAY, .type = SET_TYPE_BOOL, .refresh = SET_REFRESH_CLOCK },
+
+    // Screensaver
+    [SET_ID_SCREENSAVER_ENABLED] = { .id = SET_ID_SCREENSAVER_ENABLED, .label = "On", .section = "Screensaver",
+        .key = SETTING_SCREENSAVER_ENABLED, .type = SET_TYPE_BOOL, .refresh = SET_REFRESH_SCREENSAVER },
+    [SET_ID_SCREENSAVER_IDLE_TIME] = { .id = SET_ID_SCREENSAVER_IDLE_TIME, .label = "Idle time",
+        .section = "Screensaver", .key = SETTING_SCREENSAVER_IDLE_TIME, .type = SET_TYPE_SECONDS, .min = 3,
+        .max = 900, .steps = IDLE_STEPS, .step_count = LENGTH(IDLE_STEPS) },
+    [SET_ID_SCREENSAVER_INTENSITY] = { .id = SET_ID_SCREENSAVER_INTENSITY, .label = "Dim level",
+        .section = "Screensaver", .key = SETTING_SCREENSAVER_INTENSITY, .type = SET_TYPE_PERCENT, .min = 0,
+        .max = 10000, .refresh = SET_REFRESH_SCREENSAVER, .lo = 1000, .hi = 10000, .step = 1000,
+        .fallback = DEFAULT_SCREENSAVER_INTENSITY },
+    [SET_ID_SCREENSAVER_PAUSE] = { .id = SET_ID_SCREENSAVER_PAUSE, .label = "Pause slideshow",
+        .section = "Screensaver", .key = SETTING_SCREENSAVER_PAUSE_SLIDESHOW, .type = SET_TYPE_BOOL },
+
+    // Gamepad
+    [SET_ID_GAMEPAD_ENABLED] = { .id = SET_ID_GAMEPAD_ENABLED, .label = "On", .section = "Gamepad",
+        .key = SETTING_GAMEPAD_ENABLED, .type = SET_TYPE_BOOL, .refresh = SET_REFRESH_GAMEPAD },
+    [SET_ID_GAMEPAD_DEVICE] = { .id = SET_ID_GAMEPAD_DEVICE, .label = "Device", .section = "Gamepad",
+        .key = SETTING_GAMEPAD_DEVICE, .type = SET_TYPE_DEVICE, .min = -1, .max = 15, .refresh = SET_REFRESH_GAMEPAD },
+    [SET_ID_GAMEPAD_MAPPINGS] = { .id = SET_ID_GAMEPAD_MAPPINGS, .label = "Mappings file", .section = "Gamepad",
+        .key = SETTING_GAMEPAD_MAPPINGS_FILE, .type = SET_TYPE_PATH, .flags = SET_FLAG_NEXT_START },
+
+    // Per menu
+    [SET_ID_MENU_ROWS] = { .id = SET_ID_MENU_ROWS, .label = "Rows", .key = SETTING_ROWS, .type = SET_TYPE_COUNT,
+        .min = 1, .max = 10, .can_inherit = true, .refresh = SET_REFRESH_LAYOUT },
+    [SET_ID_MENU_COLUMNS] = { .id = SET_ID_MENU_COLUMNS, .label = "Columns", .key = SETTING_COLUMNS,
+        .type = SET_TYPE_COUNT, .min = 1, .max = 12, .can_inherit = true, .refresh = SET_REFRESH_LAYOUT },
+    [SET_ID_MENU_ICON_SIZE] = { .id = SET_ID_MENU_ICON_SIZE, .label = "Largest button", .key = SETTING_ICON_SIZE,
+        .type = SET_TYPE_ICON_SIZE, .can_inherit = true, .refresh = SET_REFRESH_LAYOUT }
 };
+
+// A function to find a global setting by the section and key config.ini gives it (or its older
+// name); NULL for a key the table does not hold, and for the per-menu keys, which menu sections hold
+const SettingDef *setting_find(const char *section, const char *key)
+{
+    for (int i = 0; i < SET_ID_GLOBAL_COUNT; i++) {
+        const SettingDef *def = &DEFS[i];
+        if (strcmp(def->section, section) == 0 &&
+            (strcmp(def->key, key) == 0 || (def->alias != NULL && strcmp(def->alias, key) == 0)))
+            return def;
+    }
+    return NULL;
+}
 
 // A function to get a setting's row in the table
 const SettingDef *setting_def(SettingId id)
@@ -90,7 +311,98 @@ static bool parse_hex_color(const char *text, SettingColor *color)
     return true;
 }
 
-// A function to read a setting's value from config.ini's text, as the launcher has always read it
+// A function to count a choice setting's names
+static int choice_count(const SettingDef *def)
+{
+    int count = 0;
+    while (def->names[count] != NULL)
+        count++;
+    return count;
+}
+
+// A function to read a whole number, strictly: an optional minus and digits, within an int.
+// f15-limits' IconSpacing=2000000000 must still read, as atoi read it.
+static bool parse_integer(const char *text, int *number)
+{
+    const char *digits = text[0] == '-' ? text + 1 : text;
+    size_t length = strlen(digits);
+    if (length == 0 || length > 10)
+        return false;
+    long long n = 0;
+    for (size_t i = 0; i < length; i++) {
+        if (digits[i] < '0' || digits[i] > '9')
+            return false;
+        n = n * 10 + (digits[i] - '0');
+    }
+    if (n > INT_MAX)
+        return false;
+    *number = (int) (text[0] == '-' ? -n : n);
+    return true;
+}
+
+// A function to read "N%", "N.N%" or "N.NN%" into hundredths of a percent; with `whole`, "N%" only
+static bool parse_percent(const char *text, bool whole, int *hundredths)
+{
+    size_t length = strlen(text);
+    if (length < 2 || text[length - 1] != '%')
+        return false;
+    size_t end = length - 1;
+    size_t i = 0;
+    int number = 0;
+    while (i < end && text[i] >= '0' && text[i] <= '9') {
+        if (i >= 5)
+            return false;
+        number = number * 10 + (text[i] - '0');
+        i++;
+    }
+    if (i == 0)
+        return false;
+    int fraction = 0;
+    if (i < end) {
+        if (whole || text[i] != '.')
+            return false;
+        size_t first = ++i;
+        while (i < end && text[i] >= '0' && text[i] <= '9' && i - first < 2) {
+            fraction = fraction * 10 + (text[i] - '0');
+            i++;
+        }
+        if (i != end || i == first)
+            return false;
+        if (i - first == 1)
+            fraction *= 10;
+    }
+    *hundredths = number * 100 + fraction;
+    return true;
+}
+
+// A function to find a name among a choice setting's names, or its older spelling; -1 when neither
+static int choice_index(const SettingDef *def, const char *text)
+{
+    for (int i = 0; def->names[i] != NULL; i++) {
+        if (strcmp(def->names[i], text) == 0)
+            return i;
+    }
+    return def->legacy != NULL && strcmp(def->legacy, text) == 0 ? def->legacy_index : -1;
+}
+
+// A function to copy a path from the file, dropping quotes round it as clean_path() does
+static bool copy_path_text(const char *text, char *out)
+{
+    size_t length = strlen(text);
+    if (length == 0 || length >= SETTING_TEXT_MAX)
+        return false;
+    if (length >= 3 && text[0] == '"' && text[length - 1] == '"') {
+        memcpy(out, text + 1, length - 2);
+        out[length - 2] = '\0';
+    }
+    else
+        memcpy(out, text, length + 1);
+    return true;
+}
+
+// A function to read a setting's value from config.ini's text, as the launcher has always read it,
+// except where the spec fixes a bug (FPSLimit=10, a negative clock size) or asks for a log line
+// in place of a silent misreading ("40px", "abc%")
 bool setting_parse(const SettingDef *def, const char *text, SettingValue *value)
 {
     SettingValue v;
@@ -105,25 +417,25 @@ bool setting_parse(const SettingDef *def, const char *text, SettingValue *value)
                 return false;
             break;
         case SET_TYPE_CHOICE:
-            for (v.number = 0; v.number < LENGTH(MODE_NAMES) && strcmp(MODE_NAMES[v.number], text) != 0; v.number++);
-            if (v.number == LENGTH(MODE_NAMES))
+            v.number = choice_index(def, text);
+            if (v.number < 0)
                 return false;
             break;
         case SET_TYPE_COLOR:
             if (!parse_hex_color(text, &v.color))
                 return false;
             break;
-        case SET_TYPE_PATH: {
-            // Quotes round a path are dropped, as clean_path() does
+        case SET_TYPE_PATH:
+        case SET_TYPE_FONT:
+            if (!copy_path_text(text, v.text))
+                return false;
+            break;
+        case SET_TYPE_COMMAND:
+        case SET_TYPE_MENU: {
             size_t length = strlen(text);
             if (length == 0 || length >= SETTING_TEXT_MAX)
                 return false;
-            if (length >= 3 && text[0] == '"' && text[length - 1] == '"') {
-                memcpy(v.text, text + 1, length - 2);
-                v.text[length - 2] = '\0';
-            }
-            else
-                memcpy(v.text, text, length + 1);
+            memcpy(v.text, text, length + 1);
             break;
         }
         case SET_TYPE_SECONDS:
@@ -140,6 +452,27 @@ bool setting_parse(const SettingDef *def, const char *text, SettingValue *value)
         }
         case SET_TYPE_TITLE_SIZE:
             if (!layout_parse_title_size(text, &v.number, &v.percent))
+                return false;
+            break;
+        case SET_TYPE_BOOL:
+            if (strcmp(text, "true") == 0 || strcmp(text, "True") == 0)
+                v.number = 1;
+            else if (strcmp(text, "false") != 0 && strcmp(text, "False") != 0)
+                return false;
+            break;
+        case SET_TYPE_NUMBER:
+        case SET_TYPE_DEVICE:
+            if (!parse_integer(text, &v.number) || v.number < def->min || v.number > def->max)
+                return false;
+            break;
+        case SET_TYPE_PERCENT:
+            if (parse_percent(text, (def->flags & SET_FLAG_WHOLE) != 0, &v.number)) {
+                v.percent = true;
+                if (v.number < def->min || v.number > def->max)
+                    return false;
+            }
+            else if (!(def->flags & SET_FLAG_PX) || text[0] == '-' || !parse_integer(text, &v.number) ||
+                     v.number > def->max_px)
                 return false;
             break;
     }
@@ -162,6 +495,19 @@ static void format_millis(int ms, char *out, size_t size)
         snprintf(out, size, "%d.%03d", whole, part);
 }
 
+// A function to write hundredths of a percent with only the decimals they need: 1250 is "12.5%"
+static void format_percent(int hundredths, char *out, size_t size)
+{
+    int whole = hundredths / 100;
+    int part = hundredths % 100;
+    if (part == 0)
+        snprintf(out, size, "%d%%", whole);
+    else if (part % 10 == 0)
+        snprintf(out, size, "%d.%d%%", whole, part / 10);
+    else
+        snprintf(out, size, "%d.%02d%%", whole, part);
+}
+
 // A function to write a value as config.ini holds it; "" for a value that removes the key
 void setting_format(const SettingDef *def, const SettingValue *value, char *out, size_t size)
 {
@@ -174,16 +520,21 @@ void setting_format(const SettingDef *def, const SettingValue *value, char *out,
         case SET_TYPE_COUNT:
         case SET_TYPE_ICON_SIZE:
         case SET_TYPE_SECONDS:
+        case SET_TYPE_NUMBER:
+        case SET_TYPE_DEVICE:
             snprintf(out, size, "%d", value->number);
             break;
         case SET_TYPE_CHOICE:
-            if (value->number >= 0 && value->number < LENGTH(MODE_NAMES))
-                snprintf(out, size, "%s", MODE_NAMES[value->number]);
+            if (value->number >= 0 && value->number < choice_count(def))
+                snprintf(out, size, "%s", def->names[value->number]);
             break;
         case SET_TYPE_COLOR:
             snprintf(out, size, "#%02X%02X%02X", value->color.r, value->color.g, value->color.b);
             break;
         case SET_TYPE_PATH:
+        case SET_TYPE_FONT:
+        case SET_TYPE_COMMAND:
+        case SET_TYPE_MENU:
             snprintf(out, size, "%s", value->text);
             break;
         case SET_TYPE_MILLIS:
@@ -192,6 +543,15 @@ void setting_format(const SettingDef *def, const SettingValue *value, char *out,
         case SET_TYPE_TITLE_SIZE:
             if (value->percent)
                 snprintf(out, size, "%d%%", value->number);
+            else
+                snprintf(out, size, "%d", value->number);
+            break;
+        case SET_TYPE_BOOL:
+            snprintf(out, size, "%s", value->number ? "true" : "false");
+            break;
+        case SET_TYPE_PERCENT:
+            if (value->percent)
+                format_percent(value->number, out, size);
             else
                 snprintf(out, size, "%d", value->number);
             break;
@@ -207,8 +567,12 @@ bool setting_equal(const SettingDef *def, const SettingValue *a, const SettingVa
         case SET_TYPE_COLOR:
             return a->color.r == b->color.r && a->color.g == b->color.g && a->color.b == b->color.b;
         case SET_TYPE_PATH:
+        case SET_TYPE_FONT:
+        case SET_TYPE_COMMAND:
+        case SET_TYPE_MENU:
             return strcmp(a->text, b->text) == 0;
         case SET_TYPE_TITLE_SIZE:
+        case SET_TYPE_PERCENT:
             return a->percent == b->percent && a->number == b->number;
         default:
             return a->number == b->number;
@@ -223,7 +587,7 @@ typedef struct {
     SettingColor color;
 } Candidate;
 
-#define MAX_CANDIDATES 48
+#define MAX_CANDIDATES 64
 
 // A function to find a colour among the presets; -1 when it is not one
 static int preset_index(SettingColor color)
@@ -235,8 +599,8 @@ static int preset_index(SettingColor color)
     return -1;
 }
 
-// A function to give a step its place: following the default first, then a custom colour or a
-// fixed title size, then the rest in order
+// A function to give a step its place: following the default first, then a custom colour, a fixed
+// title size or a px value, then the rest in order
 static long sort_key(const SettingDef *def, const Candidate *c)
 {
     if (c->inherit)
@@ -245,6 +609,8 @@ static long sort_key(const SettingDef *def, const Candidate *c)
         return preset_index(c->color);
     if (def->type == SET_TYPE_TITLE_SIZE)
         return c->percent ? c->number : -1;
+    if (def->type == SET_TYPE_PERCENT)
+        return c->percent ? 1000000L + c->number : c->number;
     return c->number;
 }
 
@@ -255,7 +621,7 @@ static bool same_candidate(const SettingDef *def, const Candidate *a, const Cand
         return a->inherit == b->inherit;
     if (def->type == SET_TYPE_COLOR)
         return a->color.r == b->color.r && a->color.g == b->color.g && a->color.b == b->color.b;
-    if (def->type == SET_TYPE_TITLE_SIZE)
+    if (def->type == SET_TYPE_TITLE_SIZE || def->type == SET_TYPE_PERCENT)
         return a->percent == b->percent && a->number == b->number;
     return a->number == b->number;
 }
@@ -305,17 +671,35 @@ static int build_candidates(const SettingDef *def, const SettingValue *current, 
     }
     switch (def->type) {
         case SET_TYPE_COUNT:
-        case SET_TYPE_CHOICE:
             for (int n = def->min; n <= def->max; n++)
                 add_candidate(def, list, &count, number_candidate(n, false));
+            break;
+        case SET_TYPE_CHOICE:
+            for (int n = def->lo; n <= def->hi; n++)
+                add_candidate(def, list, &count, number_candidate(n, false));
+            break;
+        case SET_TYPE_BOOL:
+            add_candidate(def, list, &count, number_candidate(0, false));
+            add_candidate(def, list, &count, number_candidate(1, false));
             break;
         case SET_TYPE_ICON_SIZE:
             for (int i = 0; i < LENGTH(ICON_STEPS); i++)
                 add_candidate(def, list, &count, number_candidate(ICON_STEPS[i], false));
             break;
         case SET_TYPE_SECONDS:
-            for (int i = 0; i < LENGTH(SECOND_STEPS); i++)
-                add_candidate(def, list, &count, number_candidate(SECOND_STEPS[i], false));
+        case SET_TYPE_NUMBER:
+            if (def->steps != NULL) {
+                for (int i = 0; i < def->step_count; i++)
+                    add_candidate(def, list, &count, number_candidate(def->steps[i], false));
+            }
+            else if (def->step > 0) {
+                for (int n = def->lo; n <= def->hi; n += def->step)
+                    add_candidate(def, list, &count, number_candidate(n, false));
+            }
+            break;
+        case SET_TYPE_PERCENT:
+            for (int n = def->lo; def->step > 0 && n <= def->hi; n += def->step)
+                add_candidate(def, list, &count, number_candidate(n, true));
             break;
         case SET_TYPE_MILLIS:
             for (int i = 0; i < LENGTH(MILLI_STEPS); i++)
@@ -333,6 +717,10 @@ static int build_candidates(const SettingDef *def, const SettingValue *current, 
             }
             break;
         case SET_TYPE_PATH:
+        case SET_TYPE_FONT:
+        case SET_TYPE_COMMAND:
+        case SET_TYPE_MENU:
+        case SET_TYPE_DEVICE:
             break;
     }
     add_candidate(def, list, &count, value_candidate(entry));
@@ -356,7 +744,8 @@ static int build_candidates(const SettingDef *def, const SettingValue *current, 
 SettingValue setting_step(const SettingDef *def, const SettingValue *current, const SettingValue *entry, int direction)
 {
     SettingValue result = *current;
-    if (def->type == SET_TYPE_PATH || direction == 0)
+    if (def->type == SET_TYPE_PATH || def->type == SET_TYPE_FONT || def->type == SET_TYPE_COMMAND ||
+        def->type == SET_TYPE_MENU || def->type == SET_TYPE_DEVICE || direction == 0)
         return result;
     Candidate list[MAX_CANDIDATES];
     int count = build_candidates(def, current, entry, list);
@@ -388,6 +777,33 @@ static void base_name(const char *path, char *out, size_t size)
     snprintf(out, size, "%.*s", (int) (length - start), path + start);
 }
 
+// The special commands and what the screen calls them
+static const struct {
+    const char *command;
+    const char *label;
+} COMMAND_LABELS[] = {
+    { ":left", "Left" }, { ":right", "Right" }, { ":up", "Up" }, { ":down", "Down" },
+    { ":select", "OK" }, { ":back", "Back" }, { ":home", "Home" }, { ":settings", "Settings" },
+    { ":quit", "Quit StreamFlex" }, { ":shutdown", "Shut down" }, { ":restart", "Restart" },
+    { ":sleep", "Sleep" }, { ":exit", "Close the app on show" }
+};
+
+// A function to describe a command as the screen shows it: a special command by what it does,
+// ":submenu X" as the submenu it opens, anything else as it is written
+void setting_command_label(const char *command, char *out, size_t size)
+{
+    for (int i = 0; i < LENGTH(COMMAND_LABELS); i++) {
+        if (strcmp(command, COMMAND_LABELS[i].command) == 0) {
+            snprintf(out, size, "%s", COMMAND_LABELS[i].label);
+            return;
+        }
+    }
+    if (strncmp(command, ":submenu ", 9) == 0 && command[9] != '\0')
+        snprintf(out, size, "Open submenu: %s", command + 9);
+    else
+        snprintf(out, size, "%s", command);
+}
+
 // A function to describe a value as the screen shows it. `inherited` is the value a per-menu
 // setting follows (from [Layout]); NULL for the others.
 void setting_describe(const SettingDef *def, const SettingValue *value, const SettingValue *inherited, char *out, size_t size)
@@ -411,7 +827,8 @@ void setting_describe(const SettingDef *def, const SettingValue *value, const Se
                 snprintf(out, size, "All menus (%d px)", inherited->number);
             break;
         case SET_TYPE_CHOICE:
-            snprintf(out, size, "%s", value->number >= 0 && value->number < LENGTH(MODE_LABELS) ? MODE_LABELS[value->number] : "?");
+            snprintf(out, size, "%s", value->number >= 0 && value->number < choice_count(def)
+                                      ? def->labels[value->number] : "?");
             break;
         case SET_TYPE_COLOR: {
             int preset = preset_index(value->color);
@@ -422,6 +839,7 @@ void setting_describe(const SettingDef *def, const SettingValue *value, const Se
             break;
         }
         case SET_TYPE_PATH:
+        case SET_TYPE_FONT:
             if (value->text[0] == '\0')
                 snprintf(out, size, "Choose" ELLIPSIS);
             else
@@ -448,6 +866,36 @@ void setting_describe(const SettingDef *def, const SettingValue *value, const Se
                 snprintf(out, size, "Large");
             else
                 snprintf(out, size, "%d%%", value->number);
+            break;
+        case SET_TYPE_BOOL:
+            snprintf(out, size, "%s", value->number ? "On" : "Off");
+            break;
+        case SET_TYPE_NUMBER:
+            if (value->inherit)
+                snprintf(out, size, "%s", def->inherit_label != NULL ? def->inherit_label : "");
+            else
+                snprintf(out, size, "%d%s", value->number, def->unit != NULL ? def->unit : "");
+            break;
+        case SET_TYPE_PERCENT:
+            if (value->percent)
+                format_percent(value->number, out, size);
+            else
+                snprintf(out, size, "%d px", value->number);
+            break;
+        case SET_TYPE_COMMAND:
+            if (value->inherit || value->text[0] == '\0')
+                snprintf(out, size, "None");
+            else
+                setting_command_label(value->text, out, size);
+            break;
+        case SET_TYPE_MENU:
+            snprintf(out, size, "%s", value->text);
+            break;
+        case SET_TYPE_DEVICE:
+            if (value->number < 0)
+                snprintf(out, size, "Any");
+            else
+                snprintf(out, size, "Pad %d", value->number);
             break;
     }
 }

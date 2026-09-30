@@ -596,6 +596,248 @@ static void test_more_menus_than_rows(void)
     settings_free(state);
 }
 
+// A function to test the new types' round trips: what the parser reads is written back unchanged
+static void test_new_round_trips(void)
+{
+    static const struct { SettingId id; const char *text; } cases[] = {
+        { SET_ID_WRAP_ENTRIES, "true" },
+        { SET_ID_VSYNC, "false" },
+        { SET_ID_FPS_LIMIT, "10" },                  // The documented minimum, which the old parser refused
+        { SET_ID_FPS_LIMIT, "144" },
+        { SET_ID_APPLICATION_TIMEOUT, "15" },
+        { SET_ID_ON_LAUNCH, "Quit" },
+        { SET_ID_STARTUP_CMD, ":submenu Games" },
+        { SET_ID_QUIT_CMD, "\"C:\\Program Files\\Kodi\\kodi.exe\" --standalone" },
+        { SET_ID_DEFAULT_MENU, "Main" },
+        { SET_ID_CHROMA_KEY_COLOR, "#010101" },
+        { SET_ID_OVERLAY_OPACITY, "50%" },
+        { SET_ID_OVERLAY_OPACITY, "12.5%" },
+        { SET_ID_OVERLAY_OPACITY, "33.33%" },
+        { SET_ID_ICON_SPACING, "5%" },
+        { SET_ID_ICON_SPACING, "40" },               // px, as the old parser read it
+        { SET_ID_ICON_SPACING, "2000000000" },       // f15-limits: huge, and still read
+        { SET_ID_VCENTER, "50%" },
+        { SET_ID_TITLE_FONT, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" },
+        { SET_ID_TITLE_FONT_FACE, "2" },
+        { SET_ID_TITLE_OVERSIZE, "Shrink" },
+        { SET_ID_TITLE_OVERSIZE, "None" },
+        { SET_ID_TITLE_PADDING, "8%" },
+        { SET_ID_TITLE_PADDING, "20" },
+        { SET_ID_HIGHLIGHT_OUTLINE_SIZE, "3" },
+        { SET_ID_HIGHLIGHT_CORNER_RADIUS, "25" },
+        { SET_ID_HIGHLIGHT_HPADDING, "300" },        // Past the last step; the clamp is Effective's
+        { SET_ID_CLOCK_FONT_SIZE, "50" },
+        { SET_ID_CLOCK_MARGIN, "5%" },
+        { SET_ID_CLOCK_TIME_FORMAT, "12hr" },
+        { SET_ID_CLOCK_DATE_FORMAT, "Little" },
+        { SET_ID_SCREENSAVER_IDLE_TIME, "300" },
+        { SET_ID_SCREENSAVER_INTENSITY, "70%" },
+        { SET_ID_GAMEPAD_DEVICE, "-1" },
+        { SET_ID_GAMEPAD_DEVICE, "2" },
+        { SET_ID_GAMEPAD_MAPPINGS, "/home/me/gamecontrollerdb.txt" }
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        SettingValue value = parsed(cases[i].id, cases[i].text);
+        CHECK_STR(formatted(cases[i].id, &value), cases[i].text);
+    }
+
+    // Spellings the parser reads, and how they are written back
+    SettingValue value = parsed(SET_ID_WRAP_ENTRIES, "True");
+    CHECK_INT(value.number, 1);
+    CHECK_STR(formatted(SET_ID_WRAP_ENTRIES, &value), "true");
+    value = parsed(SET_ID_TITLE_OVERSIZE, "Truncated");                     // The old parser's only spelling
+    CHECK_STR(formatted(SET_ID_TITLE_OVERSIZE, &value), "Truncate");
+    value = parsed(SET_ID_OVERLAY_OPACITY, "12.50%");
+    CHECK_INT(value.number, 1250);
+    CHECK(value.percent);
+    CHECK_STR(formatted(SET_ID_OVERLAY_OPACITY, &value), "12.5%");
+    value = parsed(SET_ID_TITLE_FONT, "\"C:\\Fonts\\My Font.ttf\"");         // Quotes dropped, as clean_path does
+    CHECK_STR(value.text, "C:\\Fonts\\My Font.ttf");
+    value = parsed(SET_ID_APPLICATION_TIMEOUT, "15s");                     // atoi, as before
+    CHECK_INT(value.number, 15);
+
+    // An absent FPSLimit, FontFace or command writes nothing: the key is removed
+    SettingValue inherit;
+    memset(&inherit, 0, sizeof(inherit));
+    inherit.inherit = true;
+    CHECK_STR(formatted(SET_ID_FPS_LIMIT, &inherit), "");
+    CHECK_STR(formatted(SET_ID_TITLE_FONT_FACE, &inherit), "");
+    CHECK_STR(formatted(SET_ID_STARTUP_CMD, &inherit), "");
+}
+
+// A function to test what the new types refuse, including the spec's two parser bugs
+static void test_new_rejects(void)
+{
+    SettingValue value;
+    CHECK(!setting_parse(setting_def(SET_ID_FPS_LIMIT), "9", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_CLOCK_FONT_SIZE), "-5", &value));   // Wrapped to 4294967291 before
+    CHECK(!setting_parse(setting_def(SET_ID_CLOCK_FONT_SIZE), "0", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_WRAP_ENTRIES), "yes", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_WRAP_ENTRIES), "TRUE", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_ON_LAUNCH), "blank", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_OVERLAY_OPACITY), "101%", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_OVERLAY_OPACITY), "abc%", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_OVERLAY_OPACITY), "50", &value));   // No px for an opacity
+    CHECK(!setting_parse(setting_def(SET_ID_OVERLAY_OPACITY), "5.555%", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_OVERLAY_OPACITY), "5.%", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_ICON_SPACING), "40px", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_ICON_SPACING), "-4", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_ICON_SPACING), "2147483648", &value));  // Past an int
+    CHECK(!setting_parse(setting_def(SET_ID_TITLE_PADDING), "8.5%", &value));  // Padding is whole
+    CHECK(!setting_parse(setting_def(SET_ID_TITLE_PADDING), "51%", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_HIGHLIGHT_CORNER_RADIUS), "101", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_HIGHLIGHT_OUTLINE_SIZE), "-1", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_APPLICATION_TIMEOUT), "2", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_APPLICATION_TIMEOUT), "31", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_SCREENSAVER_IDLE_TIME), "901", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_GAMEPAD_DEVICE), "-2", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_GAMEPAD_DEVICE), "16", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_STARTUP_CMD), "", &value));
+    CHECK(!setting_parse(setting_def(SET_ID_DEFAULT_MENU), "", &value));
+}
+
+// A function to test the new types' steps: limits, the Off step, and a file's value in its place
+static void test_new_steps(void)
+{
+    SettingValue off = parsed(SET_ID_WRAP_ENTRIES, "false");
+    CHECK_INT(stepped(SET_ID_WRAP_ENTRIES, off, &off, 1, 1).number, 1);
+    CHECK_INT(stepped(SET_ID_WRAP_ENTRIES, off, &off, 1, 5).number, 1);
+
+    // FPS limit: Off, 30, 60, 75, 120, 144, 165, 240; a file's 10 sits between Off and 30
+    SettingValue ten = parsed(SET_ID_FPS_LIMIT, "10");
+    CHECK(stepped(SET_ID_FPS_LIMIT, ten, &ten, -1, 1).inherit);
+    CHECK_INT(stepped(SET_ID_FPS_LIMIT, ten, &ten, 1, 1).number, 30);
+    CHECK_INT(stepped(SET_ID_FPS_LIMIT, ten, &ten, 1, 20).number, 240);
+    SettingValue back = stepped(SET_ID_FPS_LIMIT, stepped(SET_ID_FPS_LIMIT, ten, &ten, 1, 3), &ten, -1, 3);
+    CHECK_INT(back.number, 10);
+
+    // Opacity: 0-100% in fives; a file's 12.5% sits between 10% and 15%
+    SettingValue odd = parsed(SET_ID_OVERLAY_OPACITY, "12.5%");
+    CHECK_INT(stepped(SET_ID_OVERLAY_OPACITY, odd, &odd, -1, 1).number, 1000);
+    CHECK_INT(stepped(SET_ID_OVERLAY_OPACITY, odd, &odd, 1, 1).number, 1500);
+    CHECK_INT(stepped(SET_ID_OVERLAY_OPACITY, odd, &odd, 1, 30).number, 10000);
+    CHECK_INT(stepped(SET_ID_OVERLAY_OPACITY, odd, &odd, -1, 30).number, 0);
+
+    // Icon spacing: a file's px value comes before every percentage
+    SettingValue px = parsed(SET_ID_ICON_SPACING, "40");
+    SettingValue first_pct = stepped(SET_ID_ICON_SPACING, px, &px, 1, 1);
+    CHECK(first_pct.percent);
+    CHECK_INT(first_pct.number, 0);
+    CHECK(!stepped(SET_ID_ICON_SPACING, first_pct, &px, -1, 1).percent);
+    CHECK_INT(stepped(SET_ID_ICON_SPACING, px, &px, 1, 20).number, 1000);   // 10% at most
+
+    // Vertical centre: 25-75% in fives
+    SettingValue centre = parsed(SET_ID_VCENTER, "50%");
+    CHECK_INT(stepped(SET_ID_VCENTER, centre, &centre, 1, 20).number, 7500);
+    CHECK_INT(stepped(SET_ID_VCENTER, centre, &centre, -1, 20).number, 2500);
+
+    // Padding: 0-20% in twos; a file's px sits first
+    SettingValue padding = parsed(SET_ID_TITLE_PADDING, "8%");
+    CHECK_INT(stepped(SET_ID_TITLE_PADDING, padding, &padding, 1, 1).number, 1000);
+    CHECK_INT(stepped(SET_ID_TITLE_PADDING, padding, &padding, 1, 20).number, 2000);
+
+    // A padding past the last step (300 px) stays reachable at the end
+    SettingValue wide = parsed(SET_ID_HIGHLIGHT_HPADDING, "300");
+    CHECK_INT(stepped(SET_ID_HIGHLIGHT_HPADDING, wide, &wide, -1, 1).number, 100);
+    CHECK_INT(stepped(SET_ID_HIGHLIGHT_HPADDING, wide, &wide, 1, 1).number, 300);
+
+    // Choices step through their own names only: Too long is Truncate or Shrink, and a file's None stays
+    SettingValue none = parsed(SET_ID_TITLE_OVERSIZE, "None");
+    CHECK_INT(stepped(SET_ID_TITLE_OVERSIZE, none, &none, -1, 1).number, 1);
+    CHECK_INT(stepped(SET_ID_TITLE_OVERSIZE, none, &none, -1, 5).number, 0);
+
+    // The spec's lists: app timeout, idle time, dim level, clock size
+    SettingValue timeout = parsed(SET_ID_APPLICATION_TIMEOUT, "3");
+    CHECK_INT(stepped(SET_ID_APPLICATION_TIMEOUT, timeout, &timeout, 1, 4).number, 20);
+    SettingValue idle = parsed(SET_ID_SCREENSAVER_IDLE_TIME, "3");
+    CHECK_INT(stepped(SET_ID_SCREENSAVER_IDLE_TIME, idle, &idle, 1, 5).number, 60);
+    CHECK_INT(stepped(SET_ID_SCREENSAVER_IDLE_TIME, idle, &idle, 1, 20).number, 900);
+    SettingValue dim = parsed(SET_ID_SCREENSAVER_INTENSITY, "70%");
+    CHECK_INT(stepped(SET_ID_SCREENSAVER_INTENSITY, dim, &dim, -1, 20).number, 1000);
+    SettingValue size = parsed(SET_ID_CLOCK_FONT_SIZE, "50");
+    CHECK_INT(stepped(SET_ID_CLOCK_FONT_SIZE, size, &size, 1, 50).number, 120);
+    CHECK_INT(stepped(SET_ID_CLOCK_FONT_SIZE, size, &size, -1, 50).number, 20);
+
+    // Paths, fonts, commands, the default menu and the device are chosen elsewhere, never stepped here
+    SettingValue cmd = parsed(SET_ID_STARTUP_CMD, ":quit");
+    SettingValue same_cmd = stepped(SET_ID_STARTUP_CMD, cmd, &cmd, 1, 1);   // A local: MSVC's C4223 refuses .text on a returned struct
+    CHECK_STR(same_cmd.text, ":quit");
+    SettingValue device = parsed(SET_ID_GAMEPAD_DEVICE, "1");
+    CHECK_INT(stepped(SET_ID_GAMEPAD_DEVICE, device, &device, 1, 1).number, 1);
+}
+
+// A function to test how the new types read on screen
+static void test_new_descriptions(void)
+{
+    SettingValue value = parsed(SET_ID_WRAP_ENTRIES, "true");
+    CHECK_STR(described(SET_ID_WRAP_ENTRIES, &value, NULL), "On");
+    value = parsed(SET_ID_FPS_LIMIT, "60");
+    CHECK_STR(described(SET_ID_FPS_LIMIT, &value, NULL), "60 fps");
+    value.inherit = true;
+    CHECK_STR(described(SET_ID_FPS_LIMIT, &value, NULL), "Off");
+    value = parsed(SET_ID_OVERLAY_OPACITY, "12.5%");
+    CHECK_STR(described(SET_ID_OVERLAY_OPACITY, &value, NULL), "12.5%");
+    value = parsed(SET_ID_ICON_SPACING, "40");
+    CHECK_STR(described(SET_ID_ICON_SPACING, &value, NULL), "40 px");
+    value = parsed(SET_ID_HIGHLIGHT_HPADDING, "30");
+    CHECK_STR(described(SET_ID_HIGHLIGHT_HPADDING, &value, NULL), "30 px");
+    value = parsed(SET_ID_HIGHLIGHT_CORNER_RADIUS, "25");
+    CHECK_STR(described(SET_ID_HIGHLIGHT_CORNER_RADIUS, &value, NULL), "25");
+    value = parsed(SET_ID_APPLICATION_TIMEOUT, "15");
+    CHECK_STR(described(SET_ID_APPLICATION_TIMEOUT, &value, NULL), "15 s");
+    value = parsed(SET_ID_SCREENSAVER_IDLE_TIME, "300");
+    CHECK_STR(described(SET_ID_SCREENSAVER_IDLE_TIME, &value, NULL), "5 min");
+    value = parsed(SET_ID_ON_LAUNCH, "Blank");
+    CHECK_STR(described(SET_ID_ON_LAUNCH, &value, NULL), "Blank screen");
+    value = parsed(SET_ID_CLOCK_TIME_FORMAT, "12hr");
+    CHECK_STR(described(SET_ID_CLOCK_TIME_FORMAT, &value, NULL), "2:05 PM");
+    value = parsed(SET_ID_CLOCK_DATE_FORMAT, "Big");
+    CHECK_STR(described(SET_ID_CLOCK_DATE_FORMAT, &value, NULL), "Sep 28");
+    value = parsed(SET_ID_TITLE_FONT, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+    CHECK_STR(described(SET_ID_TITLE_FONT, &value, NULL), "DejaVuSans.ttf");
+    value = parsed(SET_ID_STARTUP_CMD, ":submenu Games");
+    CHECK_STR(described(SET_ID_STARTUP_CMD, &value, NULL), "Open submenu: Games");
+    value = parsed(SET_ID_STARTUP_CMD, ":quit");
+    CHECK_STR(described(SET_ID_STARTUP_CMD, &value, NULL), "Quit StreamFlex");
+    value = parsed(SET_ID_STARTUP_CMD, "kodi --standalone");
+    CHECK_STR(described(SET_ID_STARTUP_CMD, &value, NULL), "kodi --standalone");
+    value.inherit = true;
+    CHECK_STR(described(SET_ID_STARTUP_CMD, &value, NULL), "None");
+    value = parsed(SET_ID_GAMEPAD_DEVICE, "-1");
+    CHECK_STR(described(SET_ID_GAMEPAD_DEVICE, &value, NULL), "Any");
+    value = parsed(SET_ID_GAMEPAD_DEVICE, "1");
+    CHECK_STR(described(SET_ID_GAMEPAD_DEVICE, &value, NULL), "Pad 1");
+
+    char label[64];
+    setting_command_label(":select", label, sizeof(label));
+    CHECK_STR(label, "OK");
+    setting_command_label(":exit", label, sizeof(label));
+    CHECK_STR(label, "Close the app on show");
+}
+
+// A function to test finding a setting by section and key, as the parser does
+static void test_find(void)
+{
+    CHECK(setting_find("Titles", "Color") == setting_def(SET_ID_TITLE_COLOR));
+    CHECK(setting_find("Background", "Color") == setting_def(SET_ID_BACKGROUND_COLOR));
+    CHECK(setting_find("Highlight", "Enabled") == setting_def(SET_ID_HIGHLIGHT_ENABLED));
+    CHECK(setting_find("Scroll Indicators", "Enabled") == setting_def(SET_ID_SCROLL_ENABLED));
+    CHECK(setting_find("Layout", "MaxButtons") == setting_def(SET_ID_LAYOUT_COLUMNS));   // Its alias
+    CHECK(setting_find("Titles", "FontFace") == setting_def(SET_ID_TITLE_FONT_FACE));
+    CHECK(setting_find("Clock", "FontFace") == setting_def(SET_ID_CLOCK_FONT_FACE));
+    CHECK(setting_find("General", "Nope") == NULL);
+    CHECK(setting_find("Main", "Rows") == NULL);                   // Per-menu keys belong to menu sections
+    CHECK(setting_find("Hotkeys", "Hotkey1") == NULL);
+
+    // Every global setting is found by its own section and key, and has a label and a section
+    for (int id = 0; id < SET_ID_GLOBAL_COUNT; id++) {
+        const SettingDef *def = setting_def((SettingId) id);
+        CHECK_INT((int) def->id, id);
+        CHECK(def->section != NULL && def->label != NULL && def->key != NULL);
+        CHECK(setting_find(def->section, def->key) == def);
+    }
+}
+
 int main(void)
 {
     test_round_trips();
@@ -610,6 +852,11 @@ int main(void)
     test_one_menu();
     test_background_entered_incomplete();
     test_more_menus_than_rows();
+    test_new_round_trips();
+    test_new_rejects();
+    test_new_steps();
+    test_new_descriptions();
+    test_find();
     return check_report();
 }
 

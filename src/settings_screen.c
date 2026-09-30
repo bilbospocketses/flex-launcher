@@ -291,7 +291,7 @@ static SettingValue read_value(SettingId id, int menu_index)
             value.inherit = menu->overrides.icon_cap == 0;
             value.number = menu->overrides.icon_cap;
             break;
-        case SET_ID_COUNT:
+        default:   // Task 3 moves every setting through config_fields.c
             break;
     }
     return value;
@@ -357,7 +357,7 @@ static void apply_slot(const SettingSlot *slot, bool refresh)
         case SET_ID_MENU_ICON_SIZE:
             menu->overrides.icon_cap = value->inherit ? 0 : value->number;
             break;
-        case SET_ID_COUNT:
+        default:   // Task 3 moves every setting through config_fields.c
             break;
     }
     if (!refresh)
@@ -373,6 +373,7 @@ static void apply_slot(const SettingSlot *slot, bool refresh)
             reload_background();
             break;
         case SET_REFRESH_NONE:
+        default:   // The new settings' refreshes arrive with the code that applies them
             break;
     }
 }
