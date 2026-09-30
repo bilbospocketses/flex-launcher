@@ -273,7 +273,7 @@ On Linux, StreamFlex paints the chroma-key colour (`#010101`), and a compositor 
 ## U9. A clean exit (item 9)
 
 - Every run in the pass ended with `exit-code` `0`, and a log ending in `Quitting program`.
-- `~/sf-logs/stderr.txt` of each run holds no error lines other than U5c's expected `Couldn't save …: permission denied`.
+- `~/sf-logs/stderr.txt` of each run holds no error lines other than U5c's expected `Couldn't save …: permission denied`. Lines from the guest's graphics stack are not StreamFlex's and do not count: under `SDL_VIDEODRIVER=wayland` (pass A) Mesa and EGL print loader lines at every start, such as `MESA: error: ZINK: failed to choose pdev` and `libEGL warning: …`, on a virtio GPU with no 3D. Record them, but judge only StreamFlex's own lines.
 - **At the end of pass B only**, with StreamFlex running (launch it once more): as root, `systemctl stop sf-vgp`. Expected:
   - `journalctl -u sf-vgp` ends with `stopped by SIGTERM` and `destroyed the device`;
   - `grep -c 'X-Box 360 pad' /proc/bus/input/devices` prints `0`;

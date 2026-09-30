@@ -8,6 +8,10 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-29
+
+Fixes for what the hands-on check of 0.3.0 found on Windows 11 and Ubuntu 26.04: holes in icons in Transparent mode on Windows, a relative config path in settings' messages, and false errors while choosing a background. A config written for 0.3.0 works unchanged.
+
 ### Fixed
 - **Transparent mode on Windows no longer punches holes in icons.** Windows shows through every pixel of the window that is exactly the chroma key colour (`#010101` unless `ChromaKeyColor` says otherwise), so icon art containing that colour turned partly see-through, and so did dark pixels that scaling blended onto it; the built-in Plex icon had a diagonal line and specks of it. Every icon, PNG or SVG, now has its opaque pixels within one step of the key lifted two steps off it as it loads (near-black becomes `#030303`), whatever the background mode, so no opaque pixel of an icon is within one step of the key, and dark art that was near it can no longer be averaged onto it when the icon is scaled. The built-in Plex, Hulu, Spotify, Twitch and Amazon Music icons are lifted the same way (none of them blends onto the key when scaled), and the icon library's check refuses brand art that is not.
 - Settings and their messages name the config file by its full path. Started from its own folder, StreamFlex showed `Couldn't save to .\config.ini: ...` on screen and logged `.\config.ini`; it now says `C:\StreamFlex\config.ini`. When the full path differs from the path the file was found by (`.\config.ini`, or on Linux a link given with `-c`), the debug log's `Config file found:` line gives both: `.\config.ini (C:\StreamFlex\config.ini)`.
