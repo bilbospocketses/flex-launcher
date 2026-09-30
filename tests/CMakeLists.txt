@@ -53,6 +53,11 @@ add_executable(test_settings test_settings.c "${PROJECT_SOURCE_DIR}/src/settings
 target_include_directories(test_settings PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_test(NAME settings COMMAND test_settings)
 
+# Unit tests for deriving the values the launcher draws with from the configured ones (pure)
+add_executable(test_derive test_derive.c "${PROJECT_SOURCE_DIR}/src/derive.c")
+target_include_directories(test_derive PRIVATE "${PROJECT_SOURCE_DIR}/src")
+add_test(NAME derive COMMAND test_derive)
+
 # Unit tests for the folder browser's model, over a pretend file system
 add_executable(test_browser test_browser.c "${PROJECT_SOURCE_DIR}/src/browser.c" "${PROJECT_SOURCE_DIR}/src/fileio.c"
   "${PROJECT_SOURCE_DIR}/src/alloc.c")

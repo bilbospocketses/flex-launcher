@@ -1,0 +1,191 @@
+#include <stdbool.h>
+#include <string.h>
+#include "check.h"
+#include "derive.h"
+
+// A function to start from the built-in defaults on a 1920 x 1080 screen, as the launcher would
+static DeriveInput defaults(void)
+{
+    DeriveInput in;
+    memset(&in, 0, sizeof(in));
+    in.screen_width = 1920;
+    in.screen_height = 1080;
+    in.titles_enabled = true;
+    in.title_padding = 0;
+    in.title_padding_pct = 8;
+    in.title_color = (DeriveColor) { 0xFF, 0xFF, 0xFF, 0 };
+    in.title_shadow_color = (DeriveColor) { 0x00, 0x00, 0x00, 0 };
+    in.title_opacity = 10000;
+    in.overlay_color = (DeriveColor) { 0x00, 0x00, 0x00, 0 };
+    in.overlay_opacity = 5000;
+    in.highlight_fill = (DeriveColor) { 0xFF, 0xFF, 0xFF, 0 };
+    in.highlight_fill_opacity = 2500;
+    in.highlight_outline = (DeriveColor) { 0x00, 0x00, 0xFF, 0 };
+    in.highlight_outline_opacity = 10000;
+    in.highlight_outline_size = 0;
+    in.highlight_rx = 0;
+    in.highlight_hpadding = 30;
+    in.highlight_vpadding = 30;
+    in.scroll_fill = (DeriveColor) { 0xFF, 0xFF, 0xFF, 0 };
+    in.scroll_outline = (DeriveColor) { 0x00, 0x00, 0x00, 0 };
+    in.scroll_opacity = 10000;
+    in.scroll_outline_size = 0;
+    in.clock_color = (DeriveColor) { 0xFF, 0xFF, 0xFF, 0 };
+    in.clock_shadow_color = (DeriveColor) { 0x00, 0x00, 0x00, 0 };
+    in.clock_opacity = 10000;
+    in.icon_spacing = 500;
+    in.icon_spacing_percent = true;
+    in.vcenter = 5000;
+    in.clock_margin = 500;
+    in.clock_margin_percent = true;
+    in.screensaver_intensity = 7000;
+    return in;
+}
+
+// A function to test that the defaults give the values validate_settings() gave them
+static void test_defaults(void)
+{
+    DeriveInput in = defaults();
+    Effective eff;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.icon_spacing, 96);            // 5% of 1920
+    CHECK_INT(eff.vcenter, 540);                // 50% of 1080
+    CHECK_INT(eff.clock_margin, 54);            // 5% of 1080
+    CHECK_INT(eff.highlight_hpadding, 30);
+    CHECK_INT(eff.highlight_vpadding, 30);
+    CHECK_INT(eff.title_color.a, 255);
+    CHECK_INT(eff.title_shadow_color.a, 191);   // 0.75 of the title's alpha
+    CHECK_INT(eff.overlay_color.a, 127);        // 50%
+    CHECK_INT(eff.highlight_fill.a, 63);        // 25%, as FillOpacity=25% always gave
+    CHECK_INT(eff.highlight_outline.a, 255);
+    CHECK_INT(eff.scroll_fill.a, 255);
+    CHECK_INT(eff.scroll_outline.a, 255);       // One opacity for both
+    CHECK_INT(eff.clock_color.a, 255);
+    CHECK_INT(eff.clock_shadow_color.a, 191);
+    CHECK_INT(eff.screensaver_alpha, 178);      // 70%
+    CHECK_INT(eff.title_padding_pct, 8);
+    CHECK_INT(eff.highlight_fill.r, 0xFF);      // The colour itself passes through
+    CHECK_INT(eff.highlight_outline.b, 0xFF);
+}
+
+// A function to test that deriving twice gives the same answer: nothing is spent on the first run
+static void test_twice(void)
+{
+    DeriveInput in = defaults();
+    Effective first, second;
+    derive_settings(&in, &first);
+    derive_settings(&in, &second);
+    CHECK(memcmp(&first, &second, sizeof(first)) == 0);
+}
+
+// A function to test that a clamp limits only the effective value, so raising the setting that
+// caused it gives the full value back
+static void test_clamps_restore(void)
+{
+    DeriveInput in = defaults();
+    Effective eff;
+
+    // HPadding is kept to half the gap between buttons; with a wider gap it comes back
+    in.highlight_hpadding = 100;
+    in.icon_spacing = 50;
+    in.icon_spacing_percent = false;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.highlight_hpadding, 25);
+    in.icon_spacing = 400;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.highlight_hpadding, 100);
+
+    // The outline is kept inside the smaller padding
+    in.highlight_outline_size = 50;
+    in.highlight_vpadding = 10;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.highlight_outline_size, 10);
+    in.highlight_vpadding = 80;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.highlight_outline_size, 50);
+
+    // Rounded corners with an outline cannot be drawn (NanoSVG): the radius goes, and comes back
+    in.highlight_rx = 20;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.highlight_rx, 0);
+    in.highlight_outline_size = 0;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.highlight_rx, 20);
+
+    // A gap wider than the screen is the screen's width
+    in.icon_spacing = 5000;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.icon_spacing, 1920);
+
+    // The clock's margin is at most 10% of the screen height
+    in.clock_margin = 5000;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.clock_margin, 108);
+    in.clock_margin = 20;
+    in.clock_margin_percent = false;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.clock_margin, 20);
+
+    // The vertical centre stays between 25% and 75%
+    in.vcenter = 1000;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.vcenter, 270);
+    in.vcenter = 9000;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.vcenter, 810);
+
+    // The scroll arrow's outline is at most 1% of the screen height
+    in.scroll_outline_size = 40;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.scroll_outline_size, 10);
+}
+
+// A function to test every percentage and opacity conversion at its ends and between
+static void test_conversions(void)
+{
+    CHECK_INT(derive_alpha(0), 0);
+    CHECK_INT(derive_alpha(10000), 255);
+    CHECK_INT(derive_alpha(5000), 127);
+    CHECK_INT(derive_alpha(1250), 31);          // 12.5%
+    CHECK_INT(derive_alpha(-5), 0);             // Out of range reads as the nearest end
+    CHECK_INT(derive_alpha(20000), 255);
+
+    DeriveInput in = defaults();
+    Effective eff;
+    in.icon_spacing = 1250;                     // 12.5% of 1920
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.icon_spacing, 240);
+    in.title_opacity = 0;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.title_color.a, 0);
+    CHECK_INT(eff.title_shadow_color.a, 0);
+    in.screensaver_intensity = 0;               // Dims nothing: the screensaver cannot start
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.screensaver_alpha, 0);
+}
+
+// A function to test that titles turned off take their padding with them, as validate_settings() did
+static void test_titles_off(void)
+{
+    DeriveInput in = defaults();
+    Effective eff;
+    in.titles_enabled = false;
+    in.title_padding = 20;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.title_padding, 0);
+    CHECK_INT(eff.title_padding_pct, 0);
+    in.titles_enabled = true;
+    derive_settings(&in, &eff);
+    CHECK_INT(eff.title_padding, 20);
+    CHECK_INT(eff.title_padding_pct, 8);
+}
+
+int main(void)
+{
+    test_defaults();
+    test_twice();
+    test_clamps_restore();
+    test_conversions();
+    test_titles_off();
+    return check_report();
+}
