@@ -714,7 +714,7 @@ The following axis and buttons are available for control in StreamFlex:
 
 StreamFlex supports transparent backgrounds using the chroma key technique. This method works by setting a strategically chosen color to the background, which is removed later. In film production, this technique is often refered to as "blue screening" or "green screening".
 
-The chosen chroma key color should be one that is not found in your icons/text, as this would cause them to become transparent. The color is set with the `ChromaKeyColor` setting in the Background section. The default is `#010101`, a slight off-shade of black. 
+Every pixel of the window that is exactly the chroma key color becomes transparent. StreamFlex keeps icons clear of it: as an icon loads, any opaque pixel within one step of the key in every channel is moved two steps away from it (with the default key, near-black becomes `#030303`). Text and the colors you configure are not changed, so choose a key color that your fonts, highlight and other colors do not use. The color is set with the `ChromaKeyColor` setting in the Background section. The default is `#010101`, a slight off-shade of black.
 
 A limitation of this method is that your icons and text must be fully opqaue or fully transparent. Any semi-transparent pixels will blend with the chroma key background so that it does not produce a color match, and consequently will not be removed from the background.
 

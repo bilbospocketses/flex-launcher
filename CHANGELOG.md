@@ -8,6 +8,10 @@ This project started from complexlogic's Flex Launcher at v2.2 and is developed 
 
 ## [Unreleased]
 
+### Changed
+- The configuration guide's Transparent section says that icons are kept clear of the chroma key color, and that text and configured colors are not, so those are what the key must avoid.
+- The research for a later sub-project, a 10-foot overlay for the DRM streaming sites in a real browser, is in `design/research/overlay/`.
+
 ## [0.3.1] - 2026-09-29
 
 Fixes for what the hands-on check of 0.3.0 found on Windows 11 and Ubuntu 26.04: holes in icons in Transparent mode on Windows, a relative config path in settings' messages, and false errors while choosing a background. A config written for 0.3.0 works unchanged.
